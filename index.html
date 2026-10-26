@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bloons of the Frontier</title>
+  <link rel="icon" href="./assets/favicon.png" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">🎈 Bloons <small>of the</small> Frontier</div>
+    <div class="stat"><img src="./assets/ui/sun.png" alt="">¢ <b id="credits">0</b></div>
+    <div class="stat"><img src="./assets/ui/heart.png" alt=""><b id="lives">0</b></div>
+    <div class="stat">Wave <b id="wave">0</b></div>
+    <div id="wave-info" class="wave-info"></div>
+    <div class="spacer"></div>
+    <button id="btn-start" class="btn go">▶ Start Wave</button>
+    <button id="btn-auto" class="btn small" title="Auto-start next wave">Auto</button>
+    <button id="btn-pause" class="btn small">⏸</button>
+    <button class="btn small" data-speed="1">1×</button>
+    <button class="btn small" data-speed="2">2×</button>
+    <button class="btn small" data-speed="4">4×</button>
+  </header>
+  <main id="layout">
+    <section id="stage">
+      <canvas id="game"></canvas>
+      <div id="mode-hint"></div>
+      <div id="toasts"></div>
+    </section>
+    <aside id="side">
+      <div id="faction-tabs"></div>
+      <div id="tower-cards"></div>
+      <div id="sel-panel"></div>
+    </aside>
+  </main>
+  <footer id="bottombar">
+    <div class="label">Deploy troops</div>
+    <div id="troop-bar"></div>
+    <button id="btn-organize" class="btn organize">🧹 Organize Farms</button>
+  </footer>
+  <div id="menu" class="overlay show">
+    <div class="panel">
+      <h1>🎈 Bloons of the Frontier</h1>
+      <p>Primates, Flora and the UNSC Frontier hold the line against bloons and the bug hive.
+        Build towers, deploy troops, buff them with Cover, farm Credits and keep your farms organized.</p>
+      <div id="maps"></div>
+      <p class="hint">Click a card to place · click a tower to upgrade/sell/target · deploy a squad then click to set its rally point · Space starts a wave</p>
+    </div>
+  </div>
+  <div id="gameover" class="overlay"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

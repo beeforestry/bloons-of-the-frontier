@@ -1,0 +1,350 @@
+{
+"dart_monkey_0": [
+199,
+256
+],
+"dart_monkey_1": [
+204,
+256
+],
+"dart_monkey_2": [
+194,
+256
+],
+"ninja_monkey_0": [
+190,
+256
+],
+"ninja_monkey_1": [
+203,
+256
+],
+"ninja_monkey_2": [
+247,
+256
+],
+"wizard_monkey_0": [
+155,
+256
+],
+"wizard_monkey_1": [
+218,
+256
+],
+"wizard_monkey_2": [
+160,
+256
+],
+"super_monkey_0": [
+211,
+256
+],
+"super_monkey_1": [
+217,
+256
+],
+"super_monkey_2": [
+242,
+256
+],
+"money_monkey_0": [
+209,
+256
+],
+"money_monkey_1": [
+231,
+256
+],
+"money_monkey_2": [
+232,
+256
+],
+"solar_pea_fusion_0": [
+185,
+256
+],
+"solar_pea_fusion_1": [
+214,
+256
+],
+"solar_pea_fusion_2": [
+187,
+256
+],
+"gatling_cherry_bomber_0": [
+256,
+228
+],
+"gatling_cherry_bomber_1": [
+219,
+256
+],
+"gatling_cherry_bomber_2": [
+210,
+256
+],
+"flame_melon_mortar_0": [
+192,
+256
+],
+"flame_melon_mortar_1": [
+169,
+256
+],
+"flame_melon_mortar_2": [
+212,
+256
+],
+"star_emperor_0": [
+179,
+256
+],
+"star_emperor_1": [
+171,
+256
+],
+"star_emperor_2": [
+172,
+256
+],
+"frost_wallnut_bastion_0": [
+216,
+256
+],
+"frost_wallnut_bastion_1": [
+210,
+256
+],
+"frost_wallnut_bastion_2": [
+185,
+256
+],
+"unsc_firebase_0": [
+256,
+232
+],
+"unsc_firebase_1": [
+256,
+226
+],
+"unsc_firebase_2": [
+239,
+256
+],
+"unsc_depot_0": [
+256,
+209
+],
+"unsc_depot_1": [
+256,
+235
+],
+"unsc_depot_2": [
+256,
+244
+],
+"turret_base_0": [
+256,
+217
+],
+"turret_base_1": [
+256,
+226
+],
+"turret_base_2": [
+256,
+221
+],
+"unsc_autoturret_head_0": [
+256,
+160
+],
+"unsc_autoturret_head_1": [
+256,
+152
+],
+"unsc_autoturret_head_2": [
+256,
+165
+],
+"unsc_rail_head_0": [
+256,
+156
+],
+"unsc_rail_head_1": [
+256,
+156
+],
+"unsc_rail_head_2": [
+256,
+143
+],
+"marine_0": [
+124,
+160
+],
+"marine_1": [
+133,
+160
+],
+"marine_2": [
+129,
+160
+],
+"monkey_soldier_0": [
+146,
+160
+],
+"monkey_soldier_1": [
+155,
+160
+],
+"monkey_soldier_2": [
+160,
+156
+],
+"line_watch_0": [
+113,
+160
+],
+"line_watch_1": [
+108,
+160
+],
+"line_watch_2": [
+132,
+160
+],
+"line_watch_3": [
+125,
+160
+],
+"farmhand_0": [
+123,
+160
+],
+"farmhand_1": [
+134,
+160
+],
+"drop_pod": [
+134,
+192
+],
+"bug_scavenger": [
+128,
+93
+],
+"bug_hunter": [
+158,
+160
+],
+"bug_charger": [
+224,
+171
+],
+"bug_brood": [
+224,
+180
+],
+"bug_titan": [
+384,
+252
+],
+"bloon_red": [
+71,
+128
+],
+"bloon_blue": [
+70,
+128
+],
+"bloon_green": [
+70,
+128
+],
+"bloon_yellow": [
+70,
+128
+],
+"bloon_pink": [
+71,
+128
+],
+"bloon_lead": [
+112,
+128
+],
+"bloon_ceramic": [
+114,
+128
+],
+"bloon_moab": [
+384,
+181
+],
+"fx_dart": [
+96,
+50
+],
+"fx_shuriken": [
+54,
+64
+],
+"fx_ice": [
+64,
+60
+],
+"fx_melon": [
+58,
+64
+],
+"fx_cherry": [
+28,
+48
+],
+"fx_bullet": [
+48,
+22
+],
+"fx_crate": [
+96,
+81
+],
+"fx_coin": [
+42,
+48
+],
+"fx_boom": [
+192,
+182
+],
+"fx_muzzle": [
+96,
+72
+],
+"fx_magic": [
+96,
+65
+],
+"fx_spark": [
+192,
+171
+],
+"fx_acid": [
+192,
+170
+],
+"fx_pop": [
+192,
+182
+],
+"fx_pea": [
+96,
+48
+],
+"fx_star": [
+96,
+96
+]
+}

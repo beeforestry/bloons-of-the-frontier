@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-single/
+*-single.html
+# large generated art intermediates (regenerable via art_src/tools)
+art_src/cut/
+art_src/gen/
+art_src/concepts_old/
+screenshots/
+.DS_Store
