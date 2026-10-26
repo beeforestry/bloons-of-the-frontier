@@ -139,6 +139,8 @@ export interface UnitTier {
   stats: UnitStats;
   /** Weapon at this tier. */
   weapon: { name: string; type: DamageType; hitsAir: boolean; projectile?: ProjectileKind; hitscan?: boolean; splash?: number };
+  /** Reactor tech level required to research this tier (defaults to tier index). */
+  tech?: number;
   /** Optional special every N seconds (Line Watch Power Shot). */
   special?: { name: string; every: number; damage: number; type: DamageType; splash: number };
 }
@@ -156,6 +158,12 @@ export interface UnitData {
   /** Max squads alive at once (0 = unlimited). */
   maxSquads: number;
   cooldown: number;
+  /** Army population per squad (PopulationManager cap: HQ + Reactors). */
+  population: number;
+  /** Reactor tech level required to train / drop this troop. */
+  tech: number;
+  /** Barracks training time (s) at Barracks tier 1. */
+  trainTime: number;
   tiers: UnitTier[];
 }
 
@@ -204,3 +212,44 @@ export interface WaveGroup {
 export interface WaveData { groups: WaveGroup[]; bonus: number }
 
 export interface Vec { x: number; y: number }
+
+/** Halo-Wars base layer: HQ + pad buildings. All tier stats are "higher is better" (validated). */
+export interface BuildingStats {
+  maxHp: number;
+  /** Credits per payout (Supply). Safe base income: paid straight into the bank during waves. */
+  income?: number;
+  payoutsPerMin?: number;
+  waveBonus?: number;
+  /** Tech level provided (Reactor). */
+  tech?: number;
+  /** Population cap provided (HQ base cap, Reactor +5...). */
+  pop?: number;
+  /** Leader-power energy regen / s. */
+  energyRegen?: number;
+  /** Barracks training speed multiplier. */
+  trainSpeed?: number;
+  /** Barracks: queue length. */
+  queue?: number;
+  /** HQ defence gun. */
+  gun?: { damage: number; fireRate: number; range: number; pierce: number };
+}
+export interface BuildingTier {
+  name: string;
+  /** Credits to build (tier 0) / upgrade to this tier. */
+  cost: number;
+  /** Seconds of construction. */
+  buildTime: number;
+  blurb: string;
+  visual: TierVisual;
+  stats: BuildingStats;
+}
+export type BuildingKind = 'hq' | 'supply' | 'reactor' | 'barracks';
+export interface BuildingData {
+  id: BuildingKind;
+  name: string;
+  sprite: string;
+  desc: string;
+  icon: string;
+  tiers: BuildingTier[];
+}
+export interface PowerData { id: 'mac' | 'heal'; name: string; icon: string; energy: number; cooldown: number; desc: string }

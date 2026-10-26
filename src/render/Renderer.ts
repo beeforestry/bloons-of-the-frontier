@@ -2,7 +2,9 @@
 // RENDERER: draws the world onto a 2D canvas. Read-only view of Game.
 // Tier visuals: a distinct painted sprite per tier + scale + glow ring + tier pips.
 // =============================================================================
-import type { Game, Effect } from '../game/Game';
+import type { Game, Effect, Strike } from '../game/Game';
+import type { Building, BuildPad } from '../entities/Building';
+import { MAC, HEAL } from '../data/buildings';
 import type { Tower } from '../entities/Tower';
 import type { Unit, Squad } from '../entities/Unit';
 import type { Enemy } from '../entities/Enemy';
@@ -20,26 +22,81 @@ export interface ViewState {
   mouse: { x: number; y: number } | null;
   selTower: Tower | null;
   selSquad: Squad | null;
+  selBuilding: Building | null;
+  selPad: BuildPad | null;
+  /** Leader power being aimed. */
+  power: 'mac' | 'heal' | null;
+  /** Barracks whose rally point is being placed. */
+  rallyFor: Building | null;
 }
+export interface Camera { x: number; y: number; zoom: number }
 
-const TOWER_PX = 78, UNIT_PX = 44;
+const TOWER_PX = 78, UNIT_PX = 44, BLD_PX = 168, HQ_PX = 236, PAD_PX = 120;
 
 export class Renderer {
   readonly ctx: CanvasRenderingContext2D;
+  /** Camera: world point at the top-left of the view + zoom (CSS px per world px). */
+  readonly cam: Camera = { x: 0, y: 0, zoom: 1 };
+  /** View size in CSS px. */
+  vw = 1; vh = 1; private dpr = 1;
   constructor(readonly canvas: HTMLCanvasElement, readonly g: Game) {
-    canvas.width = g.map.width; canvas.height = g.map.height;
     this.ctx = canvas.getContext('2d')!;
+    this.resize();
+    this.cam.zoom = this.minZoom; this.clamp();
   }
+  /** Match the backing store to the element size (crisp on HiDPI / mobile). */
+  resize() {
+    const r = this.canvas.getBoundingClientRect();
+    this.vw = Math.max(1, r.width || this.canvas.clientWidth || 800); this.vh = Math.max(1, r.height || this.canvas.clientHeight || 500);
+    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = Math.round(this.vw * this.dpr), H = Math.round(this.vh * this.dpr);
+    if (this.canvas.width !== W || this.canvas.height !== H) { this.canvas.width = W; this.canvas.height = H; }
+    this.clamp();
+  }
+  /** Zoom at which the whole map fits the view. */
+  get minZoom() { return Math.min(this.vw / this.g.map.width, this.vh / this.g.map.height); }
+  get maxZoom() { return 2.2; }
+  clamp() {
+    const c = this.cam, m = this.g.map;
+    c.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, c.zoom));
+    const vwW = this.vw / c.zoom, vhW = this.vh / c.zoom;
+    c.x = vwW >= m.width ? (m.width - vwW) / 2 : Math.max(0, Math.min(m.width - vwW, c.x));
+    c.y = vhW >= m.height ? (m.height - vhW) / 2 : Math.max(0, Math.min(m.height - vhW, c.y));
+  }
+  screenToWorld(sx: number, sy: number) { return { x: this.cam.x + sx / this.cam.zoom, y: this.cam.y + sy / this.cam.zoom }; }
+  worldToScreen(wx: number, wy: number) { return { x: (wx - this.cam.x) * this.cam.zoom, y: (wy - this.cam.y) * this.cam.zoom }; }
+  /** Zoom keeping the world point under (sx, sy) fixed. */
+  zoomAt(sx: number, sy: number, factor: number) {
+    const before = this.screenToWorld(sx, sy);
+    this.cam.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, this.cam.zoom * factor));
+    this.cam.x = before.x - sx / this.cam.zoom; this.cam.y = before.y - sy / this.cam.zoom;
+    this.clamp();
+  }
+  /** Centre the view on a world point (optionally at a zoom). */
+  focus(wx: number, wy: number, zoom?: number) {
+    if (zoom) this.cam.zoom = zoom;
+    this.clamp();
+    this.cam.x = wx - this.vw / this.cam.zoom / 2; this.cam.y = wy - this.vh / this.cam.zoom / 2;
+    this.clamp();
+  }
+  pan(dxScreen: number, dyScreen: number) { this.cam.x += dxScreen / this.cam.zoom; this.cam.y += dyScreen / this.cam.zoom; this.clamp(); }
 
   draw(v: ViewState) {
     const { ctx: c, g } = this;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = '#141a14'; c.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    const z = this.cam.zoom * this.dpr;
+    c.setTransform(z, 0, 0, z, -this.cam.x * z, -this.cam.y * z);
     const bg = IMG['map:' + g.map.image];
     if (bg) c.drawImage(bg, 0, 0, g.map.width, g.map.height); else { c.fillStyle = '#6aa84f'; c.fillRect(0, 0, g.map.width, g.map.height); }
+    for (const d of g.decals) this.decal(d.x, d.y, d.r, d.ang, d.t);
     if (v.placing || v.selTower?.isFarm) this.gridOverlay(v);
     this.auras(v);
+    for (const p of g.pads) if (!p.building) this.pad(p, p === v.selPad);
     for (const p of g.pickups) this.pickup(p.x, p.y, p.age);
     // y-sorted world objects
     const objs: { y: number; f: () => void }[] = [];
+    for (const b of g.buildings) objs.push({ y: b.y + 30, f: () => this.building(b, b === v.selBuilding) });
     for (const t of g.towers) objs.push({ y: t.y, f: () => this.tower(t, t === v.selTower) });
     for (const u of g.units) if (!u.garrison) objs.push({ y: u.y, f: () => this.unit(u, v.selSquad === u.squad) });
     for (const e of g.enemies) if (!e.data.flying) objs.push({ y: e.y, f: () => this.enemy(e) });
@@ -48,7 +105,13 @@ export class Renderer {
     for (const p of g.projectiles) this.projectile(p);
     for (const a of g.acids) this.acid(a);
     for (const e of g.effects) this.effect(e);
+    for (const st of g.strikes) this.strike(st);
     if (v.selSquad) this.rally(v.selSquad);
+    const rb = v.rallyFor ?? (v.selBuilding?.data.id === 'barracks' ? v.selBuilding : null);
+    if (rb) this.flag(rb.door, rb.rally, '#ffd84a');
+    if (v.power === 'mac' && v.mouse) this.macPreview(v.mouse.x, v.mouse.y);
+    if (v.power === 'heal' && v.mouse) { c.setLineDash([8, 6]); this.ringAt(v.mouse.x, v.mouse.y, HEAL.radius, '#9ff7b0', 3); c.setLineDash([]); }
+    if (v.rallyFor && v.mouse) { c.globalAlpha = 0.7; this.ringAt(v.mouse.x, v.mouse.y, 22, '#ffd84a', 3); c.globalAlpha = 1; }
     if (v.placing && v.hoverCell) this.ghost(v.placing, v.hoverCell);
     if (v.deploying && v.mouse) { c.globalAlpha = 0.7; this.ringAt(v.mouse.x, v.mouse.y, 24, '#7fd3ff', 3); c.globalAlpha = 1; }
   }
@@ -92,6 +155,92 @@ export class Renderer {
     this.ctx.globalAlpha = 0.65;
     this.towerImg(d.sprite, 0, p.x, p.y, t0.visual, 0, false);
     this.ctx.globalAlpha = 1;
+  }
+  private flag(from: { x: number; y: number }, r: { x: number; y: number }, col: string) {
+    const c = this.ctx;
+    c.strokeStyle = col; c.lineWidth = 2; c.setLineDash([6, 5]); c.beginPath(); c.moveTo(from.x, from.y); c.lineTo(r.x, r.y); c.stroke(); c.setLineDash([]);
+    c.fillStyle = col; c.beginPath(); c.moveTo(r.x, r.y); c.lineTo(r.x, r.y - 30); c.lineTo(r.x + 20, r.y - 23); c.lineTo(r.x, r.y - 16); c.fill();
+    c.strokeStyle = '#1d2128'; c.lineWidth = 2; c.beginPath(); c.moveTo(r.x, r.y); c.lineTo(r.x, r.y - 30); c.stroke();
+  }
+  // ---------------------------------------------------------------- base layer
+  private decal(x: number, y: number, r: number, ang: number, t: number) {
+    const im = IMG.fx_crater; if (!im) return;
+    const c = this.ctx; c.globalAlpha = Math.max(0, Math.min(0.85, (40 - t) / 10));
+    this.img(im, x, y, r * 2.1, false, ang); c.globalAlpha = 1;
+  }
+  private pad(p: BuildPad, sel: boolean) {
+    const c = this.ctx, im = IMG.pad_empty;
+    if (im) { const [w, h] = this.fitWH(im, PAD_PX); c.drawImage(im, p.x - w / 2, p.y - h / 2, w, h); }
+    const pulse = 0.5 + 0.5 * Math.sin(this.g.time * 3 + p.index);
+    this.ringAt(p.x, p.y, 50 + pulse * 4, sel ? '#ffd84a' : `rgba(127,211,255,${0.25 + pulse * 0.3})`, sel ? 3 : 2);
+    this.label(p.x, p.y, '+', sel ? '#ffd84a' : '#cfeeff', 26);
+  }
+  private building(b: Building, sel: boolean) {
+    const c = this.ctx, g = this.g, px = b.isHQ ? HQ_PX : BLD_PX;
+    const tier = Math.max(0, b.tier), vis = b.t.visual, sz = px * (vis.scale ?? 1), footY = b.y + (b.isHQ ? 70 : 46);
+    if (sel && b.t.stats.gun) this.range(b.x, b.y, b.t.stats.gun.range);
+    if (b.pad && IMG.pad_empty) { const [w, h] = this.fitWH(IMG.pad_empty, PAD_PX); c.drawImage(IMG.pad_empty, b.x - w / 2, b.y - h / 2, w, h); }
+    if (vis.glow && b.built) {
+      const gr = c.createRadialGradient(b.x, footY - 6, 6, b.x, footY - 6, sz * 0.55);
+      gr.addColorStop(0, vis.glow + '88'); gr.addColorStop(1, vis.glow + '00');
+      c.fillStyle = gr; c.beginPath(); c.ellipse(b.x, footY - 6, sz * 0.6, sz * 0.24, 0, 0, 7); c.fill();
+    }
+    this.shadowAt(b.x + 6, footY - 8, sz * 0.48, sz * 0.16, 0.4);
+    const im = body(b.data.sprite, tier);
+    if (im) {
+      const [w, h] = this.fitWH(im, sz);
+      if (!b.built) { // first construction: the structure rises out of the scaffold
+        const k = b.progress, sc = IMG.pad_build;
+        c.save(); c.beginPath(); c.rect(b.x - w, footY - h * k, w * 2, h * k + 4); c.clip();
+        c.globalAlpha = 0.55 + 0.45 * k; this.feet(im, b.x, footY, w, h, false, 0.85 + 0.15 * k, 0.85 + 0.15 * k); c.restore(); c.globalAlpha = 1;
+        if (sc) { const [sw, sh] = this.fitWH(sc, sz * 0.9); this.feet(sc, b.x, footY + 4, sw, sh); }
+      } else {
+        const breathe = 1 + Math.sin(g.time * 1.6 + b.uid) * 0.006;
+        this.feet(b.hitFlash > 0 ? flashOf(im) : im, b.x, footY, w, h, false, 1, breathe);
+        if (b.build && IMG.pad_build) { c.globalAlpha = 0.75; const [sw, sh] = this.fitWH(IMG.pad_build, sz * 0.8); this.feet(IMG.pad_build, b.x + sz * 0.18, footY + 6, sw * 0.6, sh * 0.6); c.globalAlpha = 1; }
+        if (b.recoil > 0.5) this.additive(IMG.fx_muzzle, b.x + Math.cos(b.aim) * 34, b.y - 70 + Math.sin(b.aim) * 10, 30 + tier * 8, b.aim, b.recoil);
+        if (b.data.id === 'reactor') this.additive(IMG.fx_magic ?? IMG.fx_spark, b.x, footY - h * 0.62, 40 + tier * 14, g.time, 0.3 + 0.2 * Math.sin(g.time * 3));
+      }
+    }
+    if (b.build) this.bar(b.x, footY - sz * 0.92, 70, b.progress, '#ffd84a');
+    if (b.built) this.pips(b.x, footY + 10, tier, vis.glow);
+    if (b.health.frac < 0.999 || b.isHQ) this.bar(b.x, footY - sz * 0.92 - (b.build ? 9 : 0), b.isHQ ? 110 : 64, b.health.frac, b.isHQ ? '#ff6b6b' : '#5fe06a');
+    if (b.data.id === 'barracks' && b.queue.length) {
+      const o = b.queue[0];
+      this.label(b.x, footY - sz * 0.92 - 16, o.held ? `⏸ ${o.held}` : `🪖 ${Math.round((o.t / o.dur) * 100)}% (+${b.queue.length - 1})`, o.held ? '#ff8a7a' : '#cfeeff', 12);
+    }
+    if (sel) { c.strokeStyle = '#ffd84a'; c.lineWidth = 2.5; c.setLineDash([7, 5]); c.beginPath(); c.ellipse(b.x, footY - 6, sz * 0.5, sz * 0.2, 0, 0, 7); c.stroke(); c.setLineDash([]); }
+  }
+  private macStripPath(x: number, y: number, ang: number) {
+    const c = this.ctx; c.save(); c.translate(x, y); c.rotate(ang); c.beginPath(); c.rect(-MAC.length / 2, -MAC.width / 2, MAC.length, MAC.width); c.restore();
+  }
+  private macPreview(mx: number, my: number) {
+    const g = this.g, nl = g.nearestLane({ x: mx, y: my });
+    const p = g.paths[nl.lane].at(nl.d), on = nl.dist < 160;
+    const x = on ? p.x : mx, y = on ? p.y : my, c = this.ctx;
+    this.macStripPath(x, y, p.ang);
+    c.fillStyle = 'rgba(255,80,40,0.18)'; c.fill(); c.strokeStyle = 'rgba(255,120,60,0.9)'; c.lineWidth = 3; c.setLineDash([12, 8]); c.stroke(); c.setLineDash([]);
+  }
+  private strike(st: Strike) {
+    const c = this.ctx;
+    if (st.kind === 'mac') {
+      if (st.t < MAC.delay) {
+        const k = st.t / MAC.delay, pulse = 0.5 + 0.5 * Math.sin(st.t * 30);
+        this.macStripPath(st.x, st.y, st.ang);
+        c.fillStyle = `rgba(255,60,30,${0.12 + 0.2 * pulse})`; c.fill(); c.strokeStyle = '#ff5030'; c.lineWidth = 3; c.stroke();
+        // incoming round: a white-hot streak dropping from orbit
+        const ty = st.y - (1 - k) * 900;
+        c.strokeStyle = 'rgba(255,240,200,0.9)'; c.lineWidth = 6 + 10 * k; c.beginPath(); c.moveTo(st.x - 40, ty - 300); c.lineTo(st.x, ty); c.stroke();
+        this.additive(IMG.fx_spark ?? IMG.fx_boom, st.x, ty, 60 + 60 * k, st.t * 5);
+      } else if (st.segs < 7) {
+        this.additive(IMG.fx_boom_fire, st.x, st.y, MAC.width * 3, st.t, 0.6);
+      }
+    } else if (st.kind === 'heal' && st.t < 0.7) {
+      const k = st.t / 0.7, im = IMG.fx_heal_pod, py = st.y - (1 - k) * 500;
+      this.shadowAt(st.x, st.y + 10, 30 * k + 6, 9 * k + 3, 0.4);
+      c.setLineDash([6, 6]); this.ringAt(st.x, st.y, HEAL.radius, 'rgba(159,247,176,0.8)', 2); c.setLineDash([]);
+      if (im) { const [w, h] = this.fitWH(im, 64); this.feet(im, st.x, py + 14, w, h); }
+    }
   }
   private rally(sq: Squad) {
     const c = this.ctx, r = sq.rally;
@@ -271,7 +420,7 @@ export class Renderer {
       footY = e.y;
     }
     if (e.slowAmt > 0) { c.fillStyle = 'rgba(150,220,255,0.3)'; c.beginPath(); c.ellipse(e.x, e.y, w * 0.5, h * 0.45, 0, 0, 7); c.fill(); }
-    if (d.boss || (d.hp > 1 && e.hp < d.hp)) this.bar(e.x, e.y - h * 0.6 - 4, d.boss ? 70 : 28, e.hp / d.hp, d.boss ? '#ff5a5a' : '#ffb347');
+    if (d.boss || (e.maxHp > 1 && e.hp < e.maxHp)) this.bar(e.x, e.y - h * 0.6 - 4, d.boss ? 70 : 28, e.hp / e.maxHp, d.boss ? '#ff5a5a' : '#ffb347');
     void footY;
   }
 

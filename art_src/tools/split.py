@@ -88,6 +88,12 @@ sheet('depot', ['unsc_depot_0', 'unsc_depot_1', 'unsc_depot_2'], T)
 sheet('turret_bases', ['turret_base_0', 'turret_base_1', 'turret_base_2'], T)
 sheet('auto_heads', ['unsc_autoturret_head_0', 'unsc_autoturret_head_1', 'unsc_autoturret_head_2'], T)
 sheet('rail_heads', ['unsc_rail_head_0', 'unsc_rail_head_1', 'unsc_rail_head_2'], T)
+B = 320  # base buildings
+sheet('bld_hq', ['hq_0', 'hq_1', 'hq_2'], 384)
+sheet('bld_supply', ['supply_0', 'supply_1', 'supply_2'], B)
+sheet('bld_reactor', ['reactor_0', 'reactor_1', 'reactor_2'], B)
+sheet('bld_barracks', ['barracks_0', 'barracks_1', 'barracks_2'], B)
+sheet('bld_misc', ['pad_empty', 'pad_build', 'fx_heal_pod', 'fx_crater'], [B, B, 160, 256])
 U = 160
 sheet('marine', ['marine_0', 'marine_1', 'marine_2'], U)
 sheet('msoldier', ['monkey_soldier_0', 'monkey_soldier_1', 'monkey_soldier_2'], U)

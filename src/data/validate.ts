@@ -17,6 +17,9 @@ import { UNITS } from './units';
 import { ENEMIES } from './enemies';
 import { WAVES } from './waves';
 import ART_MANIFEST from '../render/art.manifest.json';
+import { BUILDINGS } from './buildings';
+import { MAPS } from './maps';
+import type { BuildingData, BuildingTier } from '../core/types';
 
 export interface Issue { owner: string; tier: number; msg: string }
 
@@ -89,6 +92,28 @@ export function validateUnit(u: UnitData): Issue[] {
   return out;
 }
 
+export function buildingPower(t: BuildingTier): number {
+  const s = t.stats, g = s.gun;
+  return s.maxHp * 0.01 + (s.income ?? 0) * (s.payoutsPerMin ?? 0) / 10 + (s.waveBonus ?? 0) / 20 + (s.tech ?? 0) * 3 + (s.pop ?? 0) +
+    (s.energyRegen ?? 0) * 4 + (s.trainSpeed ?? 0) * 3 + (s.queue ?? 0) + (g ? g.damage * g.fireRate * g.pierce * (g.range / 150) : 0);
+}
+/** Buildings follow the same rule: every tier strictly stronger and visibly more advanced. */
+export function validateBuilding(b: BuildingData): Issue[] {
+  const out: Issue[] = [];
+  b.tiers.forEach((tier, i) => {
+    if (!(tier.cost > 0) || !(tier.buildTime > 0)) out.push({ owner: b.id, tier: i, msg: 'cost and buildTime must be > 0' });
+    if (!ART.has(`${b.sprite}_${i}`)) out.push({ owner: b.id, tier: i, msg: `no tier art ${b.sprite}_${i}` });
+    if (i === 0) return;
+    const a = b.tiers[i - 1];
+    const { gun: ga, ...sa } = a.stats, { gun: gb, ...sb } = tier.stats;
+    compareNumbers(b.id, i, 'stats', sa, sb, out);
+    compareNumbers(b.id, i, 'gun', ga, gb, out);
+    if (!(buildingPower(tier) > buildingPower(a))) out.push({ owner: b.id, tier: i, msg: 'overall power did not increase' });
+    checkVisual(b.id, i, a.visual, tier.visual, out);
+  });
+  return out;
+}
+
 /** Art rule: every tier ships its own painted sprite (so each upgrade visibly changes). */
 const ART = new Set(Object.keys(ART_MANIFEST as Record<string, number[]>));
 const artKey = (k: string) => k.replace(/^proc:/, '');
@@ -104,6 +129,18 @@ export function validateAll(): Issue[] {
   const out: Issue[] = validateArt();
   for (const t of TOWERS) out.push(...validateTower(t));
   for (const u of UNITS) out.push(...validateUnit(u));
+  for (const b of BUILDINGS) out.push(...validateBuilding(b));
+  for (const k of ['pad_empty', 'pad_build', 'fx_heal_pod', 'fx_crater']) if (!ART.has(k)) out.push({ owner: 'base', tier: 0, msg: `no art ${k}` });
+  for (const u of UNITS) {
+    if (!(u.population > 0)) out.push({ owner: u.id, tier: 0, msg: 'population must be > 0' });
+    let prev = -1;
+    u.tiers.forEach((t, i) => { const need = t.tech ?? i; if (need < prev) out.push({ owner: u.id, tier: i, msg: 'research tech requirement goes down' }); prev = need; });
+  }
+  for (const m of MAPS) {
+    if (!m.lanes?.length) out.push({ owner: m.id, tier: 0, msg: 'map has no lanes' });
+    for (const [li, l] of (m.lanes ?? []).entries()) { const e = l[l.length - 1]; if (Math.hypot(e[0] - m.hq[0], e[1] - m.hq[1]) > 260) out.push({ owner: m.id, tier: li, msg: 'lane does not end at the HQ' }); }
+    if ((m.pads?.length ?? 0) < 4) out.push({ owner: m.id, tier: 0, msg: 'needs at least 4 build pads' });
+  }
   for (const e of Object.values(ENEMIES)) {
     if (e.children && !ENEMIES[e.children.id]) out.push({ owner: e.id, tier: 0, msg: `unknown child ${e.children.id}` });
     if (e.spawns && !ENEMIES[e.spawns.id]) out.push({ owner: e.id, tier: 0, msg: `unknown spawn ${e.spawns.id}` });

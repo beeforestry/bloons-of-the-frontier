@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Bloons of the Frontier</title>
   <link rel="icon" href="./assets/favicon.png" />
 </head>
@@ -10,7 +10,10 @@
   <header id="topbar">
     <div class="brand">🎈 Bloons <small>of the</small> Frontier</div>
     <div class="stat"><img src="./assets/ui/sun.png" alt="">¢ <b id="credits">0</b></div>
-    <div class="stat"><img src="./assets/ui/heart.png" alt=""><b id="lives">0</b></div>
+    <div class="stat" title="HQ hit points — if the HQ falls, the frontier is lost"><img src="./assets/ui/heart.png" alt="">HQ <b id="lives">0</b></div>
+    <div class="stat" title="Army population / cap (HQ + Reactors)">👥 <b id="pop">0</b></div>
+    <div class="stat" title="Tech level (Reactors)">⚛ <b id="tech">0</b></div>
+    <div class="stat energy" title="Leader-power energy">⚡ <b id="energy">0</b><span class="ebar"><i id="energy-fill"></i></span></div>
     <div class="stat">Wave <b id="wave">0</b></div>
     <div id="wave-info" class="wave-info"></div>
     <div class="spacer"></div>
@@ -26,6 +29,8 @@
       <canvas id="game"></canvas>
       <div id="mode-hint"></div>
       <div id="toasts"></div>
+      <div id="powers"></div>
+      <canvas id="minimap" width="220" height="148"></canvas>
     </section>
     <aside id="side">
       <div id="faction-tabs"></div>
@@ -44,7 +49,7 @@
       <p>Primates, Flora and the UNSC Frontier hold the line against bloons and the bug hive.
         Build towers, deploy troops, buff them with Cover, farm Credits and keep your farms organized.</p>
       <div id="maps"></div>
-      <p class="hint">Click a card to place · click a tower to upgrade/sell/target · deploy a squad then click to set its rally point · Space starts a wave</p>
+      <p class="hint">Drag / WASD / screen edges pan · wheel or pinch zooms · minimap jumps · click a glowing pad by your HQ to build Supply, Reactors and Barracks · ☄ MAC Blast and ✚ Heal Drop use Energy · Space starts a wave · keep the HQ alive</p>
     </div>
   </div>
   <div id="gameover" class="overlay"></div>

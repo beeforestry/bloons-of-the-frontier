@@ -2,7 +2,8 @@
 @font-face { font-family: Lilita; src: url('/assets/fonts/LilitaOne-Regular.ttf'); }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: #14191f; color: #eef2f6; font-family: Fredoka, system-ui, sans-serif; overflow: hidden; }
-body { display: grid; grid-template-rows: auto 1fr auto; }
+body { display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr); }
+body > * { min-width: 0; }
 button { font-family: inherit; }
 .btn { background: linear-gradient(#3b4654, #2a323d); color: #fff; border: 2px solid #0e1217; border-radius: 10px; padding: 6px 12px; cursor: pointer; font-size: 14px; box-shadow: 0 2px 0 #0007; }
 .btn:hover:not(:disabled) { filter: brightness(1.2); }
@@ -19,12 +20,13 @@ button { font-family: inherit; }
 .stat b { font-family: Lilita, Fredoka; color: #ffe14d; min-width: 34px; }
 .wave-info { font-size: 13px; color: #b9c4d0; max-width: 380px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spacer { flex: 1; }
-#layout { display: grid; grid-template-columns: 1fr 330px; min-height: 0; }
-#stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; background: #0b0f13; }
-#game { max-width: 100%; max-height: 100%; aspect-ratio: 1168 / 784; display: block; cursor: crosshair; image-rendering: auto; }
+#layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 0; }
+#side { min-width: 0; }
+#stage { position: relative; min-height: 0; min-width: 0; background: #0b0f13; overflow: hidden; }
+#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; image-rendering: auto; touch-action: none; }
 #mode-hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: #000a; padding: 4px 12px; border-radius: 8px; font-size: 13px; pointer-events: none; }
 #mode-hint:empty { display: none; }
-#toasts { position: absolute; bottom: 10px; left: 10px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+#toasts { position: absolute; bottom: 90px; left: 10px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
 .toast { background: #111a; border-left: 4px solid #ffd24a; padding: 6px 12px; border-radius: 6px; font-size: 14px; transition: opacity .5s; max-width: 520px; backdrop-filter: blur(2px); }
 .toast.out { opacity: 0; }
 #side { display: flex; flex-direction: column; background: #1b222b; border-left: 2px solid #0b0e12; min-height: 0; }
@@ -79,3 +81,59 @@ button { font-family: inherit; }
 .map-pick:hover { border-color: #ffd24a; }
 .map-pick img { width: 280px; display: block; border-radius: 8px; margin-bottom: 6px; }
 .hint { color: #9fb0c0; font-size: 13px; }
+
+/* ---- Base layer: pop / tech / energy, minimap, leader powers, build + train panels */
+.stat.full b { color: #ff8a7a; }
+.stat.energy { min-width: 130px; position: relative; }
+.ebar { position: relative; width: 70px; height: 10px; background: #000; border-radius: 5px; overflow: hidden; border: 1px solid #2b3a4a; }
+#energy-fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #4fb6ff, #c4f1ff); width: 0; transition: width .15s; }
+#minimap { position: absolute; right: 10px; bottom: 10px; width: 220px; border: 2px solid #0b0e12; border-radius: 8px; box-shadow: 0 4px 14px #000a; cursor: pointer; background: #000; touch-action: none; }
+#powers { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 8px; }
+.power { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; width: 82px; padding: 5px 4px; background: linear-gradient(#3a2a1a, #22180e); border: 2px solid #0b0e12; border-radius: 12px; color: #fff; cursor: pointer; box-shadow: 0 3px 10px #000a; }
+.power .pi { font-size: 22px; line-height: 1; }
+.power .pn { font-size: 11px; font-weight: 600; }
+.power .pc { font-size: 11px; color: #9fdcff; }
+.power .pcd { position: absolute; left: 0; bottom: 0; width: 100%; background: #000a; pointer-events: none; }
+.power.on { outline: 3px solid #ffd84a; background: linear-gradient(#7a4a12, #4a2a08); }
+.power.poor { filter: grayscale(.7) brightness(.8); }
+.sp-icon { font-size: 40px; }
+.bld-list, .train-list { display: flex; flex-direction: column; gap: 5px; margin: 6px 0; }
+.card.bld { --fc: #7fd3ff; width: 100%; }
+.card.bld:disabled { opacity: .5; cursor: default; }
+.train-list { flex-direction: row; flex-wrap: wrap; }
+.btn.train { display: flex; align-items: center; gap: 4px; padding: 3px 6px; font-size: 12px; text-align: left; flex: 1 1 46%; }
+.btn.train small { color: #aebccb; }
+.queue { display: flex; gap: 4px; margin: 4px 0; min-height: 34px; align-items: center; }
+.qi { position: relative; width: 38px; height: 34px; background: #26303c; border: 1px solid #0b0e12; border-radius: 6px; padding: 2px; cursor: pointer; }
+.qi i { position: absolute; left: 0; bottom: 0; height: 3px; background: #7fd3ff; }
+.qi.held { outline: 2px solid #ff8a7a; }
+.qi em { position: absolute; left: 0; top: 100%; font-size: 9px; color: #ff8a7a; white-space: nowrap; font-style: normal; }
+.lock { color: #ff8a7a; }
+.troop .deploy.locked { filter: grayscale(1); }
+
+/* ---- Mobile: canvas on top, bars stacked, side panel becomes a bottom drawer */
+@media (max-width: 820px) {
+  body { grid-template-rows: auto 1fr auto; }
+  #topbar { flex-wrap: wrap; gap: 6px; padding: 4px 6px; }
+  .brand { display: none; }
+  .stat { font-size: 14px; padding: 2px 6px; }
+  .stat img { width: 16px; height: 16px; }
+  .wave-info { display: none; }
+  .spacer { display: none; }
+  .btn.small { padding: 4px 7px; font-size: 12px; }
+  #layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  #side { border-left: 0; border-top: 2px solid #0b0e12; max-height: 38vh; }
+  #tower-cards { flex-direction: row; overflow-x: auto; overflow-y: hidden; flex: none; }
+  #tower-cards .card { flex: none; width: 210px; }
+  .faction-blurb { display: none; }
+  #sel-panel { overflow-y: auto; max-height: 30vh; }
+  #minimap { width: 120px; right: 6px; bottom: 6px; }
+  #powers { left: 6px; transform: none; bottom: 6px; }
+  .power { width: 64px; }
+  #bottombar .label { display: none; }
+  .organize { font-size: 12px; padding: 4px 6px; }
+  .map-pick img { width: 150px; }
+  #maps { flex-wrap: wrap; }
+  .panel { padding: 14px; }
+  .panel h1 { font-size: 28px; }
+}

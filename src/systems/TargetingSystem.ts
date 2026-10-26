@@ -16,9 +16,9 @@ export function pickTarget(enemies: Enemy[], origin: Vec, range: number, mode: T
   for (const e of inRange(enemies, origin, range, f)) {
     let s: number;
     switch (mode) {
-      case TargetingMode.First: s = e.progress; break;
-      case TargetingMode.Last: s = -e.progress; break;
-      case TargetingMode.Strong: s = e.strength * 1e4 + e.progress; break;
+      case TargetingMode.First: s = -e.remaining; break;
+      case TargetingMode.Last: s = e.remaining; break;
+      case TargetingMode.Strong: s = e.strength * 1e4 - e.remaining; break;
       case TargetingMode.Close: s = -dist2(e, origin); break;
     }
     if (s > score) { score = s; best = e; }

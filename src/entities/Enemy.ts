@@ -29,9 +29,16 @@ export class Enemy {
   private spawnT: number; private acidT: number;
   private divert = 0;
   readonly strengthOfChildren: number;
+  readonly maxHp: number;
+  /** Bug parked at the HQ gate, mauling the base. */
+  atBase = false;
+  /** Which lane (Game.paths index) this enemy follows. */
+  lane: number;
+  pathLen = 1;
 
-  constructor(readonly data: EnemyData, progress: number, lateral = 0) {
-    this.hp = data.hp;
+  constructor(readonly data: EnemyData, progress: number, lateral = 0, lane = 0, hpMul = 1) {
+    this.hp = this.maxHp = Math.round(data.hp * hpMul);
+    this.lane = lane;
     this.progress = progress;
     this.lateral = lateral || (data.swarm ? rand(-data.swarm, data.swarm) : 0);
     this.leapT = data.leap ? data.leap.every * rand(0.5, 1) : 0;
@@ -40,12 +47,17 @@ export class Enemy {
     this.strengthOfChildren = data.children ? data.children.count * totalStrength(data.children.id) : 0;
   }
   get strength() { return this.hp + this.strengthOfChildren; }
+  /** Distance left to the HQ: comparable across lanes of different lengths (First/Last targeting). */
+  get remaining() { return this.pathLen - this.progress; }
+  /** MAC Blast knockback. */
+  knockback(d: number) { if (!this.alive) return; this.progress = Math.max(0, this.progress - d); this.atBase = false; this.blockedBy = null; this.leapAnim = null; }
 
   update(g: Game, dt: number) {
     const d = this.data;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.slowAmt = 0; }
     const speedMul = 1 - this.slowAmt;
+    const path = g.paths[this.lane] ?? g.path; this.pathLen = path.length;
 
     // --- blocking by troops (ground only; Bile Titans stomp through)
     if (!d.flying && !this.leapAnim) {
@@ -66,7 +78,7 @@ export class Enemy {
       this.spawnT -= dt;
       if (this.spawnT <= 0) {
         this.spawnT = d.spawns.every;
-        for (let i = 0; i < d.spawns.count; i++) g.spawnEnemy(d.spawns.id, Math.max(0, this.progress - 10 - i * 8));
+        for (let i = 0; i < d.spawns.count; i++) g.spawnEnemy(d.spawns.id, Math.max(0, this.progress - 10 - i * 8), 0, this.lane);
         g.fx({ kind: 'ring', x: this.x, y: this.y, r: 30, color: '#e8c35a', dur: 0.4 });
       }
     }
@@ -87,6 +99,10 @@ export class Enemy {
     } else if (this.blockedBy) {
       // melee the blocker
       this.blockedBy.takeDamage(g, (d.meleeDps ?? 0) * dt);
+    } else if (this.atBase) {
+      // bugs that reach the gate maul the HQ until killed
+      g.damageHQ((d.meleeDps ?? 0) * 0.25 * dt, this);
+      if (Math.random() < dt * 1.5) g.fx({ kind: 'text', x: this.x, y: this.y - 20, text: '⚔', color: '#ff8a7a', dur: 0.3 });
     } else {
       this.progress += d.speed * speedMul * dt;
       if (d.boss && d.family === 'bug' && d.meleeDps) g.stompUnits(this, d.meleeDps * dt);
@@ -95,23 +111,23 @@ export class Enemy {
     if (d.swarm && d.swarm > 10 && !this.blockedBy) {
       const u = g.nearestTroop(this, 80);
       if (u) {
-        const p = g.path.at(this.progress), nx = -Math.sin(p.ang), ny = Math.cos(p.ang);
+        const p = path.at(this.progress), nx = -Math.sin(p.ang), ny = Math.cos(p.ang);
         const side = (u.x - p.x) * nx + (u.y - p.y) * ny;
         this.divert += Math.sign(side) * 60 * dt;
         this.divert = Math.max(-36, Math.min(36, this.divert));
       } else this.divert *= 1 - Math.min(1, dt * 1.5);
     }
     this.phase += dt * 6;
-    const p = g.path.at(this.progress);
+    const p = path.at(this.progress);
     const wob = d.swarm ? Math.sin(this.phase) * Math.min(4, d.swarm * 0.25) : 0;
     const off = this.lateral + wob + this.divert;
     this.x = p.x - Math.sin(p.ang) * off;
     this.y = p.y + Math.cos(p.ang) * off;
     if (this.leapAnim) this.y -= Math.sin(Math.min(1, this.leapAnim.t) * Math.PI) * 30;
     this.ang = p.ang;
-    if (this.progress >= g.path.length) {
-      this.alive = false;
-      g.leak(this, totalLeak(d.id));
+    if (this.progress >= path.length - (d.family === 'bug' && d.meleeDps ? 6 + (this.uid % 5) * 8 : 0)) {
+      if (d.family === 'bug' && d.meleeDps) { this.atBase = true; this.progress = Math.min(this.progress, path.length - 6); }
+      else { this.alive = false; g.leak(this, totalLeak(d.id)); }
     }
   }
 
@@ -142,7 +158,7 @@ export class Enemy {
     if (d.children) {
       const child = ENEMIES[d.children.id];
       for (let i = 0; i < d.children.count; i++) {
-        const e = g.spawnEnemy(child.id, Math.max(0, this.progress - i * 10), d.family === 'bloon' ? (i - (d.children.count - 1) / 2) * 10 : 0);
+        const e = g.spawnEnemy(child.id, Math.max(0, this.progress - i * 10), d.family === 'bloon' ? (i - (d.children.count - 1) / 2) * 10 : 0, this.lane, this.maxHp / Math.max(1, d.hp));
         if (i === 0 && overflow > 0 && d.family === 'bloon') e.takeDamage(g, overflow, 'magic');
       }
     }

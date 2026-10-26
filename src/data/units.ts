@@ -14,7 +14,7 @@ export const UNITS: UnitData[] = [
   {
     id: 'marine', name: 'Frontier Marines', faction: Faction.UNSC, role: 'troop', sprite: 'marine',
     desc: 'Squad of 3 riflemen. Hit air & ground. Drop in by pod at your rally point.',
-    squadSize: 3, maxSquads: 4, cooldown: 6,
+    squadSize: 3, maxSquads: 6, cooldown: 6, population: 2, tech: 0, trainTime: 7,
     tiers: [
       { name: 'Marines', cost: 225, blurb: 'Assault rifles.', visual: { level: 0, scale: 1 },
         stats: { maxHp: 40, damage: 1, attackRate: 4, range: 120, speed: 70, armor: 0 },
@@ -31,7 +31,7 @@ export const UNITS: UnitData[] = [
   {
     id: 'monkey_soldier', name: 'Monkey Soldiers', faction: Faction.Primates, role: 'troop', sprite: 'monkey_soldier',
     desc: 'Pair of dart-throwing monkey commandos. Fast and cheap.',
-    squadSize: 2, maxSquads: 4, cooldown: 5,
+    squadSize: 2, maxSquads: 6, cooldown: 5, population: 1, tech: 0, trainTime: 5,
     tiers: [
       { name: 'Monkey Soldiers', cost: 160, blurb: 'Dart slingers.', visual: { level: 0, scale: 1 },
         stats: { maxHp: 30, damage: 2, attackRate: 1.5, range: 90, speed: 85, armor: 0 },
@@ -48,7 +48,7 @@ export const UNITS: UnitData[] = [
     // Line Watch: four painted tiers (militia -> knight -> musketeer -> elite).
     id: 'line_watch', name: 'Line Watch', faction: Faction.UNSC, role: 'troop', sprite: 'line_watch',
     desc: 'Frontier militia that blocks bugs. Tier 3 Musketeers shoot balloons too.',
-    squadSize: 3, maxSquads: 3, cooldown: 7,
+    squadSize: 3, maxSquads: 4, cooldown: 7, population: 3, tech: 1, trainTime: 9,
     tiers: [
       { name: 'Militia', cost: 200, blurb: 'Sword & shield. Melee, ground only.', visual: { level: 0, scale: 1 },
         stats: { maxHp: 35, damage: 3, attackRate: 1.2, range: 30, speed: 60, armor: 0 },
@@ -68,7 +68,7 @@ export const UNITS: UnitData[] = [
   {
     id: 'farmhand', name: 'Sprout Farmhand', faction: Faction.Flora, role: 'worker', sprite: 'farmhand',
     desc: 'WORKER. Collects dropped credits, repairs towers, and can ORGANIZE FARMS into a tight grid to free up space.',
-    squadSize: 1, maxSquads: 4, cooldown: 3,
+    squadSize: 1, maxSquads: 4, cooldown: 3, population: 1, tech: 0, trainTime: 4,
     tiers: [
       { name: 'Farmhand', cost: 75, blurb: 'Collect, repair, organize.', visual: { level: 0, scale: 1 },
         stats: { maxHp: 25, damage: 0, attackRate: 0, range: 0, speed: 95, armor: 0, repair: 8, pickupRadius: 170 },

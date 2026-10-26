@@ -21,7 +21,7 @@ export const WAVES: WaveData[] = [
   W(260, ['moab', 1, 1, 4], ['yellow', 24, 0.3, 0], ['hunter', 16, 0.5, 6]),
   W(270, ['ceramic', 14, 0.7, 0], ['charger', 6, 1.6, 4], ['brood', 3, 3, 8]),
   W(280, ['bile_titan', 2, 8, 0], ['pink', 40, 0.2, 2], ['hunter', 20, 0.35, 6]),
-  W(300, ['moab', 1, 1, 10], ['charger', 8, 1.2, 0], ['ceramic', 12, 0.7, 4], ['scavenger', 40, 0.15, 6]),
-  W(320, ['moab', 2, 9, 0], ['bile_titan', 2, 8, 4], ['lead', 14, 0.6, 6], ['brood', 4, 2.5, 8]),
-  W(0, ['moab', 3, 7, 0], ['bile_titan', 3, 6, 3], ['charger', 10, 1, 2], ['ceramic', 16, 0.5, 6], ['hunter', 24, 0.3, 9]),
+  W(300, ['moab', 2, 6, 10], ['charger', 8, 1.2, 0], ['ceramic', 12, 0.7, 4], ['scavenger', 40, 0.15, 6]),
+  W(320, ['moab', 3, 7, 0], ['bile_titan', 2, 8, 4], ['lead', 14, 0.6, 6], ['brood', 4, 2.5, 8]),
+  W(0, ['moab', 5, 5, 0], ['bile_titan', 3, 6, 3], ['charger', 10, 1, 2], ['ceramic', 16, 0.5, 6], ['hunter', 24, 0.3, 9]),
 ];
