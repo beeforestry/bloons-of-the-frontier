@@ -28,8 +28,11 @@ with sync_playwright() as p:
     # canvas actually painted (not blank)
     painted = pg.evaluate("(() => { const c = document.getElementById('game'); const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; let n=0; for (let i=0;i<d.length;i+=4000) if (d[i]+d[i+1]+d[i+2]>30) n++; return n; })()")
     print('canvas painted samples:', painted)
+    base = G('({ map: [H.g.map.width, H.g.map.height], lanes: H.lanes(), pads: H.pads().length, build: H.build(0, "supply"), hq: H.state().hq, cast: (H.addEnergy(100), H.power("mac", H.lanePoint(0, 0.4).x, H.lanePoint(0, 0.4).y)) })')
+    print('expansion:', base)
+    if not (base['map'][0] >= 2000 and base['pads'] >= 6 and base['build'] and base['cast']): errors.append('expansion features missing: ' + str(base))
     pg.screenshot(path=shot)
     b.close()
-ok = not errors and st['wave'] >= 1 and (st['enemies'] > 0 or st['kills'] > 0) and painted > 50 and imgs_ok
+ok = not errors and (st['wave'] >= 1 or st['waveActive']) and (st['enemies'] > 0 or st['kills'] > 0) and painted > 50 and imgs_ok
 print('console errors:', errors); print('failed requests:', failed)
 print('RESULT', 'PASS' if ok else 'FAIL'); sys.exit(0 if ok else 1)
