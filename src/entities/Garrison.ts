@@ -64,11 +64,16 @@ export class Obstacle {
   hp: number; readonly maxHp: number;
   cells: Cell[] = [];
   hitFlash = 0;
-  constructor(readonly kind: 'rock' | 'log', public x: number, public y: number, public ang = 0) { this.hp = this.maxHp = kind === 'rock' ? 140 : 90; }
+  /** Set when this obstacle chokes a blocked shortcut trail. */
+  shortcut: import('../systems/Shortcuts').Shortcut | null = null;
+  constructor(readonly kind: 'rock' | 'log', public x: number, public y: number, public ang = 0, hp?: number) { this.hp = this.maxHp = hp ?? (kind === 'rock' ? 140 : 90); }
   get sprite() { return this.kind === 'rock' ? 'obs_rock' : 'obs_log'; }
-  /** Only explosive / fire blasts and the MAC can clear terrain. */
+  /** Only explosive / fire blasts and the MAC can clear terrain. A shortcut
+   *  rockslide only yields to big blasts (MAC / pods / Cherry) or Demolish,
+   *  so opening it is always a deliberate choice. */
   blast(g: Game, n: number) {
     if (!this.alive) return;
+    if (this.shortcut && n < 999) { if (Math.random() < 0.05) g.fx({ kind: 'text', x: this.x, y: this.y - 40, text: 'too solid — MAC or Demolish', color: '#d8c8a8', dur: 0.8 }); return; }
     this.hp -= n; this.hitFlash = 0.1;
     if (this.hp <= 0) g.clearObstacle(this);
   }

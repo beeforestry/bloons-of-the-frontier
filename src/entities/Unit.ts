@@ -8,6 +8,7 @@
 //   and runs OrganizeFarms().
 // Tiers are researched per troop type (g.unitTier) and apply to living units.
 // =============================================================================
+import { ARMORY_FX } from '../data/armory';
 import { TargetingMode, type AbilityId, type Formation, type Stance, type UnitData, type UnitTier, type Vec } from '../core/types';
 import { nextId, dist, rand } from '../core/math';
 import { BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
@@ -82,6 +83,7 @@ export class Unit implements Buffable {
   beamTo: Enemy | null = null;
   private appliedTier = -1;
   private appliedStars = 0;
+  private appliedPlating = false;
 
   constructor(readonly data: UnitData, readonly squad: Squad, readonly index: number, g: Game, at: Vec) {
     this.x = at.x; this.y = at.y;
@@ -120,16 +122,17 @@ export class Unit implements Buffable {
 
   protected syncTier(g: Game) {
     const tier = this.tier(g);
-    if (tier === this.appliedTier && this.stars === this.appliedStars) return;
+    const plated = g.armory.has('plating');
+    if (tier === this.appliedTier && this.stars === this.appliedStars && plated === this.appliedPlating) return;
     if (this.appliedTier >= 0 && tier !== this.appliedTier) g.fx({ kind: 'ring', x: this.x, y: this.y, r: 24, color: this.data.tiers[tier].visual.glow ?? '#fff', dur: 0.6 });
     if (this.stars > this.appliedStars) {
       g.fx({ kind: 'ring', x: this.x, y: this.y, r: 30, color: '#ffd84a', dur: 0.7 });
       g.fx({ kind: 'text', x: this.x, y: this.y - 34, text: '★'.repeat(this.stars) + ' Veteran!', color: '#ffd84a', dur: 1.1 });
       g.stats.promotions++;
     }
-    this.appliedTier = tier; this.appliedStars = this.stars;
+    this.appliedTier = tier; this.appliedStars = this.stars; this.appliedPlating = plated;
     const s = this.data.tiers[tier].stats;
-    this.health.setBase(s.maxHp * (1 + VET.hp * this.stars), s.armor);
+    this.health.setBase(s.maxHp * (1 + VET.hp * this.stars) * (plated ? 1 + ARMORY_FX.plating : 1), s.armor);
   }
 
   protected moveTo(p: Vec, speed: number, dt: number): boolean {
@@ -161,7 +164,7 @@ export class Unit implements Buffable {
     if (this.specialT > 0) this.specialT -= dt;
     this.beamTo = null;
 
-    const speed = t.stats.speed * (this.stimT > 0 ? STIM.speed : 1) * (sq.stance === 'retreat' ? 1.8 : 1);
+    const speed = t.stats.speed * (this.stimT > 0 ? STIM.speed : 1) * (sq.stance === 'retreat' ? 1.8 : 1) * (g.armory.has('servos') ? 1 + ARMORY_FX.servosSpeed : 1) * g.roadSpeedMul(this);
     const melee = t.stats.range < 60;
     const home = sq.slot(this.index);
     const stance = sq.stance;
@@ -190,10 +193,11 @@ export class Unit implements Buffable {
       if (this.garrison) { /* fire from cover */ }
       else if (this.data.vehicle) this.moveTo(home, speed, dt); // vehicles fire on the move
       else if (!target) {
-        // Aggressive: hunt enemies near the post, then gather scrap
+        // Aggressive: hunt enemies near the post, then gather scrap piles near
+        // the post (scrap is its own currency; Hold/Retreat squads don't wander).
         let chase: Enemy | null = null;
         if (stance === 'aggressive') chase = pickTarget(g.enemies, home, this.range(g) + 90, TargetingMode.Close, f);
-        const scrap = !chase && stance === 'aggressive' && dist(this, home) < 40 ? g.pickups.find((p) => p.alive && p.kind === 'scrap' && !p.claimedBy && dist(p, home) < 120) : undefined;
+        const scrap = !chase && stance === 'aggressive' && dist(this, home) < 40 ? g.pickups.find((p) => p.alive && p.kind === 'scrap' && !p.claimedBy && dist(p, home) < 220) : undefined;
         if (chase) this.moveTo(chase, speed, dt);
         else if (scrap) { scrap.claimedBy = this; this.moveTo(scrap, speed, dt); }
         else {

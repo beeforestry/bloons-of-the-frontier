@@ -1,7 +1,7 @@
 // Entry point: boot assets, map select, input handling, main loop, test hooks.
 import './style.css';
 import { Game } from './game/Game';
-import { Renderer, type ViewState } from './render/Renderer';
+import { Renderer, dmgTextPx, type ViewState } from './render/Renderer';
 import { Hud } from './ui/Hud';
 import { loadSprites, IMG } from './render/sprites';
 import { assetUrl } from './assetUrl';
@@ -192,7 +192,10 @@ function start(mapId: string) {
     const c = g.grid.worldToCell(p), tw = g.grid.occupant(c.c, c.r);
     if (tw) { hud.select(tw, null); return; }
     if (env) { g.toast(`${env.gName()}: select troops, then click/right-click it to garrison (−50% damage taken, +35% range)`); return; }
-    const ob = g.obstacles.find((o) => dist(o, p) < 50);
+    const ob = g.obstacles.find((o) => dist(o, p) < (o.shortcut ? 80 : 50));
+    if (ob?.shortcut && !sqs.length) { hud.selectShortcut(ob.shortcut); return; }
+    const osc = g.shortcuts.find((s) => s.open && Math.hypot(s.mid.x - p.x, s.mid.y - p.y) < 60);
+    if (osc && !sqs.length) { hud.selectShortcut(osc); return; }
     if (ob && !sqs.length) { g.toast(`${ob.kind === 'rock' ? 'Boulders' : 'Fallen tree'} — clear with explosives, a Cherry Pod or the MAC to free build space`); return; }
     const bl = g.buildings.find((b) => Math.abs(b.x - p.x) < (b.isHQ ? 100 : 62) && p.y > b.y - (b.isHQ ? 150 : 110) && p.y < b.y + (b.isHQ ? 80 : 56));
     if (bl && !sqs.length) { hud.selectBase(bl, null); return; }
@@ -340,7 +343,7 @@ function testHooks(g: Game, view: ViewState, hud: Hud, click: (p: Vec) => void, 
     addEnergy: (n: number) => { g.energy = Math.min(100, g.energy + n); },
     lanePoint: (lane: number, frac: number) => { const p = g.paths[lane % g.paths.length]; return p.at(p.length * frac); },
     lanes: () => g.paths.length,
-    sandbox: (tech = 2, pop = 60) => { g.techBonus = tech; g.popBonus = pop; g.deployCd = {}; },
+    sandbox: (tech = 2, pop = 60) => { g.techBonus = tech; g.popBonus = pop; g.deployCd = {}; if (g.res.scrap < 1000) g.res.add(1000 - g.res.scrap, 'scrap'); },
     // ---- RTS / t24-t25 hooks
     selectSquads: (idx: number[]) => { const l = idx.map((i) => g.squads[i]).filter(Boolean); hud.select(null, l[0] ?? null, l); return l.length; },
     selected: () => view.selSquads.map((q) => g.squads.indexOf(q)),
@@ -359,17 +362,39 @@ function testHooks(g: Game, view: ViewState, hud: Hud, click: (p: Vec) => void, 
     towerIndex: (id: string) => g.towers.findIndex((t) => t.data.id === id),
     garrisonInto: (i: number, kind: 'env' | 'tower', j: number) => g.garrisonSquad(g.squads[i], kind === 'env' ? g.envs[j] : g.towers[j]),
     envs: () => g.envs.map((e) => ({ kind: e.kind, x: e.x, y: e.y, n: e.garrisoned.length, slots: e.gSlots() })),
-    obstacles: () => g.obstacles.map((o) => ({ kind: o.kind, x: o.x, y: o.y, hp: o.hp, cells: o.cells.map((c) => [c.c, c.r]) })),
+    obstacles: () => g.obstacles.map((o) => ({ kind: o.kind, shortcut: !!o.shortcut, x: o.x, y: o.y, hp: o.hp, cells: o.cells.map((c) => [c.c, c.r]) })),
     cellFree: (c: number, rr: number) => g.grid.isFree(c, rr),
     barriers: () => g.barriers.map((b) => ({ id: b.data.id, x: b.x, y: b.y, hp: b.hp, fuse: b.fuse })),
     placeBarrier: (id: string, x: number, y: number) => !!g.placeBarrier(id, { x, y }),
     spawn: (id: string, lane: number, frac: number, hpMul = 1) => { const p = g.paths[lane % g.paths.length]; const e = g.spawnEnemy(id, p.length * frac, 0, lane % g.paths.length, hpMul); return e.uid; },
-    enemy: (uid: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? { alive: e.alive, hp: e.hp, maxHp: e.maxHp, shield: e.shield, shieldDown: e.shieldDown, armor: e.armor, stun: e.stunT, x: e.x, y: e.y, slow: e.slowAmt } : null; },
+    enemy: (uid: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? { alive: e.alive, id: e.data.id, progress: e.progress, lane: e.lane, layers: e.layersPopped, route: !!e.route, remaining: e.remaining, hp: e.hp, maxHp: e.maxHp, shield: e.shield, shieldDown: e.shieldDown, armor: e.armor, stun: e.stunT, x: e.x, y: e.y, slow: e.slowAmt } : null; },
     killAllEnemies: () => { for (const e of g.enemies) e.alive = false; g.enemies = []; },
     addXp: (i: number, n: number) => { for (const u of g.squads[i].units) u.addXp(n); },
     spawnPickup: (x: number, y: number, v: number, kind: 'credit' | 'orb' | 'scrap') => g.spawnPickup(x, y, v, kind).uid,
     pickupsList: () => g.pickups.filter((p) => p.alive).map((p) => ({ uid: p.uid, kind: p.kind, x: p.x, y: p.y, v: p.value })),
     stats: () => ({ ...g.stats }),
+    // ---- t26/t27 hooks: layers, shortcuts, damage text, scrap
+    shortcuts: () => g.shortcuts.map((s) => ({ a: s.a, b: s.b, open: s.open, preview: s.preview, rerouted: s.rerouted, blocker: s.blocker ? { x: s.blocker.x, y: s.blocker.y, hp: s.blocker.hp, alive: s.blocker.alive } : null, cells: s.cells.length })),
+    demolishShortcut: (i: number) => g.demolishShortcut(g.shortcuts[i]),
+    blastAt: (x: number, y: number, r: number, dmg: number) => g.splash(x, y, r, dmg, 'explosive', { x, y }, 'boom', {}),
+    pathLens: () => g.paths.map((p) => p.length),
+    pathPoint: (lane: number, d: number) => g.paths[lane].at(d),
+    selectShortcut: (i: number) => hud.selectShortcut(g.shortcuts[i] ?? null),
+    selectHQ: () => hud.selectBase(g.hq, null),
+    roadSpeed: (x: number, y: number) => g.roadSpeedMul({ x, y }),
+    scrap: () => ({ scrap: g.res.scrap, earned: g.res.scrapEarned, spent: g.res.scrapSpent, by: { ...g.stats.scrapBy } }),
+    setScrap: (n: number) => { const d = n - g.res.scrap; if (d > 0) g.res.add(d, 'scrap'); else if (d < 0) g.res.spend({ credits: 0, scrap: -d }); return g.res.scrap; },
+    buyArmory: (id: string) => g.buyArmory(id as never),
+    armory: () => [...g.armory],
+    deployCost: (id: string) => g.deployCost(id),
+    canDeploy: (id: string) => g.canDeploy(id),
+    fieldBlock: (id: string) => g.fieldBlock(id),
+    dmgNumber: (x: number, y: number, n: number, key?: number) => g.dmgNumber(x, y, n, '#ffffff', false, key),
+    dmgEffects: () => g.effects.filter((e) => e.kind === 'dmg').map((e) => ({ text: e.text, val: e.val, hits: e.hits, crit: !!e.crit })),
+    dmgPx: (zoom: number, crit = false) => dmgTextPx(zoom, crit),
+    dmgSeen: (reset = false) => { const v = { ...r.dmgPxSeen }; if (reset) r.dmgPxSeen = { min: Infinity, max: 0, n: 0 }; return v; },
+    zoomTo: (z: number) => { r.cam.zoom = z; r.clamp(); return r.cam.zoom; },
+    zoomLimits: () => ({ min: r.minZoom, max: r.maxZoom }),
     effects: () => { const m: Record<string, number> = {}; for (const e of g.effects) m[e.kind] = (m[e.kind] ?? 0) + 1; return { ...m, shocks: g.shocks.length, shake: g.shakeAmt }; },
     view: () => ({ sel: view.selSquads.length, box: !!view.box, boxMode: view.boxMode, queue: view.queueMode, patrol: view.patrolMode }),
     fx: () => g.effects.length,

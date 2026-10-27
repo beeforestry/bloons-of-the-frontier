@@ -17,6 +17,7 @@ import { IMG, HEAD_PIVOT, body, flashOf, head, type Img } from './sprites';
 import { Particles, PK, QUALITY_CAPS } from './Particles';
 import type { Barrier, EnvStructure, Obstacle } from '../entities/Garrison';
 import type { Pickup } from '../entities/Pickup';
+import type { Shortcut } from '../systems/Shortcuts';
 const hex = (s: string) => parseInt(s.replace('#', '').slice(0, 6), 16);
 const FLORA_TOWERS = new Set(['sunflower', 'solar_pea_fusion', 'gatling_cherry_bomber', 'frost_wallnut_bastion', 'flame_melon_mortar', 'repeater_gatling']);
 
@@ -120,6 +121,7 @@ export class Renderer {
     this.vx0 = this.cam.x; this.vy0 = this.cam.y; this.vx1 = this.cam.x + this.vw / this.cam.zoom; this.vy1 = this.cam.y + this.vh / this.cam.zoom;
     const bg = IMG['map:' + g.map.image];
     if (bg) c.drawImage(bg, 0, 0, g.map.width, g.map.height); else { c.fillStyle = '#6aa84f'; c.fillRect(0, 0, g.map.width, g.map.height); }
+    for (const sc of g.shortcuts) this.shortcutTrail(sc);
     for (const d of g.decals) if (this.inView(d.x, d.y)) this.decal(d.x, d.y, d.r, d.ang, d.t);
     if (v.placing || v.selTower?.isFarm) this.gridOverlay(v);
     this.auras(v);
@@ -239,7 +241,66 @@ export class Renderer {
     this.label(e.x, footY + 10, `${'●'.repeat(n)}${'○'.repeat(slots - n)}`, n ? '#7fd3ff' : 'rgba(255,255,255,0.7)', 11);
     if (hot || n) this.label(e.x, footY - sz * 0.82, `${e.gName()} · −50% dmg · +35% range`, '#fff', 11);
   }
+  /** Road colour sampled from the map art (so an opened shortcut matches the roads). */
+  private roadCol: string | null = null;
+  private roadColor(): string {
+    if (this.roadCol) return this.roadCol;
+    const bg = IMG['map:' + this.g.map.image];
+    if (!bg) return '#8a6c48';
+    try {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+      const x = cv.getContext('2d')!, P = this.g.paths[0];
+      let r = 0, gg = 0, b = 0; const N = 9;
+      for (let i = 1; i <= N; i++) {
+        const q = P.at(P.length * i / (N + 1));
+        x.drawImage(bg, q.x - 4, q.y - 4, 8, 8, 0, 0, 1, 1);
+        const d = x.getImageData(0, 0, 1, 1).data; r += d[0]; gg += d[1]; b += d[2];
+      }
+      this.roadCol = `rgb(${Math.round(r / N)},${Math.round(gg / N)},${Math.round(b / N)})`;
+    } catch { this.roadCol = '#8a6c48'; }
+    return this.roadCol;
+  }
+  /** Blocked shortcut: overgrown dashed trail + sign. Open: a real road with direction chevrons. */
+  private shortcutTrail(sc: Shortcut) {
+    const c = this.ctx, W = this.g.map.pathWidth, z = this.cam.zoom, { a, b } = sc;
+    const ang = Math.atan2(b.y - a.y, b.x - a.x), m = sc.mid;
+    c.save(); c.lineCap = 'round';
+    if (sc.open) {
+      c.strokeStyle = 'rgba(40,28,16,0.55)'; c.lineWidth = W + 10; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+      c.strokeStyle = this.roadColor(); c.lineWidth = W; c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,0.08)'; c.lineWidth = W * 0.45; c.stroke();
+      // chevrons show the enemy direction
+      c.strokeStyle = 'rgba(255,210,122,0.55)'; c.lineWidth = 4;
+      const L = sc.length, off = (this.g.time * 40) % 70;
+      for (let d = 50 + off; d < L - 40; d += 70) {
+        const px = a.x + Math.cos(ang) * d, py = a.y + Math.sin(ang) * d;
+        c.beginPath();
+        c.moveTo(px - Math.cos(ang - 0.6) * 12, py - Math.sin(ang - 0.6) * 12); c.lineTo(px, py);
+        c.lineTo(px - Math.cos(ang + 0.6) * 12, py - Math.sin(ang + 0.6) * 12); c.stroke();
+      }
+    } else {
+      c.setLineDash([W * 0.55, W * 0.4]);
+      c.strokeStyle = 'rgba(60,42,24,0.42)'; c.lineWidth = W * 0.8; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+      c.setLineDash([10, 12]); c.strokeStyle = 'rgba(255,200,90,0.75)'; c.lineWidth = 3; c.stroke();
+      c.setLineDash([]);
+      for (const p of [a, b]) { c.fillStyle = 'rgba(255,200,90,0.9)'; c.beginPath(); c.arc(p.x, p.y, 7, 0, 7); c.fill(); }
+      const sec = sc.preview.seconds;
+      const px = 13 / z;
+      this.label(m.x, m.y - 70, '⛔ BLOCKED SHORTCUT', '#ffd27a', Math.max(px, 14));
+      this.label(m.x, m.y - 70 + Math.max(px, 14) * 1.25, `clear it: enemies save ~${sec.toFixed(1)}s · troops +35% road`, '#f3e6c8', Math.max(px * 0.85, 11));
+    }
+    c.restore();
+  }
   private obstacle(o: Obstacle) {
+    if (o.shortcut) { // rockslide: boulders + a fallen trunk across the trail
+      const rock = IMG.obs_rock ?? body('obs_rock'), log = IMG.obs_log ?? body('obs_log');
+      this.shadowAt(o.x + 4, o.y + 18, 70, 18, 0.45);
+      const fl = o.hitFlash > 0;
+      if (log) { const [w, h] = this.fitWH(log, 130); this.feet(fl ? flashOf(log) : log, o.x + 6, o.y + 30, w, h, true); }
+      if (rock) { const [w, h] = this.fitWH(rock, 104); this.feet(fl ? flashOf(rock) : rock, o.x - 24, o.y + 22, w, h, false); const [w2, h2] = this.fitWH(rock, 76); this.feet(fl ? flashOf(rock) : rock, o.x + 34, o.y + 16, w2, h2, true); }
+      if (o.hp < o.maxHp) this.bar(o.x, o.y - 60, 60, o.hp / o.maxHp, '#c9a36a', o.uid);
+      return;
+    }
     const im = IMG[o.sprite] ?? body(o.sprite), sz = o.kind === 'log' ? 110 : 84;
     this.shadowAt(o.x + 4, o.y + 14, sz * 0.45, sz * 0.14, 0.4);
     if (im) { const [w, h] = this.fitWH(im, sz); this.feet(o.hitFlash > 0 ? flashOf(im) : im, o.x, o.y + 22, w, h, o.ang > 1.5); }
@@ -519,9 +580,11 @@ export class Renderer {
     c.fillStyle = col; c.fillRect(X, Y, sn(w * f), h);
     c.fillStyle = 'rgba(255,255,255,0.28)'; c.fillRect(X, Y, sn(w * f), h * 0.4);
   }
-  private label(x: number, y: number, s: string, col: string, size = 12) {
+  /** Damage-number screen sizes drawn since the last reset (test hook). */
+  dmgPxSeen = { min: Infinity, max: 0, n: 0 };
+  private label(x: number, y: number, s: string, col: string, size = 12, stroke = 3) {
     const c = this.ctx; c.font = `bold ${size}px Fredoka, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,0.75)'; c.strokeText(s, x, y); c.fillStyle = col; c.fillText(s, x, y);
+    c.lineWidth = stroke; c.strokeStyle = 'rgba(0,0,0,0.75)'; c.strokeText(s, x, y); c.fillStyle = col; c.fillText(s, x, y);
   }
 
   // ---------------------------------------------------------------- units
@@ -716,8 +779,11 @@ export class Renderer {
       case 'dmg': { // floating damage number: pop-in scale, rise, fade
         c.globalAlpha = k < 0.7 ? 1 : (1 - k) / 0.3;
         const pop = k < 0.15 ? 0.6 + k / 0.15 * 0.6 : 1.2 - Math.min(0.2, (k - 0.15));
-        const sz = (e.crit ? 17 : 12) * pop / Math.max(0.6, Math.min(1.4, this.cam.zoom));
-        this.label(e.x + (e.vx ?? 0) * k, e.y - 10 - k * 28, e.text ?? '', e.color ?? '#fff', sz);
+        // Zoom-independent: size is chosen in SCREEN pixels (clamped to a readable
+        // minimum when zoomed out) and converted back to world units.
+        const z = this.cam.zoom, px = dmgTextPx(z, !!e.crit, e.hits ?? 1), sz = px * pop / z;
+        this.dmgPxSeen.min = Math.min(this.dmgPxSeen.min, px); this.dmgPxSeen.max = Math.max(this.dmgPxSeen.max, px); this.dmgPxSeen.n++;
+        this.label(e.x + (e.vx ?? 0) * k / z, e.y - 10 / z - k * 30 / z, e.text ?? '', e.color ?? '#fff', sz, Math.max(2, sz * 0.22));
         break;
       }
       case 'emp': {
@@ -732,4 +798,14 @@ export class Renderer {
     }
     c.globalAlpha = 1;
   }
+}
+
+/** Damage-number sizing (screen px). Scales gently with zoom but is clamped so
+ *  numbers stay readable fully zoomed out and never balloon when zoomed in.
+ *  Aggregated numbers (many merged hits) grow a little. */
+export const DMG_TEXT = { base: 15, critBase: 20, min: 14, critMin: 18, max: 24, critMax: 30 };
+export function dmgTextPx(zoom: number, crit: boolean, hits = 1): number {
+  const T = DMG_TEXT, grow = 1 + Math.min(0.35, Math.log2(Math.max(1, hits)) * 0.08);
+  const raw = (crit ? T.critBase : T.base) * Math.sqrt(Math.max(0.05, zoom));
+  return Math.max(crit ? T.critMin : T.min, Math.min(crit ? T.critMax : T.max, raw)) * grow;
 }

@@ -2,6 +2,7 @@
 type Handler<T> = (payload: T) => void;
 export interface GameEvents {
   credits: { credits: number; delta: number };
+  scrap: { scrap: number; delta: number };
   lives: { lives: number };
   wave: { wave: number; total: number; active: boolean };
   toast: { text: string; color?: string };

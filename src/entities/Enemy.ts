@@ -1,7 +1,10 @@
 // =============================================================================
 // ENEMY: one class for bloons and hive bugs, behaviour driven by EnemyData.
-//  - Bloons: layered (popping spawns children, overflow damage carries over),
-//    Lead ignores Sharp, MOAB is a boss blimp. Flying: can't be blocked.
+//  - Bloons: layered. A popped layer DOWNGRADES IN PLACE to its child (same
+//    uid, position and path progress), pays that layer's reward, and the
+//    excess damage carries into the next layer. Multi-child bloons (lead,
+//    ceramic, MOAB) also release extra siblings. Lead ignores Sharp, MOAB is a
+//    boss blimp. Flying: can't be blocked.
 //  - Bugs: ground; blocked & fought by troops. Scavengers swarm (free-roam
 //    toward nearby troops), Hunters leap, Chargers have front armor, Brood Sacs
 //    spawn Scavengers, Bile Titans lob acid at towers/troops.
@@ -36,16 +39,23 @@ export class Enemy {
   private leapT: number; leapAnim: { from: number; to: number; t: number } | null = null;
   private spawnT: number; private acidT: number;
   private divert = 0;
-  readonly strengthOfChildren: number;
-  readonly maxHp: number;
+  strengthOfChildren: number;
+  maxHp: number;
+  /** Wave HP scaling, kept across layer downgrades. */
+  readonly hpMul: number;
+  /** Layers popped off this bloon so far. */
+  layersPopped = 0;
+  /** Old path this enemy keeps following when a shortcut opens behind it (else g.paths[lane]). */
+  route: import('../systems/PathSystem').PathSystem | null = null;
   /** Bug parked at the HQ gate, mauling the base. */
   atBase = false;
   /** Which lane (Game.paths index) this enemy follows. */
   lane: number;
   pathLen = 1;
 
-  constructor(readonly data: EnemyData, progress: number, lateral = 0, lane = 0, hpMul = 1) {
-    this.hp = this.maxHp = Math.round(data.hp * hpMul);
+  constructor(public data: EnemyData, progress: number, lateral = 0, lane = 0, hpMul = 1) {
+    this.hpMul = hpMul;
+    this.hp = this.maxHp = Math.max(1, Math.round(data.hp * hpMul));
     this.armor = data.armored ?? 0;
     this.shield = this.maxShield = Math.round((data.shield ?? 0) * hpMul);
     this.lane = lane;
@@ -73,9 +83,9 @@ export class Enemy {
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.slowAmt = 0; }
     if (this.maxShield > 0 && !this.shieldDown && this.shield < this.maxShield) { this.shieldIdle += dt; if (this.shieldIdle > 4) this.shield = Math.min(this.maxShield, this.shield + 10 * dt); }
+    const path = this.route ?? g.paths[this.lane] ?? g.path; this.pathLen = path.length;
     if (this.stunT > 0) { this.stunT -= dt; return; }
     const speedMul = 1 - this.slowAmt;
-    const path = g.paths[this.lane] ?? g.path; this.pathLen = path.length;
 
     // --- blocking by troops (ground only; Bile Titans stomp through)
     if (!d.flying && !this.leapAnim) {
@@ -160,7 +170,7 @@ export class Enemy {
       this.shieldIdle = 0;
       const sb = hit?.shieldBreak ?? 1, take = Math.min(this.shield, amount * sb);
       this.shield -= take; amount -= take / sb; this.hitFlash = 0.08;
-      g.dmgNumber(this.x, this.y - d.size * 0.4, take, '#7fe8ff');
+      g.dmgNumber(this.x, this.y - d.size * 0.4, take, '#7fe8ff', false, this.uid);
       if (this.shield <= 0) { this.shieldDown = true; g.fx({ kind: 'pop', x: this.x, y: this.y, r: d.size * 0.6, color: '#7fe8ff', dur: 0.35 }); g.sfx('pop'); }
       if (amount <= 0.001) return take;
     }
@@ -177,26 +187,71 @@ export class Enemy {
     }
     this.hitFlash = 0.08;
     const dealt = Math.min(this.hp, amount);
-    g.dmgNumber(this.x, this.y - d.size * 0.4, amount, hit?.crit ? '#ffe14d' : '#ffffff', hit?.crit);
+    g.dmgNumber(this.x, this.y - d.size * 0.4, amount, hit?.crit ? '#ffe14d' : '#ffffff', hit?.crit, this.uid);
     this.hp -= amount;
-    if (this.hp <= 0) this.die(g, -this.hp);
+    if (this.hp <= 0) this.popLayers(g, -this.hp);
     return dealt;
   }
 
-  private die(g: Game, overflow: number) {
-    const d = this.data;
-    this.alive = false;
+  /** The bloon this layer downgrades into (null for red bloons and bugs). */
+  private get childLayer(): EnemyData | null {
+    const c = this.data.family === 'bloon' ? this.data.children : undefined;
+    return c ? ENEMIES[c.id] : null;
+  }
+  /** Become another enemy type in place (keeps uid, lane, progress, slow/stun). */
+  setType(next: EnemyData) {
+    this.data = next;
+    this.maxHp = this.hp = Math.max(1, Math.round(next.hp * this.hpMul));
+    this.armor = next.armored ?? 0;
+    this.strengthOfChildren = next.children ? next.children.count * totalStrength(next.children.id) : 0;
+  }
+  /**
+   * Layer pop loop (fixes for the pasted model): reward is paid once PER LAYER
+   * popped (not per hit), overflow carries into the next layer, and the chain
+   * always terminates (pink -> yellow -> green -> blue -> red -> gone).
+   */
+  private popLayers(g: Game, overflow: number) {
+    let over = overflow;
+    for (let guard = 0; guard < 16; guard++) {
+      const child = this.childLayer;
+      if (!child) { this.die(g, over); return; }
+      const d = this.data, count = d.children!.count;
+      this.reward(g, d);
+      this.layersPopped++;
+      // extra siblings (lead / ceramic / MOAB hold more than one bloon)
+      for (let i = 1; i < count; i++) {
+        const e = g.spawnEnemy(child.id, Math.max(0, this.progress - i * 10), this.lateral + (i - (count - 1) / 2) * 10, this.lane, this.hpMul);
+        e.route = this.route;
+      }
+      this.setType(child);
+      this.hitFlash = 0.12;
+      this.hp -= over;
+      if (this.hp > 0) return;
+      over = -this.hp;
+    }
+    this.die(g, 0);
+  }
+  /** Bounty / kill / XP / scrap / pop fx for one popped layer. */
+  private reward(g: Game, d: EnemyData) {
     g.res.add(d.bounty);
     g.stats.kills++;
+    g.stats.layers = (g.stats.layers ?? 0) + 1;
     this.lastSrc?.addXp?.(d.boss ? 10 : d.heavy ? 3 : 1);
     if (d.scrap) g.spawnPickup(this.x + rand(-8, 8), this.y + rand(-8, 8), d.scrap, 'scrap');
     g.sfx(d.family === 'bloon' ? 'pop' : 'splat');
     g.fx({ kind: d.family === 'bloon' ? 'pop' : 'splat', x: this.x, y: this.y, r: d.size * 0.5, color: d.color, dur: d.boss ? 0.7 : 0.3 });
     if (d.dropChance && Math.random() < d.dropChance) g.spawnPickup(this.x, this.y, d.boss ? 60 : 10 + Math.round(d.bounty));
-    if (d.children) {
+  }
+
+  private die(g: Game, overflow: number) {
+    const d = this.data;
+    this.alive = false;
+    this.reward(g, d);
+    if (d.children) { // bugs (Bile Titan) burst into separate children
       const child = ENEMIES[d.children.id];
       for (let i = 0; i < d.children.count; i++) {
         const e = g.spawnEnemy(child.id, Math.max(0, this.progress - i * 10), d.family === 'bloon' ? (i - (d.children.count - 1) / 2) * 10 : 0, this.lane, this.maxHp / Math.max(1, d.hp));
+        e.route = this.route;
         if (i === 0 && overflow > 0 && d.family === 'bloon') e.takeDamage(g, overflow, 'magic');
       }
     }

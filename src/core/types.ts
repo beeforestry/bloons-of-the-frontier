@@ -218,6 +218,8 @@ export interface UnitData {
   blockCap?: number;
   /** Vehicle: fires while moving. */
   vehicle?: boolean;
+  /** Scrap needed (on top of credits) to field / train this squad. */
+  scrapCost?: number;
   hero?: boolean;
   abilities?: AbilityId[];
 }

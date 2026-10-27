@@ -4,6 +4,8 @@
 // =============================================================================
 import type { EnemyData } from '../core/types';
 
+/** Base (red) bloon speed in px/s; layer speeds are ratios of this. */
+export const BLOON_BASE_SPEED = 62;
 const B = (o: Partial<EnemyData> & Pick<EnemyData, 'id' | 'name' | 'sprite' | 'hp' | 'speed' | 'color'>): EnemyData => ({
   family: 'bloon', leak: 1, bounty: 1, radius: 14, size: 44, flying: true, ...o,
 });
@@ -14,13 +16,18 @@ const BUG = (o: Partial<EnemyData> & Pick<EnemyData, 'id' | 'name' | 'sprite' | 
 export const ENEMIES: Record<string, EnemyData> = Object.fromEntries(
   [
     // ---- Bloons: popping a layer reveals the child. Flying: troops can't block them.
-    B({ id: 'red', name: 'Red Bloon', sprite: 'bloon_red', hp: 1, speed: 62, color: '#ff3b3b' }),
-    B({ id: 'blue', name: 'Blue Bloon', sprite: 'bloon_blue', hp: 1, speed: 82, color: '#3b8bff', children: { id: 'red', count: 1 }, size: 48 }),
-    B({ id: 'green', name: 'Green Bloon', sprite: 'bloon_green', hp: 1, speed: 100, color: '#3fd34a', children: { id: 'blue', count: 1 } }),
-    B({ id: 'yellow', name: 'Yellow Bloon', sprite: 'bloon_yellow', hp: 1, speed: 135, color: '#ffd92e', children: { id: 'green', count: 1 } }),
-    B({ id: 'pink', name: 'Pink Bloon', sprite: 'bloon_pink', hp: 1, speed: 155, color: '#ff7ad1', children: { id: 'yellow', count: 1 } }),
-    B({ id: 'lead', name: 'Lead Bloon', sprite: 'bloon_lead', hp: 6, speed: 50, color: '#5b6270', lead: true, children: { id: 'pink', count: 2 }, bounty: 3, size: 48 }),
-    B({ id: 'ceramic', name: 'Ceramic Bloon', sprite: 'bloon_ceramic', hp: 22, speed: 70, color: '#e9e4dc', children: { id: 'pink', count: 2 }, bounty: 4, size: 50, radius: 16 }),
+    // Sebastian's BLOON_TYPES layer model: a popped layer DOWNGRADES IN PLACE to its
+    // child (same position & path progress). hp / reward / colour are his values;
+    // speed = his ratio × our base red speed (62 px/s), applied with dt.
+    //   RED 1hp ×1.0 · BLUE 2hp ×1.4 · GREEN 3hp ×1.8 · YELLOW 4hp ×3.2 · PINK 5hp ×3.5
+    // (his PINK→PINK loop is fixed: pink downgrades to yellow.)
+    B({ id: 'red', name: 'Red Bloon', sprite: 'bloon_red', hp: 1, speed: BLOON_BASE_SPEED * 1.0, color: '#ff3333', bounty: 1 }),
+    B({ id: 'blue', name: 'Blue Bloon', sprite: 'bloon_blue', hp: 2, speed: BLOON_BASE_SPEED * 1.4, color: '#3388ff', bounty: 2, children: { id: 'red', count: 1 }, size: 48 }),
+    B({ id: 'green', name: 'Green Bloon', sprite: 'bloon_green', hp: 3, speed: BLOON_BASE_SPEED * 1.8, color: '#33cc33', bounty: 3, children: { id: 'blue', count: 1 } }),
+    B({ id: 'yellow', name: 'Yellow Bloon', sprite: 'bloon_yellow', hp: 4, speed: BLOON_BASE_SPEED * 3.2, color: '#ffcc00', bounty: 4, children: { id: 'green', count: 1 } }),
+    B({ id: 'pink', name: 'Pink Bloon', sprite: 'bloon_pink', hp: 5, speed: BLOON_BASE_SPEED * 3.5, color: '#ff66cc', bounty: 5, children: { id: 'yellow', count: 1 } }),
+    B({ id: 'lead', name: 'Lead Bloon', sprite: 'bloon_lead', hp: 6, speed: 50, color: '#5b6270', lead: true, children: { id: 'pink', count: 2 }, bounty: 3, size: 48, scrap: 2 }),
+    B({ id: 'ceramic', name: 'Ceramic Bloon', sprite: 'bloon_ceramic', hp: 22, speed: 70, color: '#e9e4dc', children: { id: 'pink', count: 2 }, bounty: 4, size: 50, radius: 16, scrap: 3 }),
     B({ id: 'moab', name: 'M.O.A.B.', sprite: 'bloon_moab', hp: 400, speed: 24, color: '#5aa0e8', children: { id: 'ceramic', count: 4 }, bounty: 40, size: 124, radius: 36, boss: true, heavy: true, scrap: 30 }),
     // ---- Hive bugs: ground units; troops block & fight them.
     BUG({ id: 'scavenger', name: 'Scavenger', sprite: 'bug_scavenger', hp: 4, speed: 92, color: '#d9792b', swarm: 16, meleeDps: 3, size: 30, radius: 10 }),

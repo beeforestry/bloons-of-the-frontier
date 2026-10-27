@@ -16,6 +16,8 @@ import { gEject } from '../entities/Garrison';
 import { IMG, sprite } from '../render/sprites';
 import type { Building, BuildPad } from '../entities/Building';
 import { PAD_BUILDINGS, POWERS, MAX_ENERGY, TRAIN_DISCOUNT } from '../data/buildings';
+import { ARMORY, type ArmoryId } from '../data/armory';
+import { SHORTCUT, type Shortcut } from '../systems/Shortcuts';
 import type { BuildingTier } from '../core/types';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
@@ -86,6 +88,7 @@ export class Hud {
     this.toasts = $('#toasts');
     this.buildTabs();
     this.buildTroops();
+    this.g.bus.on('scrap', (e) => { const st = document.getElementById('scrap-stat'); if (st && e.delta > 0) { st.classList.remove('bump'); void st.offsetWidth; st.classList.add('bump'); setTimeout(() => st.classList.remove('bump'), 400); } });
     $('#btn-start').onclick = () => this.g.waves.start(this.g);
     $('#btn-auto').onclick = () => { this.g.waves.auto = !this.g.waves.auto; };
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-speed]'))) b.onclick = () => { this.g.speed = +b.dataset.speed!; };
@@ -139,7 +142,7 @@ export class Hud {
     for (const u of UNITS) {
       const f = factionInfo(u.faction);
       const el = h('div', 'troop', `<button class="deploy" data-unit="${u.id}" title="${u.desc}">${th(u.tiers[0].visual.sprite ?? u.sprite, 0, 40)}
-        <div><div class="cn">${u.name}</div><div class="cs"><span class="tname"></span> · ¢${u.tiers[0].cost} · ${u.squadSize}×</div></div>
+        <div><div class="cn">${u.name}</div><div class="cs"><span class="tname"></span> · <span class="ucost">${this.g.costLabel(this.g.deployCost(u.id))}</span> · ${u.squadSize}×</div></div>
         <div class="cd"></div></button><button class="research" data-research="${u.id}"></button>`);
       el.style.setProperty('--fc', f.color);
       $('.deploy', el).onclick = () => { this.view.deploying = this.view.deploying === u.id ? null : u.id; this.view.placing = null; this.refresh(true); };
@@ -150,6 +153,7 @@ export class Hud {
 
   // ---------------------------------------------------------------- selection
   select(t: Tower | null, s: Squad | null, group?: Squad[]) {
+    if (t || s || group?.length) this.selShortcut = null;
     this.view.selTower = t; this.view.selSquad = s; this.view.selBuilding = null; this.view.selPad = null;
     this.view.selSquads = group ?? (s ? [s] : []);
     if (t || s || group?.length) this.g.sfx('select');
@@ -158,8 +162,35 @@ export class Hud {
     this.lastSel = '\u0000';
     this.refresh(true);
   }
+  /** Selected blocked shortcut (rockslide) — shows the risk/reward + Demolish. */
+  selShortcut: Shortcut | null = null;
+  selectShortcut(sc: Shortcut | null) {
+    this.selectBase(null, null);
+    this.selShortcut = sc; this.lastSel = '\u0000'; this.refresh(true);
+  }
+  private shortcutPanel(p: HTMLElement): boolean {
+    const g = this.g, sc = this.selShortcut;
+    if (!sc) return false;
+    if (this.view.selBuilding || this.view.selPad) { this.selShortcut = null; return false; }
+    const key = `sc${sc.def.a}:${sc.open}:${g.res.scrap >= SHORTCUT.demolishScrap}`;
+    if (key === this.lastSel) return true;
+    this.lastSel = key;
+    p.classList.add('show'); p.style.setProperty('--fc', '#ffd27a');
+    const pv = sc.preview, lanes = pv.lanes.map((k) => k + 1).join(' & ');
+    p.innerHTML = sc.open
+      ? `<div class="sp-head"><div class="sp-icon">🛤</div><div><div class="sp-name">Shortcut (open)</div><div class="sp-sub">Lane ${lanes} now runs through here — enemies arrive ~${pv.seconds.toFixed(1)}s sooner. Troops move +${Math.round((SHORTCUT.roadSpeed - 1) * 100)}% faster on this road; post a squad here to block it.</div></div></div><button class="btn" id="sp-desel">Close</button>`
+      : `<div class="sp-head"><div class="sp-icon">⛔</div><div><div class="sp-name">Blocked shortcut</div><div class="sp-sub">A rockslide chokes an old trail that cuts off ${pv.saved}px of lane ${lanes}.</div></div></div>
+        <div class="sp-stats"><b class="risk">Risk:</b> enemies on lane ${lanes} take it too and arrive <b>~${pv.seconds.toFixed(1)}s sooner</b> (red-bloon speed), bypassing towers on the long road.</div>
+        <div class="sp-stats"><b class="reward">Reward:</b> +${Math.round((SHORTCUT.roadSpeed - 1) * 100)}% troop speed on the new road, a short front to defend, and ~35🔩 salvage.</div>
+        <div class="sp-sub">Too solid for normal splash — only the MAC, drop-pod / Cherry blasts or a Demolish order clear it.</div>
+        <div class="row"><button class="btn up" id="sp-demo" ${g.res.scrap < SHORTCUT.demolishScrap ? 'disabled' : ''}>💥 Demolish <b>${SHORTCUT.demolishScrap}🔩</b></button><button class="btn" id="sp-desel">Close</button></div>`;
+    const dm = $('#sp-demo', p); if (dm) dm.onclick = () => { g.demolishShortcut(sc); this.lastSel = ''; this.refresh(true); };
+    $('#sp-desel', p).onclick = () => { this.selShortcut = null; this.lastSel = ''; this.refresh(true); };
+    return true;
+  }
   /** Select a base building or an empty build pad. */
   selectBase(b: Building | null, pad: BuildPad | null) {
+    if (b || pad) this.selShortcut = null;
     this.view.selTower = null; this.view.selSquad = null; this.view.selSquads = []; this.view.selBuilding = b; this.view.selPad = pad;
     this.lastSel = '\u0000';
     this.g.bus.emit('selection', { kind: 'none' });
@@ -170,7 +201,7 @@ export class Hud {
     if (b && !b.alive) { this.selectBase(null, null); return true; }
     if (pad && pad.building) { this.selectBase(pad.building, null); return true; }
     if (!b && !pad) return false;
-    const key = b ? `b${b.uid}:${b.tier}:${!!b.build}:${b.queue.length}:${b.queue[0]?.held}:${g.tech}:${Math.floor(g.res.credits / 50)}` : `p${pad!.uid}:${Math.floor(g.res.credits / 50)}`;
+    const key = b ? `b${b.uid}:${b.tier}:${!!b.build}:${b.queue.length}:${b.queue[0]?.held}:${g.tech}:${Math.floor(g.res.credits / 50)}:${g.res.scrap}:${g.armory.size}` : `p${pad!.uid}:${Math.floor(g.res.credits / 50)}`;
     if (key === this.lastSel) { this.liveBase(); return true; }
     this.lastSel = key;
     p.classList.add('show'); p.style.setProperty('--fc', '#7fd3ff');
@@ -188,12 +219,16 @@ export class Hud {
       <div class="sp-stats">${bldLine(bb.t)}</div><div class="sp-sub">${bb.data.desc}</div><div class="sp-live"></div>
       ${bb.built && n ? `<button class="btn up" id="sp-up" ${g.res.credits < n.cost || bb.build ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b> · ⏱${n.buildTime}s<div class="delta">${n.blurb}<br>${bldLine(n)}</div></button>` : bb.built ? '<div class="maxed">★ Max tier</div>' : ''}
       ${bb.data.id === 'barracks' && bb.built ? `<div class="sp-sub">Train (¢ −${Math.round((1 - TRAIN_DISCOUNT) * 100)}% vs drop pod, one at a time):</div><div class="train-list">${UNITS.map((u) => {
-        const c = Math.round(u.tiers[0].cost * TRAIN_DISCOUNT), lock = g.tech < u.tech;
-        return `<button class="btn train" data-train="${u.id}" ${lock || g.res.credits < c ? 'disabled' : ''} title="${u.desc}">${th(u.tiers[0].visual.sprite ?? u.sprite, 0, 30)}<span>${u.name}<br><small>¢${c} · 👥${u.population}${lock ? ' · ⚛' + u.tech : ''}</small></span></button>`; }).join('')}</div>
+        const c = g.deployCost(u.id, true), lock = g.tech < u.tech;
+        return `<button class="btn train" data-train="${u.id}" ${lock || !g.res.canAfford(c) ? 'disabled' : ''} title="${u.desc}">${th(u.tiers[0].visual.sprite ?? u.sprite, 0, 30)}<span>${u.name}<br><small>${g.costLabel(c)} · 👥${u.population}${lock ? ' · ⚛' + u.tech : ''}</small></span></button>`; }).join('')}</div>
         <div class="queue" id="sp-queue"></div><button class="btn" id="sp-rally">🚩 Set rally point</button>` : ''}
+      ${bb.isHQ && bb.built ? `<div class="sp-sub armory-h">🔩 Salvage Armory — scrap-only tech (you have <b>${g.res.scrap}🔩</b>):</div><div class="armory">${ARMORY.map((a) => {
+        const own = g.armory.has(a.id);
+        return `<button class="btn arm${own ? ' owned' : ''}" data-armory="${a.id}" ${own || g.res.scrap < a.scrap ? 'disabled' : ''} title="${a.desc}"><span>${a.name}<br><small>${a.desc}</small></span><b>${own ? '✔ Owned' : a.scrap + '🔩'}</b></button>`; }).join('')}</div>` : ''}
       <div class="row">${bb.isHQ ? '' : `<button class="btn sell" id="sp-sell">Demolish (50%)</button>`}<button class="btn" id="sp-desel">Done</button></div>`;
     const up = $('#sp-up', p); if (up) up.onclick = () => { bb.upgrade(g); this.lastSel = ''; this.refresh(true); };
     for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-train]'))) el.onclick = () => { bb.enqueue(g, el.dataset.train!); this.lastSel = ''; this.refresh(true); };
+    for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-armory]'))) el.onclick = () => { g.buyArmory(el.dataset.armory as ArmoryId); this.lastSel = ''; this.refresh(true); };
     const ra = $('#sp-rally', p); if (ra) ra.onclick = () => { this.view.rallyFor = bb; this.view.power = null; this.refresh(true); };
     const se = $('#sp-sell', p); if (se) se.onclick = () => { g.demolish(bb); this.selectBase(null, null); };
     $('#sp-desel', p).onclick = () => this.selectBase(null, null);
@@ -212,6 +247,7 @@ export class Hud {
   }
   private selPanel() {
     const p = $('#sel-panel'), g = this.g, t = this.view.selTower, s = this.view.selSquad, grp = this.view.selSquads.filter((q) => q.alive);
+    if (!t && !s && this.shortcutPanel(p)) return;
     if (!t && !s && this.basePanel(p)) return;
     if (!t && grp.length > 1) return this.groupPanel(p, grp);
     const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}`
@@ -337,6 +373,7 @@ export class Hud {
   refresh(_force: boolean) {
     const g = this.g;
     $('#credits').textContent = `${Math.floor(g.res.credits)}`;
+    const sc = $('#scrap'); if (sc) sc.textContent = `${g.res.scrap}`;
     $('#lives').textContent = `${g.lives}/${Math.ceil(g.hq.health.max)}`;
     const pe = $('#pop'); if (pe) { pe.textContent = `${g.pop}/${g.popCap}`; pe.parentElement!.classList.toggle('full', g.pop >= g.popCap); }
     const te = $('#tech'); if (te) te.textContent = `${g.tech}`;

@@ -159,3 +159,13 @@ button { font-family: inherit; }
   #stage-btns { right: 6px; top: 46px; }
   .seg button { padding: 7px 6px; font-size: 12px; }
 }
+
+/* scrap currency */
+.stat.scrap b { color: #cfe3f0; }
+.stat.scrap.bump b { color: #fff; text-shadow: 0 0 8px #9fd3ff; }
+.armory { display: grid; gap: 6px; margin: 4px 0 8px; }
+.btn.arm { display: flex; justify-content: space-between; align-items: center; text-align: left; gap: 8px; }
+.btn.arm small { opacity: .8; font-size: 11px; }
+.btn.arm b { color: #cfe3f0; white-space: nowrap; }
+.btn.arm.owned { border-color: #7dff7a; opacity: .75; }
+.risk { color: #ff8a7a; } .reward { color: #7dff7a; }

@@ -84,7 +84,7 @@ export const UNITS: UnitData[] = [
     ],
   },
   {
-    id: 'spartan', name: 'Spartan-II', faction: Faction.UNSC, role: 'troop', sprite: 'spartan', hero: true, blockCap: 5, abilities: ['hijack'],
+    id: 'spartan', name: 'Spartan-II', faction: Faction.UNSC, role: 'troop', sprite: 'spartan', hero: true, scrapCost: 60, blockCap: 5, abilities: ['hijack'],
     desc: 'HERO (one only). Continuous Spartan Laser that pierces lines and hits aircraft. Ability EMP Drop: stuns every heavy/armored enemy in a radius and pops shields.',
     squadSize: 1, maxSquads: 1, cooldown: 30, population: 4, tech: 2, trainTime: 16,
     tiers: [
@@ -101,7 +101,7 @@ export const UNITS: UnitData[] = [
     ],
   },
   {
-    id: 'warthog', name: 'Warthog', faction: Faction.UNSC, role: 'troop', sprite: 'warthog', vehicle: true, blockCap: 3,
+    id: 'warthog', name: 'Warthog', faction: Faction.UNSC, role: 'troop', sprite: 'warthog', vehicle: true, scrapCost: 30, blockCap: 3,
     desc: 'Fast 4x4 with a mounted chaingun that FIRES WHILE MOVING. Great for patrol routes.',
     squadSize: 1, maxSquads: 3, cooldown: 12, population: 3, tech: 1, trainTime: 12,
     tiers: [

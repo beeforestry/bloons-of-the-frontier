@@ -14,7 +14,6 @@ import { nextId } from '../core/math';
 import { Health } from '../systems/BuffSystem';
 import { pickTargets } from '../systems/TargetingSystem';
 import { unitById } from '../data/units';
-import { TRAIN_DISCOUNT } from '../data/buildings';
 import type { Game } from '../game/Game';
 
 export class BuildPad {
@@ -79,14 +78,14 @@ export class Building {
     const d = unitById(unitId);
     if (this.queue.length >= (this.t.stats.queue ?? 3)) { g.toast('Training queue full'); return false; }
     if (g.tech < d.tech) { g.toast(`${d.name} needs Tech ${d.tech} (build a Reactor)`, '#ff8a7a'); return false; }
-    const cost = Math.round(d.tiers[0].cost * TRAIN_DISCOUNT);
-    if (!g.res.spend({ credits: cost })) { g.toast('Not enough credits', '#ff8a7a'); return false; }
+    const cost = g.deployCost(unitId, true);
+    if (!g.res.spend(cost)) { g.toast(g.poorReason(cost), '#ff8a7a'); return false; }
     this.queue.push({ unitId, t: 0, dur: d.trainTime, held: null });
     return true;
   }
   cancel(g: Game, i: number) {
     const o = this.queue[i]; if (!o) return;
-    g.res.add(Math.round(unitById(o.unitId).tiers[0].cost * TRAIN_DISCOUNT));
+    const c = g.deployCost(o.unitId, true); g.res.add(c.credits); g.res.add(c.scrap ?? 0, 'scrap');
     this.queue.splice(i, 1);
   }
 

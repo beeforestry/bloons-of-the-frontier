@@ -14,7 +14,8 @@ from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ap = argparse.ArgumentParser(); ap.add_argument('--map', default='garden'); ap.add_argument('--shots', action='store_true'); args = ap.parse_args()
 JUICE, ROSTER = os.path.join(ROOT, 'screenshots', 'juice'), os.path.join(ROOT, 'screenshots', 'roster')
-os.makedirs(JUICE, exist_ok=True); os.makedirs(ROSTER, exist_ok=True)
+SHORT = os.path.join(ROOT, 'screenshots', 'shortcut')
+os.makedirs(JUICE, exist_ok=True); os.makedirs(ROSTER, exist_ok=True); os.makedirs(SHORT, exist_ok=True)
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -30,7 +31,8 @@ def attach(pg):
     pg.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
     pg.on('pageerror', lambda e: errors.append(str(e)))
 def shot(pg, d, name):
-    if args.shots or args.map == 'garden': pg.screenshot(path=os.path.join(d, name + '.png'))
+    if d == SHORT: name = f'{args.map}_{name}'
+    if args.shots or args.map == 'garden' or d == SHORT: pg.screenshot(path=os.path.join(d, name + '.png'))
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True,
@@ -288,7 +290,7 @@ with sync_playwright() as p:
     G('H.setSpeed(1)')
 
     # ---------------- destructible terrain: MAC + explosives clear rocks/logs and free their cells
-    obs = G('H.obstacles()'); check(len(obs) >= 2, f'{len(obs)} rocks/logs on the map')
+    obs = [x for x in G('H.obstacles()') if not x['shortcut']]; check(len(obs) >= 2, f'{len(obs)} rocks/logs on the map')
     o = obs[0]; c0 = o['cells'][0]
     check(not G(f'H.cellFree({c0[0]},{c0[1]})'), 'obstacle blocks its build cell')
     G(f'H.camFocus({o["x"]},{o["y"]},1.0)'); G('H.addEnergy(100); H.g.powerCd = {}')
@@ -299,7 +301,7 @@ with sync_playwright() as p:
     check(ok, f'MAC shockwave ripple + shake ({G("H.effects()")})')
     until('H.g.strikes.length === 0', 6000)
     check(G(f'H.cellFree({c0[0]},{c0[1]})') and G('H.stats().cleared') >= 1, 'MAC cleared the obstacle and freed its cell')
-    o2 = [x for x in G('H.obstacles()') if x['hp'] > 0][0]
+    o2 = [x for x in G('H.obstacles()') if x['hp'] > 0 and not x['shortcut']][0]
     G(f'H.g.bigBlast({o2["x"]}, {o2["y"]}, 70, 200, "explosive")')
     check(G(f'H.cellFree({o2["cells"][0][0]},{o2["cells"][0][1]})'), 'explosive blast cleared a second obstacle')
 
@@ -345,6 +347,134 @@ with sync_playwright() as p:
     for nm, idx in list(roster_t.items()) + [('sunflower', sf), ('sniper_monkey', sn), ('unsc_flak', flak)]:
         t = G(f'H.towerInfo({idx})')
         if t: G(f'H.camFocus({t["x"]},{t["y"]},1.6)'); wait(150); shot(pg, ROSTER, f'tower_{nm}')
+
+    # ================= t26/t27: bloon layers, shortcuts, damage text, scrap currency
+    print('  state before t27 block:', G('({state: H.g.state, paused: H.g.paused, speed: H.g.speed})'))
+    # the x8-throttled stress wave can overrun the HQ; restore a live sandbox for these checks
+    G('H.killAllEnemies(); H.g.paused = false; H.g.state = "playing"; H.g.hq.health.hp = H.g.hq.health.max; H.g.hq.alive = true; document.querySelector("#gameover").classList.remove("show")')
+    G('H.killAllEnemies(); H.g.waves.active = false; H.setSpeed(1); H.camReset()')
+    # ---- layer downgrade in place, reward per layer, overflow carries, pink -> yellow (no loop)
+    L = G('''(() => { const u = H.spawn("pink", 0, 0.5, 1), e = H.g.enemies.find(x => x.uid === u); e.stunT = 60;
+      const c0 = H.g.res.credits, p0 = e.progress, n0 = H.g.enemies.length, sp0 = e.data.speed;
+      e.takeDamage(H.g, 7, "magic");
+      const a = { id: e.data.id, hp: e.hp, alive: e.alive, prog: e.progress, dc: H.g.res.credits - c0, same: H.g.enemies.includes(e), n: H.g.enemies.length - n0, spRatio: e.data.speed / sp0 };
+      const c1 = H.g.res.credits; e.takeDamage(H.g, 10, "magic");
+      return { a, p0, b: { alive: e.alive, dc: H.g.res.credits - c1, layers: e.layersPopped } }; })()''')
+    a = L['a']
+    check(a['alive'] and a['same'] and a['id'] == 'yellow' and a['n'] == 0 and abs(a['prog'] - L['p0']) < 1e-6,
+          f'pink popped -> downgraded IN PLACE to yellow (same entity, same progress, no new spawn): {a}')
+    check(a['hp'] == 2, f'overflow damage carried: 7 dmg on pink(5) leaves yellow(4) at {a["hp"]} hp')
+    check(a['dc'] == 5, f'reward paid per layer popped, not per hit: +{a["dc"]} for the pink layer')
+    check(abs(a['spRatio'] - 3.2 / 3.5) < 1e-6, f'layer speed follows his ratios (yellow/pink = {a["spRatio"]:.3f})')
+    check(not L['b']['alive'] and L['b']['dc'] == 4 + 3 + 2 + 1 and L['b']['layers'] == 4,
+          f'10 dmg chains yellow->green->blue->red->popped, paying 4+3+2+1 = {L["b"]["dc"]} ({L["b"]["layers"]} layers)')
+    C = G('''(() => { const u = H.spawn("ceramic", 1, 0.5, 1), e = H.g.enemies.find(x => x.uid === u); e.stunT = 60; const n0 = H.g.enemies.length;
+      e.takeDamage(H.g, 30, "magic"); return { id: e.data.id, hp: e.hp, sib: H.g.enemies.length - n0 }; })()''')
+    check(C['id'] == 'yellow' and C['hp'] == 1 and C['sib'] == 1, f'ceramic(22) hit for 30: -> pink, overflow 8 pops it -> yellow at 1hp, + 1 pink sibling: {C}')
+    # screenshot: a layered bloon popping next to a tower
+    G('H.killAllEnemies()')
+    ce = G('H.spawn("ceramic", 0, 0.3, 1)'); freeze(ce, 3)
+    tinfo = G(f'H.towerInfo({dart})')
+    G(f'(() => {{ const e = H.g.enemies.find(e => e.uid === {ce}); e.x = {tinfo["x"]} + 70; e.y = {tinfo["y"]}; }})()')
+    G(f'H.camFocus({tinfo["x"]} + 60, {tinfo["y"]}, 1.7)')
+    G(f'H.g.enemies.find(e => e.uid === {ce}).takeDamage(H.g, 26, "magic")'); wait(140)
+    shot(pg, SHORT, 'layer_pop')
+    G('H.killAllEnemies()')
+
+    # ---- blocked shortcut: visible, resists normal splash, opens -> lanes re-route (enemies & troops)
+    scs = G('H.shortcuts()'); check(len(scs) >= 1, f'{len(scs)} blocked shortcut(s) on {args.map}')
+    sc = scs[0]; pv = sc['preview']; k = pv['lanes'][0]
+    check(not sc['open'] and sc['cells'] > 5 and pv['saved'] > 100, f'shortcut blocked: {sc["cells"]} reserved cells, saves {pv["saved"]}px (~{pv["seconds"]:.1f}s) on lane(s) {pv["lanes"]}')
+    mid = {'x': (sc['a']['x'] + sc['b']['x']) / 2, 'y': (sc['a']['y'] + sc['b']['y']) / 2}
+    G(f'H.blastAt({sc["blocker"]["x"]}, {sc["blocker"]["y"]}, 80, 600)')
+    check(not G('H.shortcuts()[0].open'), 'normal splash (600 dmg) does not open the rockslide (deliberate choice)')
+    lens0 = G('H.pathLens()')
+    entry = G(f'H.g.paths[{k}].project({{x:{sc["a"]["x"]},y:{sc["a"]["y"]}}}).d')
+    ea = G(f'(() => {{ const e = H.g.spawnEnemy("red", {entry} - 40, 0, {k}, 4000); e.stunT = 60; return e.uid; }})()')
+    eb = G(f'(() => {{ const e = H.g.spawnEnemy("red", {entry} + 160, 0, {k}, 4000); e.stunT = 60; return e.uid; }})()')
+    wait(60); ra0 = E(ea)['remaining']
+    G(f'H.camFocus({mid["x"]}, {mid["y"]}, 0.75)'); wait(250); shot(pg, SHORT, 'shortcut_before')
+    G('H.selectShortcut(0)'); wait(250)
+    ptxt = pg.locator('#sel-panel').inner_text()
+    check('Blocked shortcut' in ptxt and 'Demolish' in ptxt and 'Risk' in ptxt, 'clicking the rockslide shows the risk/reward panel + Demolish (scrap)')
+    shot(pg, SHORT, 'shortcut_panel')
+    sc0 = G('H.scrap().scrap')
+    check(G('H.demolishShortcut(0)'), 'Demolish order (scrap) cleared the rockslide')
+    s1 = G('H.shortcuts()[0]'); lens1 = G('H.pathLens()')
+    check(s1['open'] and lens1[k] < lens0[k] - 100, f'shortcut OPEN: lane {k} path {lens0[k]:.0f} -> {lens1[k]:.0f}px; rerouted {s1["rerouted"]}')
+    check(G('H.scrap().scrap') == sc0 - 20, 'Demolish cost 20 scrap')
+    wait(60); A, B = E(ea), E(eb)
+    check(not A['route'] and A['remaining'] < ra0 - 100, f'enemy before the fork re-routed: {ra0:.0f} -> {A["remaining"]:.0f}px to the HQ')
+    check(B['route'], 'enemy already past the fork keeps its old road (no teleporting)')
+    G(f'(() => {{ const e = H.g.enemies.find(e => e.uid === {ea}); e.stunT = 0; }})()'); G('H.setSpeed(3)')
+    onchord = until(f'''(() => {{ const e = H.g.enemies.find(e => e.uid === {ea}); if (!e) return false;
+      const a = {json.dumps(sc["a"])}, b = {json.dumps(sc["b"])}, dx = b.x - a.x, dy = b.y - a.y, L2 = dx*dx + dy*dy;
+      const t = ((e.x - a.x) * dx + (e.y - a.y) * dy) / L2; if (t < 0.25 || t > 0.75) return false;
+      return Math.hypot(e.x - a.x - dx * t, e.y - a.y - dy * t) < 12; }})()''', 30000)
+    G('H.setSpeed(1)')
+    check(onchord, 'the re-routed enemy actually walks down the shortcut trail')
+    check(abs(G(f'H.roadSpeed({mid["x"]}, {mid["y"]})') - 1.35) < 1e-6, 'friendly troops move +35% on the opened shortcut road')
+    check(sum(1 for x in G('H.pickupsList()') if x['kind'] == 'scrap' and math.hypot(x['x'] - mid['x'], x['y'] - mid['y']) < 90) >= 3, 'rockslide salvage dropped scrap piles to gather')
+    wait(150); shot(pg, SHORT, 'shortcut_after')
+    G('H.killAllEnemies()')
+
+    # ---- damage numbers readable at every zoom (+ rapid-hit aggregation)
+    zl = G('H.zoomLimits()')
+    pmin, pmax = G(f'H.dmgPx({zl["min"]})'), G(f'H.dmgPx({zl["max"]})')
+    check(pmin >= 14 and pmax <= 30 and pmax >= pmin, f'damage text {pmin:.1f}px at min zoom {zl["min"]:.2f}, {pmax:.1f}px at max zoom {zl["max"]}')
+    for z, nm in [(zl['min'], 'min'), (zl['max'], 'max')]:
+        if nm == 'max': G(f'H.camFocus({hq["x"]} - 300, {hq["y"]}, {z})'); cx, cy = hq['x'] - 300, hq['y']
+        else: G(f'H.zoomTo({z})'); cx, cy = hq['x'] - 600, hq['y']
+        G('H.dmgSeen(true)'); G(f'H.dmgNumber({cx}, {cy}, 12); H.dmgNumber({cx} + 60, {cy}, 3)'); wait(250)
+        seen = G('H.dmgSeen()')
+        check(seen['n'] > 0 and seen['min'] >= 14 and seen['max'] <= 30, f'rendered damage text at {nm} zoom ({G("H.cam().zoom"):.2f}): {seen["min"]:.1f}-{seen["max"]:.1f} screen px over {seen["n"]} draws')
+    n0 = len(G('H.dmgEffects()'))
+    G('(() => { for (let i = 0; i < 20; i++) H.dmgNumber(500, 500, 1.5, 4242); })()')
+    de = G('H.dmgEffects()')
+    agg = [x for x in de if (x['hits'] or 0) >= 20]
+    check(len(de) - n0 == 1 and agg and abs(agg[0]['val'] - 30) < 1e-6 and agg[0]['text'] == '30', f'20 rapid hits on one enemy merge into one "30" ({len(de) - n0} new numbers)')
+    G('H.camReset(); H.g.waves.index = 6; H.startWave(); H.setSpeed(1)')
+    for i in range(8): G(f'H.spawn("{["ceramic","yellow","ironback","pink"][i % 4]}", {i % 2}, {0.15 + i * 0.06}, 2)')
+    until('H.effects().dmg > 4', 12000); wait(200)
+    shot(pg, SHORT, 'damage_zoomed_out')
+    G('H.killAllEnemies(); H.g.waves.active = false')
+
+    # ---- scrap: its own currency, gathered by troops, spent on armory + vehicles
+    G('H.setScrap(0)'); wait(250)
+    check(pg.locator('#scrap').inner_text() == '0', 'scrap HUD shows 0')
+    wc = G('H.deployCost("warthog")'); spc2 = G('H.deployCost("spartan")')
+    check(wc['scrap'] == 30 and spc2['scrap'] == 60, f'vehicle/Spartan cost scrap on top of credits: Warthog {wc}, Spartan {spc2}')
+    fb = G('H.fieldBlock("warthog")') or ''
+    check(not G('H.canDeploy("warthog")') and ('scrap' in fb.lower() or 'max' in fb.lower()), f'Warthog blocked without scrap: "{fb}"')
+    mi2 = G("""(() => H.g.squads.findIndex(q => q.alive && !q.data.vehicle && q.units.some(u => u.alive && !u.garrison && u.dropT <= 0)))()""")
+    check(mi2 >= 0, f'found a live infantry squad #{mi2}')
+    G(f'(() => {{ const q = H.g.squads[{mi2}]; q.stance = "aggressive"; q.units = q.units.filter(u => u.alive); }})()')
+    up = G(f'H.squad({mi2}).units[0]')
+    ptr0 = (G('H.stats().pickups') or {}).get('troops', 0)
+    G(f'H.spawnPickup({up["x"]} + 30, {up["y"]}, 25, "scrap")')
+    ok = until('H.scrap().scrap >= 25', 4000)
+    sv = G('H.scrap()')
+    check(ok and sv['by'].get('troops', 0) >= 25, f'troops gathered a scrap pile into the SCRAP bank: {sv}')
+    check((G('H.stats().pickups') or {}).get('troops', 0) == ptr0, 'scrap did not turn into credits')
+    wait(250)
+    check(pg.locator('#scrap').inner_text() == str(G('H.scrap().scrap')), f'HUD scrap = {pg.locator("#scrap").inner_text()}')
+    G('H.setScrap(45)'); G('H.selectHQ()'); wait(300)
+    check('Salvage Armory' in pg.locator('#sel-panel').inner_text(), 'HQ panel lists the scrap-only Salvage Armory with costs')
+    shot(pg, SHORT, 'scrap_hud_armory')
+    hp0 = G(f'H.squad({mi2}).units[0].max')
+    check(G('H.buyArmory("plating")'), 'bought Salvaged Plating (40 scrap)')
+    wait(150); hp1 = G(f'H.squad({mi2}).units[0].max')
+    check(G('H.scrap().scrap') == 5 and 'plating' in G('H.armory()'), f'scrap spent: 45 -> {G("H.scrap().scrap")}')
+    check(hp1 > hp0 * 1.15, f'plating: troop max HP {hp0:.0f} -> {hp1:.0f}')
+    check(not G('H.buyArmory("ap")'), 'AP Rounds (60) refused with only 5 scrap')
+    wait(300); shot(pg, SHORT, 'scrap_purchase')
+    G('H.setScrap(30)')
+    if G('H.g.squads.filter(s => s.alive && s.data.id === "warthog").length') >= 3:
+        G('(() => { const s = H.g.squads.find(s => s.alive && s.data.id === "warthog"); s.units.forEach(u => u.alive = false); })()'); wait(150)
+    G('H.g.deployCd = {}')
+    okw = G(f'H.deploy("warthog", {hq["x"]} - 320, {hq["y"]} + 40)')
+    check(okw and G('H.scrap().scrap') == 0, f'Warthog bought with 30 scrap + credits (scrap now {G("H.scrap().scrap")})')
+    G('H.sandbox(2, 80)')
 
     # ---------------- mobile
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)

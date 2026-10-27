@@ -3,8 +3,10 @@
 //          collect; left alone they auto-deposit at 60% after 14 s.
 //  orb:    Sunflower / Farmhand energy orbs (fuel MAC + Heal). Click or they
 //          float home on their own after 7 s.
-//  scrap:  heavy / mechanical enemies drop scrap; any troop walking over it (or
-//          a click) banks bonus credits; it rusts to 40% after 20 s.
+//  scrap:  heavy enemies, ceramic/lead bloons and cleared terrain drop scrap
+//          piles. Scrap is its OWN currency (never converted to credits): troops
+//          (and Farmhands) gather it for full value, a click grabs it, and piles
+//          left alone are salvaged at only 40% after 22 s.
 import { nextId } from '../core/math';
 import { MAX_ENERGY } from '../data/buildings';
 import type { Game } from '../game/Game';
@@ -20,7 +22,7 @@ export class Pickup {
   alive = true;
   claimedBy: Unit | null = null;
   constructor(public x: number, public y: number, readonly value: number, readonly kind: PickupKind = 'credit') {}
-  get autoAt() { return this.kind === 'orb' ? 7 : this.kind === 'scrap' ? 20 : PICKUP_AUTO_SECONDS; }
+  get autoAt() { return this.kind === 'orb' ? 7 : this.kind === 'scrap' ? 22 : PICKUP_AUTO_SECONDS; }
   update(g: Game, dt: number) {
     this.age += dt;
     if (this.claimedBy && !this.claimedBy.alive) this.claimedBy = null;
@@ -37,10 +39,17 @@ export class Pickup {
       g.sfx('orb');
       return;
     }
+    if (this.kind === 'scrap') {
+      g.res.add(v, 'scrap');
+      g.stats.scrap += v;
+      g.stats.scrapBy[by] = (g.stats.scrapBy[by] ?? 0) + v;
+      g.fx({ kind: 'text', x: this.x, y: this.y - 14, text: `+${v}🔩${rate < 1 ? ' (salvaged)' : ''}`, color: rate < 1 ? '#a9b4bf' : '#cfe3f0', dur: 1 });
+      g.sfx('coin');
+      return;
+    }
     g.res.add(v);
-    if (this.kind === 'scrap') g.stats.scrap += v;
     g.stats.pickups[by] = (g.stats.pickups[by] ?? 0) + v;
-    g.fx({ kind: 'text', x: this.x, y: this.y - 14, text: `+${v}${this.kind === 'scrap' ? ' scrap' : ''}${rate < 1 ? ' (auto)' : ''}`, color: rate < 1 ? '#d8d8a0' : '#ffe14d', dur: 0.9 });
+    g.fx({ kind: 'text', x: this.x, y: this.y - 14, text: `+${v}${rate < 1 ? ' (auto)' : ''}`, color: rate < 1 ? '#d8d8a0' : '#ffe14d', dur: 0.9 });
     g.sfx('coin');
   }
 }

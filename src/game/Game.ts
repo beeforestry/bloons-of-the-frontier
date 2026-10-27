@@ -12,8 +12,10 @@ import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
 import { WAVES } from '../data/waves';
 import { PathSystem } from '../systems/PathSystem';
+import { SHORTCUT, Shortcut, routeThrough, segDistance, type ShortcutDef } from '../systems/Shortcuts';
 import { PlacementSystem, type Cell } from '../systems/PlacementSystem';
-import { ResourceManager } from '../systems/ResourceManager';
+import { ResourceManager, type Cost } from '../systems/ResourceManager';
+import { ARMORY, ARMORY_FX, SALVAGE, type ArmoryId } from '../data/armory';
 import { WaveManager } from '../systems/WaveManager';
 import { planOrganize } from '../systems/FarmOrganizer';
 import type { Buffable } from '../systems/BuffSystem';
@@ -23,7 +25,7 @@ import { Squad, Unit, WorkerUnit } from '../entities/Unit';
 import { Projectile } from '../entities/Projectile';
 import { Pickup } from '../entities/Pickup';
 import { BuildPad, Building } from '../entities/Building';
-import { BUILDINGS, HEAL, MAC, MAX_ENERGY, POWERS, buildingById } from '../data/buildings';
+import { BUILDINGS, HEAL, MAC, MAX_ENERGY, POWERS, TRAIN_DISCOUNT, buildingById } from '../data/buildings';
 import type { BuildingKind } from '../core/types';
 import { Barrier, EnvStructure, Obstacle, gEnter, gFree, gLeave, laneOffset, type EnvKind, type Garrisonable } from '../entities/Garrison';
 import type { PickupKind } from '../entities/Pickup';
@@ -43,7 +45,12 @@ export interface Effect {
   kind: 'text' | 'ring' | 'pop' | 'splat' | 'boom' | 'boom_fire' | 'beam' | 'dust' | 'acid' | 'pod' | 'slide' | 'dmg' | 'emp';
   x: number; y: number; r?: number; color?: string; text?: string; dur: number; t?: number;
   x2?: number; y2?: number; width?: number; crit?: boolean; vx?: number;
+  /** Aggregated damage-number total / hit count. */
+  val?: number; hits?: number;
 }
+/** Seconds during which repeated hits on one enemy merge into a single number. */
+export const DMG_AGG_WINDOW = 0.35;
+const fmtDmg = (n: number) => (n >= 10 ? `${Math.round(n)}` : `${Math.round(n * 10) / 10}`);
 
 export class Game {
   readonly bus = new EventBus();
@@ -79,11 +86,13 @@ export class Game {
   /** Deploy cooldown per troop type. */
   deployCd: Record<string, number> = {};
   stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0,
-    orbs: 0, scrap: 0, promotions: 0, abilities: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0 };
+    orbs: 0, scrap: 0, promotions: 0, abilities: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, scrapBy: {} as Record<string, number> };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
   obstacles: Obstacle[] = [];
+  /** Blocked / opened shortcut trails (one or more per map). */
+  shortcuts: Shortcut[] = [];
   barriers: Barrier[] = [];
   /** Juice: camera shake amplitude (px) + shockwave ripples, read by the renderer. */
   shakeAmt = 0;
@@ -118,6 +127,7 @@ export class Game {
     for (const pd of this.pads) if (dist(pd, p) < 140) return null;
     if (dist(this.hq, p) < 220) return null;
     for (const e of [...this.envs, ...this.obstacles]) if (dist(e, p) < 150) return null;
+    for (const sc of this.shortcuts) if (segDistance(p, sc.a, sc.b) < radius + this.map.pathWidth * 0.5 + 24) return null;
     const cells: Cell[] = [], n = Math.ceil(radius / this.grid.cell) + 1;
     for (let dc = -n; dc <= n; dc++) for (let dr = -n; dr <= n; dr++) {
       const c = cc.c + dc, r = cc.r + dr, q = this.grid.cellCenter(c, r);
@@ -127,6 +137,7 @@ export class Game {
   }
   private setupMapObjects() {
     const L = this.paths.length;
+    this.setupShortcuts();
     const kinds: EnvKind[] = ['bunker', 'watchtower', 'ruins'];
     const fr = [0.34, 0.55, 0.74];
     kinds.forEach((k, i) => {
@@ -148,6 +159,68 @@ export class Game {
       }
     });
   }
+  /** Reserve the trail's cells (never buildable) and choke it with a rockslide blocker. */
+  private setupShortcuts() {
+    const defs = ((this.map as { shortcuts?: ShortcutDef[] }).shortcuts ?? []);
+    const W = this.map.pathWidth;
+    for (const def of defs) {
+      const sc = new Shortcut(def);
+      const g = this.grid, n = Math.ceil(sc.length / g.cell) + 2;
+      const c0 = g.worldToCell({ x: Math.min(sc.a.x, sc.b.x), y: Math.min(sc.a.y, sc.b.y) });
+      for (let c = c0.c - 2; c <= c0.c + n; c++) for (let r = c0.r - 2; r <= c0.r + n; r++) {
+        if (segDistance(g.cellCenter(c, r), sc.a, sc.b) < W * 0.5 + g.cell * 0.35 && g.block(c, r)) sc.cells.push({ c, r });
+      }
+      const m = sc.mid;
+      const o = new Obstacle('rock', m.x, m.y, 0, SHORTCUT.blockerHp);
+      o.shortcut = sc; sc.blocker = o;
+      this.obstacles.push(o);
+      this.shortcuts.push(sc);
+      sc.preview = this.shortcutPreview(sc);
+    }
+  }
+  /** Seconds a red bloon saves on lane `k` if this shortcut opens (for the UI). */
+  shortcutPreview(sc: Shortcut) {
+    const r = routeThrough(this.paths, sc, this.map.pathWidth).saved, best = Math.max(0, ...Object.values(r));
+    return { lanes: Object.keys(r).map(Number), saved: best, seconds: best / ENEMIES.red.speed };
+  }
+  /** Open a shortcut: re-route lanes, carry enemies over, salvage scrap, fast troop road. */
+  openShortcut(sc: Shortcut) {
+    if (sc.open) return;
+    const { paths, saved } = routeThrough(this.paths, sc, this.map.pathWidth);
+    sc.open = true; sc.rerouted = saved;
+    for (const [ks, s] of Object.entries(saved)) {
+      const k = Number(ks), oldP = this.paths[k], newP = paths[k];
+      const entry = oldP.project(sc.a).d;
+      for (const e of this.enemies) {
+        if (!e.alive || e.lane !== k || e.route) continue;
+        if (e.progress <= entry) continue; // still before the fork: takes the shortcut
+        // already past the fork: if it's on the shared tail, shift its progress; else keep the old road
+        const here = oldP.at(e.progress), pr = newP.project(here);
+        if (pr.dist < 3 && pr.d > entry + sc.length - 1) e.progress = pr.d;
+        else e.route = oldP;
+      }
+      this.paths[k] = newP;
+      void s;
+    }
+    this.stats.shortcuts++;
+    const m = sc.mid, sec = Math.max(0, ...Object.values(saved)) / ENEMIES.red.speed;
+    for (let i = 0; i < 5; i++) this.spawnPickup(m.x + rand(-40, 40), m.y + rand(-24, 24), Math.round(SALVAGE.shortcut / 5), 'scrap');
+    this.toast(`Shortcut opened! Enemies now save ~${sec.toFixed(1)}s on lane ${Object.keys(saved).map((k) => +k + 1).join(' & ')} — troops get a fast road (+${Math.round((SHORTCUT.roadSpeed - 1) * 100)}% speed). Salvage +${SALVAGE.shortcut}🔩 to gather.`, '#ffd27a');
+    this.fx({ kind: 'text', x: m.x, y: m.y - 50, text: 'SHORTCUT OPEN!', color: '#ffd27a', dur: 2 });
+    this.shock(m.x, m.y, 260, 0.6);
+  }
+  /** Scrap-paid demolition order on a shortcut blocker. */
+  demolishShortcut(sc: Shortcut): boolean {
+    if (sc.open || !sc.blocker) return false;
+    if (!this.res.spend({ credits: 0, scrap: SHORTCUT.demolishScrap })) { this.toast(`Demolish needs ${SHORTCUT.demolishScrap}🔩 scrap (have ${this.res.scrap})`, '#ff8a7a'); return false; }
+    this.clearObstacle(sc.blocker);
+    return true;
+  }
+  /** Friendly troops move faster on an opened shortcut road. */
+  roadSpeedMul(p: Vec) {
+    for (const sc of this.shortcuts) if (sc.open && segDistance(p, sc.a, sc.b) < this.map.pathWidth * 0.75) return SHORTCUT.roadSpeed;
+    return 1;
+  }
   clearObstacle(o: Obstacle) {
     if (!o.alive) return;
     o.alive = false;
@@ -155,7 +228,12 @@ export class Game {
     this.obstacles = this.obstacles.filter((x) => x !== o);
     this.stats.cleared++;
     this.fx({ kind: 'dust', x: o.x, y: o.y, r: 60, color: '#bfae8e', dur: 0.8 });
-    this.fx({ kind: 'text', x: o.x, y: o.y - 30, text: `${o.kind === 'rock' ? 'Rocks' : 'Fallen tree'} cleared! +${o.cells.length} build spots`, color: '#b6f78f', dur: 1.6 });
+    if (o.shortcut) this.openShortcut(o.shortcut);
+    else {
+      const salv = SALVAGE[o.kind];
+      this.spawnPickup(o.x + rand(-10, 10), o.y + rand(-6, 6), salv, 'scrap');
+      this.fx({ kind: 'text', x: o.x, y: o.y - 30, text: `${o.kind === 'rock' ? 'Rocks' : 'Fallen tree'} cleared! +${o.cells.length} build spots`, color: '#b6f78f', dur: 1.6 });
+    }
     this.shake(5);
     this.sfx('explosion', o.x, o.y);
   }
@@ -191,7 +269,7 @@ export class Game {
     if (b.isHQ || !b.alive) return;
     const refund = Math.round(b.invested * 0.5);
     this.res.add(refund);
-    for (const o of b.queue) this.res.add(Math.round(unitById(o.unitId).tiers[0].cost * 0.85));
+    for (const o of b.queue) { const c = this.deployCost(o.unitId, true); this.res.add(c.credits); this.res.add(c.scrap ?? 0, 'scrap'); }
     this.removeBuilding(b);
     this.fx({ kind: 'text', x: b.x, y: b.y - 30, text: `+${refund}`, color: '#ffe14d', dur: 1 });
   }
@@ -325,14 +403,30 @@ export class Game {
   sfx(n: SfxName, x?: number, y?: number) { this.sfxHook(n, x, y); }
   shake(a: number) { this.shakeAmt = Math.min(22, Math.max(this.shakeAmt, a)); }
   shock(x: number, y: number, r: number, dur = 0.5) { this.shocks.push({ x, y, r, t: 0, dur }); if (this.shocks.length > 8) this.shocks.shift(); }
-  /** Floating damage numbers: crit yellow, normal white, shield cyan. Throttled. */
-  dmgNumber(x: number, y: number, n: number, color: string, crit = false) {
+  /**
+   * Floating damage numbers: crit yellow, normal white, shield cyan. Rapid hits
+   * on the same enemy (key = enemy uid) within DMG_AGG_WINDOW merge into one
+   * growing number instead of a spray of tiny ones. Throttled.
+   */
+  private dmgAgg = new Map<string, Effect>();
+  dmgNumber(x: number, y: number, n: number, color: string, crit = false, key?: number) {
     if (!this.dmgNumbers || n < 0.05) return;
+    const k = key !== undefined ? `${key}:${color}` : '';
+    const prev = k ? this.dmgAgg.get(k) : undefined;
+    if (prev && prev.t! < DMG_AGG_WINDOW && prev.t! < prev.dur) {
+      prev.val = (prev.val ?? 0) + n; prev.hits = (prev.hits ?? 1) + 1;
+      prev.crit = prev.crit || crit;
+      prev.text = fmtDmg(prev.val) + (prev.crit ? '!' : '');
+      prev.x = x; prev.y = y;
+      prev.t = Math.min(prev.t!, 0.06); // stay fresh while the hits keep coming
+      return;
+    }
     if (this.dmgLive > (crit ? 90 : 60)) return;
-    if (!crit && n < 1 && Math.random() > 0.35) return;
+    if (!k && !crit && n < 1 && Math.random() > 0.35) return;
     this.dmgLive++;
-    const txt = n >= 10 ? `${Math.round(n)}` : `${Math.round(n * 10) / 10}`;
-    this.fx({ kind: 'dmg', x: x + rand(-8, 8), y, text: crit ? txt + '!' : txt, color, crit, dur: crit ? 0.9 : 0.65, vx: rand(-20, 20) });
+    const e: Effect = { kind: 'dmg', x: x + rand(-8, 8), y, text: fmtDmg(n) + (crit ? '!' : ''), color, crit, dur: crit ? 0.9 : 0.75, vx: rand(-20, 20), val: n, hits: 1 };
+    this.fx(e);
+    if (k) { this.dmgAgg.set(k, e); if (this.dmgAgg.size > 400) this.dmgAgg.clear(); }
   }
   healNumber(x: number, y: number, n: number) { if (n >= 0.5) this.fx({ kind: 'dmg', x: x + rand(-6, 6), y, text: `+${Math.round(n)}`, color: '#7dff7a', dur: 0.8, vx: 0 }); }
   /** Big explosion: damage + terrain + shake + shockwave (Cherry Pod, ODST pods, Spartan). */
@@ -414,9 +508,9 @@ export class Game {
     this.fx({ kind: look, x, y, r, dur: 0.35 });
   }
   unitAttack(u: Unit, tgt: Enemy, t: UnitTier) {
-    const w = t.weapon, crit = Math.random() < 0.08, dmg = t.stats.damage * u.dmgMul * (crit ? 2 : 1);
+    const w = t.weapon, crit = Math.random() < 0.08, dmg = t.stats.damage * u.dmgMul * (crit ? 2 : 1) * (this.armory.has('servos') ? 1 + ARMORY_FX.servosDmg : 1);
     if (crit) this.stats.crits++;
-    const hit: HitOpts = { antiAir: !!w.antiAir, ap: !!w.armorPiercing, src: u, crit };
+    const hit: HitOpts = { antiAir: !!w.antiAir, ap: !!w.armorPiercing || this.armory.has('ap'), src: u, crit };
     if (t.stats.range < 60) {
       if (w.splash) this.splash(tgt.x, tgt.y, w.splash, dmg, w.type, u, 'boom', { ...hit, ap: true });
       else tgt.takeDamage(this, dmg, w.type, u, hit);
@@ -521,9 +615,31 @@ export class Game {
   }
   setTargeting(o: Tower | Squad, m: TargetingMode) { o.targeting = m; this.sfx('command'); }
   squadCount(id: string) { return this.squads.filter((s) => s.data.id === id && s.alive).length; }
+  /** Credits + scrap to field a squad (Barracks training discounts credits only). */
+  deployCost(id: string, train = false): Cost {
+    const d = unitById(id);
+    return { credits: train ? Math.round(d.tiers[0].cost * TRAIN_DISCOUNT) : d.tiers[0].cost, scrap: d.scrapCost ?? 0 };
+  }
+  // ------------------------------------------------------------------ Salvage Armory (scrap-only tech)
+  readonly armory = new Set<ArmoryId>();
+  buyArmory(id: ArmoryId): boolean {
+    const a = ARMORY.find((x) => x.id === id);
+    if (!a || this.armory.has(id)) return false;
+    if (!this.res.spend({ credits: 0, scrap: a.scrap })) { this.toast(`${a.name} needs ${a.scrap}🔩 scrap (have ${this.res.scrap})`, '#ff8a7a'); return false; }
+    this.armory.add(id);
+    this.stats.armory++;
+    this.toast(`Salvage Armory: ${a.name} — ${a.desc}`, '#cfe3f0');
+    this.sfx('upgrade');
+    for (const sq of this.squads) for (const u of sq.units) if (u.alive) this.fx({ kind: 'ring', x: u.x, y: u.y, r: 22, color: '#cfe3f0', dur: 0.6 });
+    return true;
+  }
+  /** "520¢ + 30🔩" style label. */
+  costLabel(c: Cost) { return `¢${c.credits}${c.scrap ? ` + ${c.scrap}🔩` : ''}`; }
+  /** Short reason a cost can't be paid. */
+  poorReason(c: Cost) { return this.res.scrap < (c.scrap ?? 0) ? `Need ${c.scrap}🔩 scrap (have ${this.res.scrap}) — troops gather scrap` : 'Not enough credits'; }
   canDeploy(id: string) {
     const d = unitById(id);
-    return (this.deployCd[id] ?? 0) <= 0 && (!d.maxSquads || this.squadCount(id) < d.maxSquads) && this.res.canAfford({ credits: d.tiers[0].cost }) && this.tech >= d.tech && this.pop + d.population <= this.popCap;
+    return (this.deployCd[id] ?? 0) <= 0 && (!d.maxSquads || this.squadCount(id) < d.maxSquads) && this.res.canAfford(this.deployCost(id)) && this.tech >= d.tech && this.pop + d.population <= this.popCap;
   }
   /** Why a troop can't be fielded right now (pop / tech / squad cap), or null. */
   fieldBlock(id: string): string | null {
@@ -531,6 +647,7 @@ export class Game {
     if (this.tech < d.tech) return `Needs Tech ${d.tech} — build a Reactor`;
     if (this.pop + d.population > this.popCap) return `Population cap ${this.pop}/${this.popCap} — build a Reactor or upgrade the HQ`;
     if (d.maxSquads && this.squadCount(id) >= d.maxSquads) return `Max ${d.maxSquads} ${d.name} squads`;
+    if (this.res.scrap < (d.scrapCost ?? 0)) return `Needs ${d.scrapCost}🔩 scrap (have ${this.res.scrap}) — troops gather scrap`;
     return null;
   }
   /** Halo-Wars-style deployment: a drop pod lands the squad at the rally point. */
@@ -539,7 +656,8 @@ export class Game {
     if ((this.deployCd[id] ?? 0) > 0) { this.toast(`${d.name} on cooldown`); return null; }
     const block = this.fieldBlock(id);
     if (block) { this.toast(block, '#ff8a7a'); return null; }
-    if (!this.res.spend({ credits: d.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
+    const cost = this.deployCost(id);
+    if (!this.res.spend(cost)) { this.toast(this.poorReason(cost), '#ff8a7a'); return null; }
     const sq = this.spawnSquad(d, at, true);
     this.deployCd[id] = d.cooldown;
     return sq;
@@ -765,6 +883,7 @@ export class Game {
   private updateEffects(dt: number) {
     for (const e of this.effects) e.t! += dt;
     this.effects = this.effects.filter((e) => e.t! < e.dur);
+    for (const [k, e] of this.dmgAgg) if (e.t! >= DMG_AGG_WINDOW || e.t! >= e.dur) this.dmgAgg.delete(k);
     let n = 0; for (const e of this.effects) if (e.kind === 'dmg') n++;
     this.dmgLive = n;
     this.shakeAmt = Math.max(0, this.shakeAmt - dt * 40);

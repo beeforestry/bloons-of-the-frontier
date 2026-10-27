@@ -169,6 +169,14 @@ with sync_playwright() as p:
     try: pg.wait_for_function('window.__game.state().garrisoned > 0', timeout=20000)
     except Exception: pass
     check(st()['garrisoned'] > 0, f'garrisoned {st()["garrisoned"]} marine(s) in a Cover tower')
+    # tower spots shift with the map (shortcut corridors are reserved), so make sure a
+    # buffable sits inside a Cover aura: drop a Dart Monkey on the free cell nearest one
+    G('''(() => { const g = H.g, ct = g.towers.find(t => t.cover); if (!ct) return false;
+      if (Array.from(g.buffables()).some(b => b !== ct && Math.hypot(b.x - ct.x, b.y - ct.y) < ct.t.cover.auraRadius)) return true;
+      const fc = H.freeCells().map(([c, r]) => [c, r, Math.hypot(g.grid.cellCenter(c, r).x - ct.x, g.grid.cellCenter(c, r).y - ct.y)]).sort((a, b) => a[2] - b[2]);
+      return fc.length && fc[0][2] < ct.t.cover.auraRadius * 0.8 ? H.placeTower("dart_monkey", fc[0][0], fc[0][1]) : false; })()''')
+    try: pg.wait_for_function('window.__game.state().buffed > 0', timeout=4000)
+    except Exception: pass
     check(st()['buffed'] > 0, f'Cover aura buffing {st()["buffed"]} entities')
     G('H.setSpeed(4)')
     pg.click('#btn-organize')
