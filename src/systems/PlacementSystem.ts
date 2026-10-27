@@ -45,6 +45,14 @@ export class PlacementSystem<T extends Occupant = Occupant> {
     if (!this.isFree(c, r)) throw new Error(`cell ${c},${r} not free`);
     this.occ[this.idx(c, r)] = t;
   }
+  /** Map obstacles / env structures: temporarily make buildable cells unbuildable. */
+  private blocked = new Set<number>();
+  block(c: number, r: number): boolean {
+    if (!this.isFree(c, r)) return false;
+    const i = this.idx(c, r); this.buildable[i] = false; this.blocked.add(i); return true;
+  }
+  unblock(c: number, r: number) { const i = this.idx(c, r); if (this.blocked.delete(i)) this.buildable[i] = true; }
+  isBlocked(c: number, r: number) { return this.inBounds(c, r) && this.blocked.has(this.idx(c, r)); }
   release(c: number, r: number) { if (this.inBounds(c, r)) this.occ[this.idx(c, r)] = null; }
   /** Count of free buildable cells (HUD "space left" + Organize Farms report). */
   freeCount() { let n = 0; for (let i = 0; i < this.occ.length; i++) if (this.buildable[i] && !this.occ[i]) n++; return n; }

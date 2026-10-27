@@ -14,6 +14,11 @@ import type { Cell } from '../systems/PlacementSystem';
 import { TOWERS, towerById } from '../data/towers';
 const TOWER_BY_SPRITE = (k: string) => TOWERS.find((t) => t.sprite === k);
 import { IMG, HEAD_PIVOT, body, flashOf, head, type Img } from './sprites';
+import { Particles, PK, QUALITY_CAPS } from './Particles';
+import type { Barrier, EnvStructure, Obstacle } from '../entities/Garrison';
+import type { Pickup } from '../entities/Pickup';
+const hex = (s: string) => parseInt(s.replace('#', '').slice(0, 6), 16);
+const FLORA_TOWERS = new Set(['sunflower', 'solar_pea_fusion', 'gatling_cherry_bomber', 'frost_wallnut_bastion', 'flame_melon_mortar', 'repeater_gatling']);
 
 export interface ViewState {
   placing: string | null;           // tower id being placed
@@ -28,6 +33,12 @@ export interface ViewState {
   power: 'mac' | 'heal' | null;
   /** Barracks whose rally point is being placed. */
   rallyFor: Building | null;
+  /** Multi-selection (box select). selSquad is the primary. */
+  selSquads: Squad[];
+  /** Drag-select box in world coords. */
+  box: { x0: number; y0: number; x1: number; y1: number } | null;
+  boxMode: boolean; queueMode: boolean; patrolMode: boolean; patrolPts: { x: number; y: number }[];
+  showFps: boolean;
 }
 export interface Camera { x: number; y: number; zoom: number }
 
@@ -39,6 +50,19 @@ export class Renderer {
   readonly cam: Camera = { x: 0, y: 0, zoom: 1 };
   /** View size in CSS px. */
   vw = 1; vh = 1; private dpr = 1;
+  /** Pooled particles (trails, sparks, dust, pollen, leaves). */
+  readonly parts = new Particles();
+  /** 0 = full, 1 = reduced, 2 = minimal (set by the FPS governor in main.ts). */
+  quality = 0;
+  setQuality(q: number) { this.quality = Math.max(0, Math.min(2, q)); this.parts.cap = QUALITY_CAPS[this.quality]; this.g.dmgNumbers = this.quality < 2; }
+  private lastT = 0;
+  /** View bounds in world px (culling). */
+  private vx0 = 0; private vy0 = 0; private vx1 = 0; private vy1 = 0;
+  private inView(x: number, y: number, m = 120) { return x > this.vx0 - m && x < this.vx1 + m && y > this.vy0 - m && y < this.vy1 + m; }
+  private shadowSprite: HTMLCanvasElement | null = null;
+  private ghosts = new Map<number, number>();
+  /** Per-frame draw stats (FPS overlay). */
+  drawn = { objs: 0, parts: 0 };
   constructor(readonly canvas: HTMLCanvasElement, readonly g: Game) {
     this.ctx = canvas.getContext('2d')!;
     this.resize();
@@ -47,10 +71,13 @@ export class Renderer {
   /** Match the backing store to the element size (crisp on HiDPI / mobile). */
   resize() {
     const r = this.canvas.getBoundingClientRect();
+    const fit = this.vw > 0 && Math.abs(this.cam.zoom - this.minZoom) < 1e-6;
     this.vw = Math.max(1, r.width || this.canvas.clientWidth || 800); this.vh = Math.max(1, r.height || this.canvas.clientHeight || 500);
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     const W = Math.round(this.vw * this.dpr), H = Math.round(this.vh * this.dpr);
     if (this.canvas.width !== W || this.canvas.height !== H) { this.canvas.width = W; this.canvas.height = H; }
+    // stay "fit to map" across layout changes (HUD panels / rotation) if we were fitted
+    if (fit) this.cam.zoom = this.minZoom;
     this.clamp();
   }
   /** Zoom at which the whole map fits the view. */
@@ -83,39 +110,149 @@ export class Renderer {
 
   draw(v: ViewState) {
     const { ctx: c, g } = this;
+    const now = performance.now(), rdt = this.lastT ? Math.min(0.1, (now - this.lastT) / 1000) : 0.016; this.lastT = now;
+    const gdt = g.paused ? 0 : rdt * g.speed;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = '#141a14'; c.fillRect(0, 0, this.canvas.width, this.canvas.height);
     const z = this.cam.zoom * this.dpr;
-    c.setTransform(z, 0, 0, z, -this.cam.x * z, -this.cam.y * z);
+    const sh = g.shakeAmt, sx = sh ? (Math.random() * 2 - 1) * sh : 0, sy = sh ? (Math.random() * 2 - 1) * sh : 0;
+    c.setTransform(z, 0, 0, z, (-this.cam.x + sx) * z, (-this.cam.y + sy) * z);
+    this.vx0 = this.cam.x; this.vy0 = this.cam.y; this.vx1 = this.cam.x + this.vw / this.cam.zoom; this.vy1 = this.cam.y + this.vh / this.cam.zoom;
     const bg = IMG['map:' + g.map.image];
     if (bg) c.drawImage(bg, 0, 0, g.map.width, g.map.height); else { c.fillStyle = '#6aa84f'; c.fillRect(0, 0, g.map.width, g.map.height); }
-    for (const d of g.decals) this.decal(d.x, d.y, d.r, d.ang, d.t);
+    for (const d of g.decals) if (this.inView(d.x, d.y)) this.decal(d.x, d.y, d.r, d.ang, d.t);
     if (v.placing || v.selTower?.isFarm) this.gridOverlay(v);
     this.auras(v);
     for (const p of g.pads) if (!p.building) this.pad(p, p === v.selPad);
-    for (const p of g.pickups) this.pickup(p.x, p.y, p.age);
-    // y-sorted world objects
+    for (const p of g.pickups) if (this.inView(p.x, p.y)) this.pickup(p);
+    // y-sorted world objects (culled)
     const objs: { y: number; f: () => void }[] = [];
+    const sel = new Set(v.selSquads);
     for (const b of g.buildings) objs.push({ y: b.y + 30, f: () => this.building(b, b === v.selBuilding) });
-    for (const t of g.towers) objs.push({ y: t.y, f: () => this.tower(t, t === v.selTower) });
-    for (const u of g.units) if (!u.garrison) objs.push({ y: u.y, f: () => this.unit(u, v.selSquad === u.squad) });
-    for (const e of g.enemies) if (!e.data.flying) objs.push({ y: e.y, f: () => this.enemy(e) });
+    for (const t of g.towers) if (this.inView(t.x, t.y)) objs.push({ y: t.y, f: () => this.tower(t, t === v.selTower) });
+    for (const e of g.envs) if (this.inView(e.x, e.y, 160)) objs.push({ y: e.y + 20, f: () => this.env(e, v) });
+    for (const o of g.obstacles) if (this.inView(o.x, o.y)) objs.push({ y: o.y, f: () => this.obstacle(o) });
+    for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
+    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => this.unit(u, sel.has(u.squad) || v.selSquad === u.squad) });
+    for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
     objs.sort((a, b) => a.y - b.y).forEach((o) => o.f());
-    for (const e of g.enemies) if (e.data.flying) this.enemy(e);
-    for (const p of g.projectiles) this.projectile(p);
+    this.drawn.objs = objs.length;
+    for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.enemy(e);
+    this.emitAmbient(gdt);
+    for (const p of g.projectiles) if (this.inView(p.x, p.y, 40)) this.projectile(p, gdt);
     for (const a of g.acids) this.acid(a);
-    for (const e of g.effects) this.effect(e);
-    for (const st of g.strikes) this.strike(st);
-    if (v.selSquad) this.rally(v.selSquad);
+    this.parts.update(gdt);
+    this.parts.draw(c, this.vx0 - 20, this.vy0 - 20, this.vx1 + 20, this.vy1 + 20);
+    this.drawn.parts = this.parts.n;
+    for (const e of g.effects) if (e.kind === 'beam' || this.inView(e.x, e.y, 200)) this.effect(e);
+    for (const t of g.towers) if (t.sweep) this.sweepFx(t);
+    for (const st of g.strikes) this.strike(st, gdt);
+    // rally points: barracks always (faint), selected squads full with waypoint / patrol lines
+    for (const b of g.buildingsOf('barracks')) if (b !== v.selBuilding) { c.globalAlpha = 0.5; this.flag(b.door, b.rally, '#ffd84a'); c.globalAlpha = 1; }
+    for (const q of (v.selSquads.length ? v.selSquads : v.selSquad ? [v.selSquad] : [])) if (q.alive) this.rally(q);
     const rb = v.rallyFor ?? (v.selBuilding?.data.id === 'barracks' ? v.selBuilding : null);
     if (rb) this.flag(rb.door, rb.rally, '#ffd84a');
+    if (v.patrolMode) for (let i = 0; i < v.patrolPts.length; i++) { const p = v.patrolPts[i]; this.ringAt(p.x, p.y, 12, '#b6f78f', 3); this.label(p.x, p.y - 18, `${i + 1}`, '#b6f78f', 12); }
     if (v.power === 'mac' && v.mouse) this.macPreview(v.mouse.x, v.mouse.y);
     if (v.power === 'heal' && v.mouse) { c.setLineDash([8, 6]); this.ringAt(v.mouse.x, v.mouse.y, HEAL.radius, '#9ff7b0', 3); c.setLineDash([]); }
     if (v.rallyFor && v.mouse) { c.globalAlpha = 0.7; this.ringAt(v.mouse.x, v.mouse.y, 22, '#ffd84a', 3); c.globalAlpha = 1; }
-    if (v.placing && v.hoverCell) this.ghost(v.placing, v.hoverCell);
+    if (v.placing && v.mouse && towerById(v.placing).kind === 'path') this.roadGhost(v.placing, v.mouse);
+    else if (v.placing && v.hoverCell) this.ghost(v.placing, v.hoverCell);
     if (v.deploying && v.mouse) { c.globalAlpha = 0.7; this.ringAt(v.mouse.x, v.mouse.y, 24, '#7fd3ff', 3); c.globalAlpha = 1; }
+    if (v.box) this.dragBox(v.box);
+    this.shockwaves();
   }
-
+  /** Shockwave ripple: the frame inside an expanding annulus is redrawn slightly magnified
+   *  (cheap refraction) plus a bright ring. Screen-space, one drawImage per ripple. */
+  private shockwaves() {
+    const c = this.ctx, g = this.g;
+    if (!g.shocks.length) return;
+    const z = this.cam.zoom * this.dpr;
+    for (const s of g.shocks) {
+      const k = s.t / s.dur, r = s.r * (0.15 + 0.85 * Math.sqrt(k)), w = Math.max(10, s.r * 0.18) * (1 - k * 0.5);
+      if (this.quality < 2) {
+        const p = this.worldToScreen(s.x, s.y), cx = p.x * this.dpr, cy = p.y * this.dpr, R = r * z, W = w * z, m = 1.06 - 0.04 * k;
+        c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
+        c.beginPath(); c.arc(cx, cy, R + W, 0, 6.283); c.arc(cx, cy, Math.max(1, R - W), 0, 6.283, true); c.clip();
+        c.globalAlpha = 0.9 * (1 - k);
+        c.drawImage(this.canvas, cx - cx * m, cy - cy * m, this.canvas.width * m, this.canvas.height * m);
+        c.restore();
+      }
+      c.globalAlpha = 0.7 * (1 - k); c.globalCompositeOperation = 'lighter';
+      this.ringAt(s.x, s.y, r, '#fff3d0', Math.max(2, w * 0.35));
+      c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+    }
+  }
+  private dragBox(b: { x0: number; y0: number; x1: number; y1: number }) {
+    const c = this.ctx, x = Math.min(b.x0, b.x1), y = Math.min(b.y0, b.y1), w = Math.abs(b.x1 - b.x0), h = Math.abs(b.y1 - b.y0);
+    const t = this.g.time;
+    c.fillStyle = 'rgba(127,211,255,0.12)'; c.fillRect(x, y, w, h);
+    c.strokeStyle = '#7fd3ff'; c.lineWidth = 2 / this.cam.zoom; c.setLineDash([8 / this.cam.zoom, 5 / this.cam.zoom]); c.lineDashOffset = -t * 30;
+    c.strokeRect(x, y, w, h); c.setLineDash([]); c.lineDashOffset = 0;
+    // corner brackets
+    c.lineWidth = 3 / this.cam.zoom; const L = Math.min(14 / this.cam.zoom, w / 3, h / 3);
+    c.beginPath();
+    for (const [cx, cy, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) { c.moveTo(cx + dx * L, cy); c.lineTo(cx, cy); c.lineTo(cx, cy + dy * L); }
+    c.stroke();
+    // highlight troops inside
+    for (const u of this.g.units) if (!u.garrison && u.alive && u.data.role !== 'worker' && u.x >= x && u.x <= x + w && u.y >= y && u.y <= y + h) this.ringAt(u.x, u.y + 12, 13, 'rgba(255,255,255,0.8)', 2);
+  }
+  /** Ambient flora pollen + drifting leaves, Marine dust kick-up. */
+  private emitAmbient(dt: number) {
+    if (!dt) return;
+    const P = this.parts, q = this.quality;
+    if (q < 2) for (const t of this.g.towers) {
+      if (!FLORA_TOWERS.has(t.data.id) || !this.inView(t.x, t.y, 60)) continue;
+      const rate = (t.data.id === 'sunflower' ? 2.6 : 1.1) * (q ? 0.4 : 1) * (1 + t.tier * 0.4);
+      if (Math.random() < rate * dt) P.spawn(PK.Pollen, t.x + (Math.random() - 0.5) * 50, t.y - 10 - Math.random() * 30, (Math.random() - 0.5) * 8, -6 - Math.random() * 8, 3 + Math.random() * 2, 1.4 + Math.random(), t.data.id === 'sunflower' ? 0xfff27a : 0xe9ffb0);
+      if (Math.random() < rate * 0.35 * dt) P.spawn(PK.Leaf, t.x + (Math.random() - 0.5) * 60, t.y - 30 - Math.random() * 20, 6 + Math.random() * 10, 10 + Math.random() * 8, 3.5, 3 + Math.random() * 2, Math.random() < 0.5 ? 0x6fae3c : 0x9cc94a);
+    }
+    for (const u of this.g.units) {
+      if (!u.moving || u.garrison || u.dropT > 0 || !this.inView(u.x, u.y, 30)) continue;
+      const vehicle = !!u.data.vehicle, rate = (vehicle ? 14 : 5) * (q === 2 ? 0.3 : 1);
+      if (Math.random() < rate * dt) P.spawn(PK.Dust, u.x + (Math.random() - 0.5) * (vehicle ? 26 : 10), u.y + 13, (Math.random() - 0.5) * 20 - u.facing * 15, -4 - Math.random() * 6, 0.6, vehicle ? 5 : 3, 0xcdb894);
+      if (u.stimT > 0 && Math.random() < 10 * dt) P.spawn(PK.Glow, u.x, u.y - 8, (Math.random() - 0.5) * 20, -20, 0.4, 7, 0xff7ad1);
+    }
+  }
+  private sweepFx(t: Tower) {
+    const c = this.ctx, a = t.aim, len = t.range(t.t.combat!.range) * 1.35, fx = t.x, fy = t.y - 16, ex = fx + Math.cos(a) * len, ey = fy + Math.sin(a) * len;
+    c.save(); c.globalCompositeOperation = 'lighter';
+    c.strokeStyle = 'rgba(255,40,70,0.45)'; c.lineWidth = 22; c.beginPath(); c.moveTo(fx, fy); c.lineTo(ex, ey); c.stroke();
+    c.strokeStyle = 'rgba(255,200,210,0.95)'; c.lineWidth = 6; c.beginPath(); c.moveTo(fx, fy); c.lineTo(ex, ey); c.stroke();
+    c.restore();
+    for (let i = 0; i < 4; i++) { const k = Math.random(); this.parts.spawn(PK.Glow, fx + (ex - fx) * k, fy + (ey - fy) * k, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, 0.35, 10, 0xff4466); }
+    this.additive(IMG.fx_boom_fire, ex, ey, 60, this.g.time * 4, 0.7);
+  }
+  private roadGhost(id: string, m: { x: number; y: number }) {
+    const spot = this.g.roadSpot(m), d = towerById(id), b = d.tiers[0].barrier!;
+    const p = spot ?? m;
+    if (b.blastRadius) { this.range(p.x, p.y, b.blastRadius, !!spot); } else this.ringAt(p.x, p.y, 26, spot ? '#b6f78f' : '#ff8a7a', 3);
+    this.ctx.globalAlpha = 0.7; const im = body(d.sprite, 0); if (im) { const [w, h] = this.fitWH(im, 58); this.feet(im, p.x, p.y + 16, w, h); } this.ctx.globalAlpha = 1;
+  }
+  private env(e: EnvStructure, v: ViewState) {
+    const im = IMG[e.sprite] ?? body(e.sprite), sz = e.kind === 'watchtower' ? 150 : 130, footY = e.y + 36;
+    this.shadowAt(e.x + 8, footY - 6, sz * 0.46, sz * 0.15, 0.42);
+    if (im) { const [w, h] = this.fitWH(im, sz); this.feet(im, e.x, footY, w, h); }
+    const n = e.garrisoned.length, slots = e.gSlots();
+    const hot = v.selSquads.length > 0 && v.mouse && Math.hypot(v.mouse.x - e.x, v.mouse.y - e.y) < 70;
+    if (hot) { this.ctx.setLineDash([6, 5]); this.ringAt(e.x, e.y + 10, 66, '#ffd84a', 2.5); this.ctx.setLineDash([]); }
+    this.label(e.x, footY + 10, `${'●'.repeat(n)}${'○'.repeat(slots - n)}`, n ? '#7fd3ff' : 'rgba(255,255,255,0.7)', 11);
+    if (hot || n) this.label(e.x, footY - sz * 0.82, `${e.gName()} · −50% dmg · +35% range`, '#fff', 11);
+  }
+  private obstacle(o: Obstacle) {
+    const im = IMG[o.sprite] ?? body(o.sprite), sz = o.kind === 'log' ? 110 : 84;
+    this.shadowAt(o.x + 4, o.y + 14, sz * 0.45, sz * 0.14, 0.4);
+    if (im) { const [w, h] = this.fitWH(im, sz); this.feet(o.hitFlash > 0 ? flashOf(im) : im, o.x, o.y + 22, w, h, o.ang > 1.5); }
+    if (o.hp < o.maxHp) this.bar(o.x, o.y - sz * 0.45, 46, o.hp / o.maxHp, '#c9a36a', o.uid);
+  }
+  private barrier(b: Barrier) {
+    const c = this.ctx, im = body(b.data.sprite, 0), pod = b.isPod;
+    const sz = pod ? 50 : 62, fuse = b.fuse > 0 ? 1 + Math.sin(this.g.time * 40) * 0.08 : 1;
+    this.shadowAt(b.x + 3, b.y + 12, sz * 0.4, sz * 0.13, 0.42);
+    if (im) { const [w, h] = this.fitWH(im, sz); this.feet(b.hitFlash > 0 ? flashOf(im) : im, b.x, b.y + 16, w, h, false, fuse, fuse); }
+    if (b.fuse > 0) { this.additive(IMG.fx_spark, b.x + 8, b.y - sz * 0.7, 26, this.g.time * 9, 0.9); c.globalAlpha = 0.4; this.ringAt(b.x, b.y, b.b.blastRadius!, '#ff7040', 2); c.globalAlpha = 1; }
+    if (!pod && b.hp < b.maxHp) this.bar(b.x, b.y - sz * 0.75, 40, b.hp / b.maxHp, '#e3b35a', b.uid);
+  }
   // ---------------------------------------------------------------- overlays
   private gridOverlay(v: ViewState) {
     const { ctx: c, g } = this, gr = g.grid, s = gr.cell;
@@ -132,6 +269,14 @@ export class Renderer {
   }
   private auras(v: ViewState) {
     const c = this.ctx;
+    for (const t of this.g.towers) {
+      const a = t.t.aura; if (!a || t.disabled || !this.inView(t.x, t.y, a.radius)) continue;
+      const sel = t === v.selTower, r = a.radius * (1 + Math.sin(this.g.time * 1.8 + t.uid) * 0.015);
+      const gr = c.createRadialGradient(t.x, t.y, r * 0.15, t.x, t.y, r);
+      gr.addColorStop(0, 'rgba(140,255,120,0)'); gr.addColorStop(0.8, sel ? 'rgba(140,255,120,0.16)' : 'rgba(140,255,120,0.07)'); gr.addColorStop(1, sel ? 'rgba(140,255,120,0.3)' : 'rgba(140,255,120,0.14)');
+      c.fillStyle = gr; c.beginPath(); c.arc(t.x, t.y, r, 0, 7); c.fill();
+      c.setLineDash([3, 7]); this.ringAt(t.x, t.y, r, sel ? 'rgba(170,255,140,0.9)' : 'rgba(170,255,140,0.4)', 2); c.setLineDash([]);
+    }
     for (const t of this.g.towers) {
       if (!t.cover || t.disabled) continue;
       const r = t.t.cover!.auraRadius, sel = t === v.selTower;
@@ -221,7 +366,7 @@ export class Renderer {
     this.macStripPath(x, y, p.ang);
     c.fillStyle = 'rgba(255,80,40,0.18)'; c.fill(); c.strokeStyle = 'rgba(255,120,60,0.9)'; c.lineWidth = 3; c.setLineDash([12, 8]); c.stroke(); c.setLineDash([]);
   }
-  private strike(st: Strike) {
+  private strike(st: Strike, dt: number) {
     const c = this.ctx;
     if (st.kind === 'mac') {
       if (st.t < MAC.delay) {
@@ -230,7 +375,10 @@ export class Renderer {
         c.fillStyle = `rgba(255,60,30,${0.12 + 0.2 * pulse})`; c.fill(); c.strokeStyle = '#ff5030'; c.lineWidth = 3; c.stroke();
         // incoming round: a white-hot streak dropping from orbit
         const ty = st.y - (1 - k) * 900;
-        c.strokeStyle = 'rgba(255,240,200,0.9)'; c.lineWidth = 6 + 10 * k; c.beginPath(); c.moveTo(st.x - 40, ty - 300); c.lineTo(st.x, ty); c.stroke();
+        c.save(); c.globalCompositeOperation = 'lighter';
+        c.strokeStyle = 'rgba(255,120,60,0.35)'; c.lineWidth = 26 + 20 * k; c.beginPath(); c.moveTo(st.x - 40, ty - 300); c.lineTo(st.x, ty); c.stroke();
+        c.strokeStyle = 'rgba(255,240,200,0.9)'; c.lineWidth = 6 + 10 * k; c.stroke(); c.restore();
+        if (dt) for (let i = 0; i < 6; i++) { const q = Math.random(); this.parts.spawn(PK.Glow, st.x - 40 * q + (Math.random() - 0.5) * 10, ty - 300 * q, (Math.random() - 0.5) * 40, -40, 0.45, 12 + 10 * k, Math.random() < 0.5 ? 0xffb060 : 0xfff0c0); }
         this.additive(IMG.fx_spark ?? IMG.fx_boom, st.x, ty, 60 + 60 * k, st.t * 5);
       } else if (st.segs < 7) {
         this.additive(IMG.fx_boom_fire, st.x, st.y, MAC.width * 3, st.t, 0.6);
@@ -243,10 +391,19 @@ export class Renderer {
     }
   }
   private rally(sq: Squad) {
-    const c = this.ctx, r = sq.rally;
-    c.strokeStyle = '#7fd3ff'; c.lineWidth = 2; c.setLineDash([4, 4]);
-    for (const u of sq.units) { c.beginPath(); c.moveTo(u.x, u.y); c.lineTo(r.x, r.y); c.stroke(); }
-    c.setLineDash([]);
+    const c = this.ctx, r = sq.rally, ctr = sq.center;
+    c.strokeStyle = '#7fd3ff'; c.lineWidth = 2; c.setLineDash([4, 4]); c.lineDashOffset = -this.g.time * 20;
+    c.beginPath(); c.moveTo(ctr.x, ctr.y); c.lineTo(r.x, r.y); c.stroke();
+    if (sq.waypoints.length) {
+      c.strokeStyle = '#ffd84a'; c.beginPath(); c.moveTo(r.x, r.y); for (const w of sq.waypoints) c.lineTo(w.x, w.y); c.stroke();
+      sq.waypoints.forEach((w, i) => { this.ringAt(w.x, w.y, 9, '#ffd84a', 2.5); this.label(w.x, w.y - 15, `${i + 1}`, '#ffd84a', 11); });
+    }
+    if (sq.patrol) {
+      c.strokeStyle = '#b6f78f'; c.beginPath(); sq.patrol.forEach((w, i) => (i ? c.lineTo(w.x, w.y) : c.moveTo(w.x, w.y))); c.closePath(); c.stroke();
+      for (const w of sq.patrol) this.ringAt(w.x, w.y, 8, '#b6f78f', 2.5);
+    }
+    if (sq.garrisonTarget) { c.strokeStyle = '#ffd84a'; c.beginPath(); c.moveTo(ctr.x, ctr.y); c.lineTo(sq.garrisonTarget.x, sq.garrisonTarget.y); c.stroke(); }
+    c.setLineDash([]); c.lineDashOffset = 0;
     c.fillStyle = '#7fd3ff'; c.beginPath(); c.moveTo(r.x, r.y); c.lineTo(r.x, r.y - 26); c.lineTo(r.x + 16, r.y - 20); c.lineTo(r.x, r.y - 14); c.fill();
     c.strokeStyle = '#1d2128'; c.lineWidth = 2; c.beginPath(); c.moveTo(r.x, r.y); c.lineTo(r.x, r.y - 26); c.stroke();
   }
@@ -259,10 +416,16 @@ export class Renderer {
     const c = this.ctx;
     c.save(); c.translate(x, footY); if (rot) c.rotate(rot); c.scale(flip ? -sx : sx, sy); c.drawImage(im, -w / 2, -h, w, h); c.restore();
   }
+  /** Soft contact shadow from one cached radial sprite (no per-call gradient). */
   private shadowAt(x: number, y: number, rx: number, ry: number, a = 0.3) {
-    const c = this.ctx, gr = c.createRadialGradient(x, y, 1, x, y, rx);
-    gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)');
-    c.fillStyle = gr; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 7); c.fill();
+    if (!this.shadowSprite) {
+      const s = document.createElement('canvas'); s.width = s.height = 64;
+      const x2 = s.getContext('2d')!, gr = x2.createRadialGradient(32, 32, 1, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      x2.fillStyle = gr; x2.fillRect(0, 0, 64, 64); this.shadowSprite = s;
+    }
+    const c = this.ctx, ga = c.globalAlpha; c.globalAlpha = ga * a;
+    c.drawImage(this.shadowSprite, x - rx, y - ry, rx * 2, ry * 2); c.globalAlpha = ga;
   }
   private additive(im: Img | undefined, x: number, y: number, sz: number, rot = 0, alpha = 1) {
     if (!im) return; const c = this.ctx, [w, h] = this.fitWH(im, sz);
@@ -325,10 +488,15 @@ export class Renderer {
     this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aim, false, t.recoil, (t.uid % 7) * 0.9);
     c.globalAlpha = 1;
     this.pips(t.x, t.y + 26, t.tier, t.t.visual.glow);
-    if (t.health.frac < 0.999) this.bar(t.x, t.y - 38, 40, t.health.frac, t.disabled ? '#888' : '#5fe06a');
+    if (t.health.frac < 0.999) this.bar(t.x, t.y - 38, 40, t.health.frac, t.disabled ? '#888' : '#5fe06a', t.uid);
     if (t.disabled) this.label(t.x, t.y - 46, 'OFFLINE', '#ff8a7a');
-    if (t.cover && t.cover.garrisoned.length) this.label(t.x, t.y + 40, '👤'.repeat(t.cover.garrisoned.length), '#fff', 11);
-    if (sel) { c.strokeStyle = '#fff'; c.lineWidth = 2; c.setLineDash([5, 4]); c.strokeRect(t.x - 24, t.y - 24, 48, 48); c.setLineDash([]); }
+    if (t.garrisoned.length) this.label(t.x, t.y + 40, '●'.repeat(t.garrisoned.length) + '○'.repeat(Math.max(0, t.gSlots() - t.garrisoned.length)), '#7fd3ff', 11);
+    if (t.farm && t.farm.crates > 0) { const n = Math.min(6, Math.ceil(t.farm.crates / 15)); for (let i = 0; i < n; i++) if (IMG.fx_crate) this.img(IMG.fx_crate, t.x + 26 + (i % 2) * 12, t.y + 14 - Math.floor(i / 2) * 11, 18); this.label(t.x + 32, t.y - 24, `¢${t.farm.crates}`, '#ffe14d', 11); }
+    if (t.data.ability && t.abilityCd <= 0) this.additive(IMG.fx_spark, t.x, t.y - 46, 22 + Math.sin(this.g.time * 6) * 4, this.g.time * 2, 0.8);
+    if (sel || t.pulse > 0) {
+      const pu = t.pulse; c.strokeStyle = pu > 0 ? `rgba(255,${Math.round(220 - pu * 120)},120,${0.6 + pu * 0.4})` : '#fff'; c.lineWidth = 2 + pu * 3;
+      c.setLineDash(sel ? [5, 4] : []); c.beginPath(); c.ellipse(t.x, t.y + 18, 30 + pu * 10, 12 + pu * 4, 0, 0, 7); c.stroke(); c.setLineDash([]);
+    }
   }
   private pips(x: number, y: number, tier: number, glow?: string) {
     const c = this.ctx;
@@ -338,10 +506,18 @@ export class Renderer {
       c.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + (k * Math.PI) / 5, r = k % 2 ? 2 : 4.6; c.lineTo(px + Math.cos(a) * r, y + Math.sin(a) * r); } c.closePath(); c.fill(); c.stroke();
     }
   }
-  private bar(x: number, y: number, w: number, f: number, col: string) {
-    const c = this.ctx;
-    c.fillStyle = 'rgba(0,0,0,0.6)'; c.fillRect(x - w / 2 - 1, y - 1, w + 2, 6);
-    c.fillStyle = col; c.fillRect(x - w / 2, y, w * Math.max(0, f), 4);
+  /** Crisp health bar: pixel-snapped (in screen space), dark frame, damage ghost that drains behind. */
+  private bar(x: number, y: number, w: number, f: number, col: string, id?: number) {
+    const c = this.ctx, z = this.cam.zoom, px = 1 / z;
+    f = Math.max(0, Math.min(1, f));
+    let gf = f;
+    if (id !== undefined) { const prev = this.ghosts.get(id) ?? f; gf = prev > f ? prev - Math.max(0.004, (prev - f) * 0.06) : f; this.ghosts.set(id, gf); if (this.ghosts.size > 3000) this.ghosts.clear(); }
+    const sn = (v: number) => Math.round(v * z) / z;
+    const h = Math.max(4, 5 * px), X = sn(x - w / 2), Y = sn(y);
+    c.fillStyle = 'rgba(8,10,14,0.85)'; c.fillRect(X - px, Y - px, sn(w) + 2 * px, h + 2 * px);
+    if (gf > f) { c.fillStyle = 'rgba(255,255,255,0.75)'; c.fillRect(X, Y, sn(w * gf), h); }
+    c.fillStyle = col; c.fillRect(X, Y, sn(w * f), h);
+    c.fillStyle = 'rgba(255,255,255,0.28)'; c.fillRect(X, Y, sn(w * f), h * 0.4);
   }
   private label(x: number, y: number, s: string, col: string, size = 12) {
     const c = this.ctx; c.font = `bold ${size}px Fredoka, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -371,7 +547,16 @@ export class Renderer {
     const footY = u.y + 14;
     if (t.visual.glow) { c.fillStyle = t.visual.glow + '44'; c.beginPath(); c.ellipse(u.x, footY - 1, sz * 0.42, sz * 0.15, 0, 0, 7); c.fill(); }
     this.shadowAt(u.x + 2, footY - 1, sz * 0.32, sz * 0.11, 0.35);
-    if (sel) this.ringAt(u.x, footY - 2, sz * 0.45, '#7fd3ff', 2);
+    if (sel || u.hitPulse > 0 || u.squad.pulse > 0) {
+      const pu = Math.max(u.hitPulse, u.squad.pulse);
+      const col = u.squad.pulse > u.hitPulse ? `rgba(127,232,255,${0.5 + pu * 0.5})` : u.hitPulse > 0 ? `rgba(255,${Math.round(200 - pu * 140)},${Math.round(200 - pu * 140)},${0.55 + pu * 0.45})` : '#7fd3ff';
+      c.strokeStyle = col; c.lineWidth = 2 + pu * 2; c.beginPath(); c.ellipse(u.x, footY - 2, sz * 0.45 + pu * 6, sz * 0.18 + pu * 2, 0, 0, 7); c.stroke();
+    }
+    if (u.beamTo && u.beamTo.alive) {
+      c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(255,60,40,0.5)'; c.lineWidth = 7; c.beginPath(); c.moveTo(u.x + u.facing * 10, u.y - 12); c.lineTo(u.beamTo.x, u.beamTo.y); c.stroke();
+      c.strokeStyle = 'rgba(255,230,220,0.95)'; c.lineWidth = 2; c.stroke(); c.restore();
+      if (Math.random() < 0.5) this.parts.spawn(PK.Glow, u.beamTo.x, u.beamTo.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, 0.3, 8, 0xff5040);
+    }
     if (im) {
       const [w, h] = this.fitWH(im, sz);
       const hop = Math.abs(Math.sin(st.walk)) * 2.6 * st.moving;
@@ -383,7 +568,8 @@ export class Renderer {
       this.feet(im, u.x + lunge * dir, footY - hop, w, h, u.facing < 0, 1, breathe, rot);
       if (ranged && atk > 0.35 && !u.isWorker) this.additive(IMG.fx_muzzle, u.x + dir * w * 0.5, footY - hop - h * 0.66, 16 + tier * 3, dir < 0 ? Math.PI : 0, atk);
     }
-    if (u.health.frac < 0.999) this.bar(u.x, u.y - sz * 0.75, 24, u.health.frac, '#7fd3ff');
+    if (u.health.frac < 0.999) this.bar(u.x, u.y - sz * 0.75, 24, u.health.frac, '#7fd3ff', u.uid);
+    if (u.stars) this.label(u.x, u.y - sz * 0.75 - (u.health.frac < 0.999 ? 9 : 2), '★'.repeat(u.stars), '#ffd84a', 10);
     if (u.isWorker && (u as Unit & { status?: string }).status && (u as Unit & { status: string }).status !== 'idle')
       this.label(u.x, u.y - sz * 0.9, ({ 'organizing farms': '🧹', collecting: '¢', repairing: '🔧' } as Record<string, string>)[(u as Unit & { status: string }).status] ?? '', '#ffe14d', 12);
   }
@@ -420,15 +606,35 @@ export class Renderer {
       footY = e.y;
     }
     if (e.slowAmt > 0) { c.fillStyle = 'rgba(150,220,255,0.3)'; c.beginPath(); c.ellipse(e.x, e.y, w * 0.5, h * 0.45, 0, 0, 7); c.fill(); }
-    if (d.boss || (e.maxHp > 1 && e.hp < e.maxHp)) this.bar(e.x, e.y - h * 0.6 - 4, d.boss ? 70 : 28, e.hp / e.maxHp, d.boss ? '#ff5a5a' : '#ffb347');
+    if (e.shield > 0) { // energy dome
+      const k = e.shield / e.maxShield, R = Math.max(w, h) * 0.62, gr = c.createRadialGradient(e.x, e.y - 4, R * 0.5, e.x, e.y - 4, R);
+      gr.addColorStop(0, 'rgba(120,230,255,0)'); gr.addColorStop(0.85, `rgba(120,230,255,${0.18 + 0.2 * k})`); gr.addColorStop(1, `rgba(200,250,255,${0.5 + 0.3 * k})`);
+      c.fillStyle = gr; c.beginPath(); c.arc(e.x, e.y - 4, R, 0, 7); c.fill();
+      c.globalAlpha = 0.5 + 0.3 * Math.sin(time * 6); this.ringAt(e.x, e.y - 4, R, '#bff4ff', 1.5); c.globalAlpha = 1;
+    }
+    if (e.armor > 0.05 && !bug) this.label(e.x + w * 0.4, e.y - h * 0.4, '⛨', '#cfd6de', 11);
+    else if (e.armor > 0.05) { c.globalAlpha = 0.85; this.label(e.x + w * 0.42, e.y - h * 0.5, '⛨', e.armor < (d.armored ?? 0) ? '#ff9a6a' : '#cfd6de', 12); c.globalAlpha = 1; }
+    if (e.stunT > 0) for (let i = 0; i < 3; i++) { const a = time * 5 + i * 2.1; this.label(e.x + Math.cos(a) * 14, e.y - h * 0.6 + Math.sin(a) * 4, '✦', '#fff27a', 10); }
+    if (d.air) { this.shadowAt(e.x, e.y + h + 26, w * 0.35, w * 0.1, 0.25); }
+    if (e.maxShield > 0 && e.shield > 0) this.bar(e.x, e.y - h * 0.6 - 10, d.boss ? 70 : 28, e.shield / e.maxShield, '#7fe8ff');
+    if (d.boss || (e.maxHp > 1 && e.hp < e.maxHp)) this.bar(e.x, e.y - h * 0.6 - 4, d.boss ? 70 : 28, e.hp / e.maxHp, d.boss ? '#ff5a5a' : '#ffb347', e.uid);
     void footY;
   }
 
   // ---------------------------------------------------------------- projectiles & fx
-  private projectile(p: Projectile) {
+  private projectile(p: Projectile, dt: number) {
     const c = this.ctx, k = p.o.kind, s = p.o.scale ?? 1, y = p.y - p.height;
     const ang = Math.atan2(p.vy, p.vx);
+    // glowing trails on high-tier / magical shots
+    if (dt && this.quality < 2) {
+      const trail: Record<string, number> = { magic: 0xc77dff, star: 0xffe066, flak: 0xffa040, glue: 0xa6ff4d, seed: 0xb6f78f, gpea: 0xff5a5a, melon: 0xff8a3a };
+      const col = trail[k] ?? (s > 1.3 ? 0xfff0b0 : 0);
+      if (col && Math.random() < (this.quality ? 0.5 : 1)) this.parts.spawn(k === 'melon' ? PK.Ember : PK.Glow, p.x + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4, -p.vx * 0.05 + (Math.random() - 0.5) * 20, -p.vy * 0.05 + (Math.random() - 0.5) * 20, 0.35, (k === 'magic' ? 9 : 6) * s, col);
+    }
     switch (k) {
+      case 'flak': this.additive(IMG.fx_boom_fire, p.x, y, 16 * s, p.spin, 0.9); c.fillStyle = '#ffd08a'; c.beginPath(); c.arc(p.x, y, 3, 0, 7); c.fill(); break;
+      case 'glue': c.fillStyle = '#9be04a'; c.beginPath(); c.ellipse(p.x, y, 7 * s, 5 * s, ang, 0, 7); c.fill(); c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(p.x - 2, y - 2, 2, 0, 7); c.fill(); break;
+      case 'seed': this.additive(IMG.fx_pea, p.x, y, 18 * s, ang); break;
       case 'dart': if (IMG.fx_dart) this.img(IMG.fx_dart, p.x, y, 24 * s, false, ang); break;
       case 'pea': this.additive(IMG.fx_pea, p.x, y, 22 * s, ang); break;
       case 'gpea': if (IMG.fx_cherry) { this.additive(IMG.fx_pea_cherry, p.x, y, 22 * s, ang, 0.7); this.img(IMG.fx_cherry, p.x, y, 12 * s, false, p.spin * 0.3); } break;
@@ -448,9 +654,23 @@ export class Renderer {
     const x = a.x + (a.tx - a.x) * a.t, y = a.y + (a.ty - a.y) * a.t - Math.sin(a.t * Math.PI) * 110;
     this.additive(IMG.fx_acid, x, y, 30, a.t * 6);
   }
-  private pickup(x: number, y: number, age: number) {
+  private pickup(p: Pickup) {
+    const { x, y, age } = p, bob = Math.sin(age * 4) * 2;
+    if (p.kind === 'orb') {
+      const pulse = 1 + Math.sin(age * 6) * 0.12;
+      this.shadowAt(x, y + 14, 10, 3, 0.25);
+      this.ctx.drawImage(this.parts.glow(0xfff27a), x - 18 * pulse, y - 18 * pulse + bob - 6, 36 * pulse, 36 * pulse);
+      this.additive(IMG.fx_star, x, y + bob - 6, 16, age * 2, 0.9);
+      if (Math.random() < 0.15) this.parts.spawn(PK.Glow, x, y - 6, (Math.random() - 0.5) * 20, -15, 0.5, 5, 0xfff27a);
+      return;
+    }
+    if (p.kind === 'scrap') {
+      const im = IMG.fx_scrap; this.shadowAt(x, y + 8, 12, 4, 0.35);
+      if (age > 16) this.ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(age * 10));
+      if (im) this.img(im, x, y, 26, false, (p.uid % 5) * 0.6); else { this.ctx.fillStyle = '#8a8f96'; this.ctx.fillRect(x - 7, y - 5, 14, 10); }
+      this.ctx.globalAlpha = 1; return;
+    }
     const im = IMG.fx_crate; if (!im) return;
-    const bob = Math.sin(age * 4) * 2;
     this.shadowAt(x, y + 10, 12, 4, 0.35);
     if (age > 11) this.ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(age * 10));
     this.img(im, x, y + bob, 28); this.additive(IMG.fx_coin, x + 6, y + bob - 12 - (age * 8) % 6, 10, 0, 0.6); this.ctx.globalAlpha = 1;
@@ -487,10 +707,27 @@ export class Renderer {
         c.beginPath(); c.moveTo(e.x, e.y); c.lineTo(e.x2!, e.y2!); c.stroke(); c.shadowBlur = 0;
         c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = Math.max(1, (e.width ?? 2) * 0.35); c.beginPath(); c.moveTo(e.x, e.y); c.lineTo(e.x2!, e.y2!); c.stroke();
         if ((e.width ?? 2) >= 4) { c.globalAlpha = 1; this.additive(IMG.fx_spark, e.x, e.y, 34, k * 3, 1 - k); }
+        if ((e.width ?? 2) >= 4 && k < 0.2 && this.quality < 2) for (let i = 0; i < 2; i++) { const q = Math.random(); this.parts.spawn(PK.Glow, e.x + (e.x2! - e.x) * q, e.y + (e.y2! - e.y) * q, (Math.random() - 0.5) * 40, (Math.random() - 0.5) * 40, 0.3, 8, hex(e.color ?? '#ffffff')); }
+        if (k < 0.2) { c.globalAlpha = 1; this.additive(IMG.fx_spark, e.x2!, e.y2!, 14 + (e.width ?? 2) * 3, k * 5, 0.8); }
         break;
       }
       case 'dust': c.fillStyle = e.color ?? '#e8d8b0'; for (let i = 0; i < 5; i++) { const a = i * 1.26; c.beginPath(); c.arc(e.x + Math.cos(a) * (e.r ?? 20) * k, e.y + Math.sin(a) * 6 * k, 5 * (1 + k), 0, 7); c.fill(); } break;
       case 'pod': this.ringAt(e.x, e.y + 10, (e.r ?? 24) * (0.4 + k), e.color ?? '#9fb3c8', 4); break;
+      case 'dmg': { // floating damage number: pop-in scale, rise, fade
+        c.globalAlpha = k < 0.7 ? 1 : (1 - k) / 0.3;
+        const pop = k < 0.15 ? 0.6 + k / 0.15 * 0.6 : 1.2 - Math.min(0.2, (k - 0.15));
+        const sz = (e.crit ? 17 : 12) * pop / Math.max(0.6, Math.min(1.4, this.cam.zoom));
+        this.label(e.x + (e.vx ?? 0) * k, e.y - 10 - k * 28, e.text ?? '', e.color ?? '#fff', sz);
+        break;
+      }
+      case 'emp': {
+        c.globalAlpha = 1 - k; const R = (e.r ?? 100) * (0.2 + 0.8 * Math.sqrt(k));
+        const gr = c.createRadialGradient(e.x, e.y, R * 0.6, e.x, e.y, R);
+        gr.addColorStop(0, 'rgba(127,232,255,0)'); gr.addColorStop(1, 'rgba(127,232,255,0.45)');
+        c.fillStyle = gr; c.beginPath(); c.arc(e.x, e.y, R, 0, 7); c.fill(); this.ringAt(e.x, e.y, R, '#dff9ff', 3);
+        for (let i = 0; i < 8; i++) { const a = i * 0.785 + k * 3; c.strokeStyle = '#bff4ff'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(e.x + Math.cos(a) * R * 0.3, e.y + Math.sin(a) * R * 0.3); c.lineTo(e.x + Math.cos(a + 0.2) * R * 0.7, e.y + Math.sin(a - 0.1) * R * 0.7); c.lineTo(e.x + Math.cos(a) * R, e.y + Math.sin(a) * R); c.stroke(); }
+        break;
+      }
       default: break;
     }
     c.globalAlpha = 1;

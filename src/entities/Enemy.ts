@@ -6,11 +6,12 @@
 //    toward nearby troops), Hunters leap, Chargers have front armor, Brood Sacs
 //    spawn Scavengers, Bile Titans lob acid at towers/troops.
 // =============================================================================
-import type { DamageType, EnemyData, Vec } from '../core/types';
+import type { DamageType, EnemyData, HitOpts, Vec } from '../core/types';
 import { nextId, rand, dist } from '../core/math';
 import { ENEMIES, totalLeak, totalStrength } from '../data/enemies';
 import type { Game } from '../game/Game';
-import type { Unit } from './Unit';
+/** Anything that can physically hold a ground enemy (troops, Wall-Nut barriers). */
+export interface Blocker { x: number; y: number; alive: boolean; garrison: unknown; takeDamage(g: Game, n: number): void }
 
 export class Enemy {
   readonly uid = nextId();
@@ -23,7 +24,14 @@ export class Enemy {
   lateral: number;
   private phase = Math.random() * 10;
   slowT = 0; slowAmt = 0;
-  blockedBy: Unit | null = null;
+  blockedBy: Blocker | null = null;
+  /** Ironback plating left (0..1 damage reduction). Corroded by glue / arcane. */
+  armor: number;
+  shield: number; readonly maxShield: number; shieldDown = false; private shieldIdle = 0;
+  /** EMP / Hijack stun. */
+  stunT = 0;
+  /** Last unit that hit this enemy (veterancy XP on kill). */
+  lastSrc: HitOpts['src'] = null;
   hitFlash = 0;
   private leapT: number; leapAnim: { from: number; to: number; t: number } | null = null;
   private spawnT: number; private acidT: number;
@@ -38,6 +46,8 @@ export class Enemy {
 
   constructor(readonly data: EnemyData, progress: number, lateral = 0, lane = 0, hpMul = 1) {
     this.hp = this.maxHp = Math.round(data.hp * hpMul);
+    this.armor = data.armored ?? 0;
+    this.shield = this.maxShield = Math.round((data.shield ?? 0) * hpMul);
     this.lane = lane;
     this.progress = progress;
     this.lateral = lateral || (data.swarm ? rand(-data.swarm, data.swarm) : 0);
@@ -46,7 +56,13 @@ export class Enemy {
     this.acidT = data.acid ? data.acid.every * 0.6 : 0;
     this.strengthOfChildren = data.children ? data.children.count * totalStrength(data.children.id) : 0;
   }
-  get strength() { return this.hp + this.strengthOfChildren; }
+  get strength() { return this.hp + this.shield + this.strengthOfChildren; }
+  /** EMP: strips the energy shield for good, stuns heavies. */
+  emp(g: Game, stun: number) {
+    if (!this.alive) return;
+    if (this.maxShield > 0 && !this.shieldDown) { this.shield = 0; this.shieldDown = true; g.fx({ kind: 'ring', x: this.x, y: this.y, r: 34, color: '#7fe8ff', dur: 0.4 }); g.fx({ kind: 'text', x: this.x, y: this.y - 30, text: 'SHIELD DOWN', color: '#7fe8ff', dur: 0.8 }); }
+    if (this.data.heavy || this.data.armored || this.data.shield) this.stunT = Math.max(this.stunT, stun);
+  }
   /** Distance left to the HQ: comparable across lanes of different lengths (First/Last targeting). */
   get remaining() { return this.pathLen - this.progress; }
   /** MAC Blast knockback. */
@@ -56,6 +72,8 @@ export class Enemy {
     const d = this.data;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.slowAmt = 0; }
+    if (this.maxShield > 0 && !this.shieldDown && this.shield < this.maxShield) { this.shieldIdle += dt; if (this.shieldIdle > 4) this.shield = Math.min(this.maxShield, this.shield + 10 * dt); }
+    if (this.stunT > 0) { this.stunT -= dt; return; }
     const speedMul = 1 - this.slowAmt;
     const path = g.paths[this.lane] ?? g.path; this.pathLen = path.length;
 
@@ -132,9 +150,25 @@ export class Enemy {
   }
 
   /** Apply damage; returns damage actually dealt. `from` is used for Charger front armor. */
-  takeDamage(g: Game, amount: number, type: DamageType, from?: Vec): number {
+  takeDamage(g: Game, amount: number, type: DamageType, from?: Vec, hit?: HitOpts): number {
     if (!this.alive || amount <= 0) return 0;
     const d = this.data;
+    if (d.air && !hit?.antiAir) return 0;
+    if (hit?.src) this.lastSrc = hit.src;
+    // energy shield soaks everything first (arcane shieldBreak multiplies)
+    if (this.shield > 0) {
+      this.shieldIdle = 0;
+      const sb = hit?.shieldBreak ?? 1, take = Math.min(this.shield, amount * sb);
+      this.shield -= take; amount -= take / sb; this.hitFlash = 0.08;
+      g.dmgNumber(this.x, this.y - d.size * 0.4, take, '#7fe8ff');
+      if (this.shield <= 0) { this.shieldDown = true; g.fx({ kind: 'pop', x: this.x, y: this.y, r: d.size * 0.6, color: '#7fe8ff', dur: 0.35 }); g.sfx('pop'); }
+      if (amount <= 0.001) return take;
+    }
+    if (this.armor > 0) {
+      if (hit?.shred) this.armor = Math.max(0, this.armor - hit.shred);
+      const pierces = hit?.ap || type === 'explosive';
+      if (!pierces) { amount *= 1 - this.armor; if (Math.random() < 0.06) g.fx({ kind: 'text', x: this.x, y: this.y - 28, text: 'PLATED', color: '#c9d1dc', dur: 0.5 }); }
+    }
     if (d.lead && type === 'sharp') { g.fx({ kind: 'text', x: this.x, y: this.y - 16, text: 'clink', color: '#c9d1dc', dur: 0.5 }); return 0; }
     if (d.frontArmor && from && type !== 'explosive') {
       const fx = from.x - this.x, fy = from.y - this.y, L = Math.hypot(fx, fy) || 1;
@@ -143,6 +177,7 @@ export class Enemy {
     }
     this.hitFlash = 0.08;
     const dealt = Math.min(this.hp, amount);
+    g.dmgNumber(this.x, this.y - d.size * 0.4, amount, hit?.crit ? '#ffe14d' : '#ffffff', hit?.crit);
     this.hp -= amount;
     if (this.hp <= 0) this.die(g, -this.hp);
     return dealt;
@@ -153,6 +188,9 @@ export class Enemy {
     this.alive = false;
     g.res.add(d.bounty);
     g.stats.kills++;
+    this.lastSrc?.addXp?.(d.boss ? 10 : d.heavy ? 3 : 1);
+    if (d.scrap) g.spawnPickup(this.x + rand(-8, 8), this.y + rand(-8, 8), d.scrap, 'scrap');
+    g.sfx(d.family === 'bloon' ? 'pop' : 'splat');
     g.fx({ kind: d.family === 'bloon' ? 'pop' : 'splat', x: this.x, y: this.y, r: d.size * 0.5, color: d.color, dur: d.boss ? 0.7 : 0.3 });
     if (d.dropChance && Math.random() < d.dropChance) g.spawnPickup(this.x, this.y, d.boss ? 60 : 10 + Math.round(d.bounty));
     if (d.children) {

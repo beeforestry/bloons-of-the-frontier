@@ -9,7 +9,8 @@
 export enum Faction {
   Primates = 'primates', // BTD6-style monkeys
   Flora = 'flora', // PvZ-style living plants
-  UNSC = 'unsc', // UNSC / Frontier human tech (original designs)
+  UNSC = 'unsc', // UNSC human tech (original designs)
+  Frontier = 'frontier', // Line Watch militia, paladins, arcane stonework
   // FUTURE HOOKS - add a value here + an entry in FACTIONS (src/data/factions.ts):
   // Covenant = 'covenant',
   // Flood = 'flood',
@@ -21,8 +22,26 @@ export enum TargetingMode {
   Last = 'last',
   Strong = 'strong',
   Close = 'close',
+  Weak = 'weak',
 }
-export const TARGETING_ORDER: TargetingMode[] = [TargetingMode.First, TargetingMode.Last, TargetingMode.Strong, TargetingMode.Close];
+export const TARGETING_ORDER: TargetingMode[] = [TargetingMode.First, TargetingMode.Last, TargetingMode.Strong, TargetingMode.Weak, TargetingMode.Close];
+export const TARGETING_LABEL: Record<TargetingMode, string> = { first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest', close: 'Closest' };
+/** Squad stance (Halo Wars style). */
+export type Stance = 'aggressive' | 'hold' | 'retreat';
+export type Formation = 'line' | 'column';
+/** Extra hit properties threaded through every damage source. */
+export interface HitOpts {
+  /** Armor-piercing (ignores Ironback plating). Explosive & pierce>=3 count too. */
+  ap?: boolean;
+  /** Can hit true aircraft. */
+  antiAir?: boolean;
+  shred?: number;
+  shieldBreak?: number;
+  /** Veterancy receiver (Unit). */
+  src?: { addXp?: (n: number) => void } | null;
+  crit?: boolean;
+}
+export type AbilityId = 'stim' | 'emp' | 'hijack' | 'laser_sweep';
 
 /** Damage types. Lead bloons ignore Sharp; Charger front armor ignores most non-explosive. */
 export type DamageType = 'sharp' | 'explosive' | 'energy' | 'magic' | 'fire' | 'cold' | 'ballistic' | 'melee';
@@ -57,7 +76,16 @@ export interface CombatStats {
   specialDamage?: number;
   /** Slow strength 0..1 applied on hit (cold). */
   slow?: number;
+  /** Armor degradation per hit (corrosive glue / arcane): permanently strips this much armor (0..1). */
+  armorShred?: number;
+  /** Bonus damage multiplier vs energy shields (arcane strips shields). */
+  shieldBreak?: number;
 }
+
+/** Flora / sun aura: green radius that speeds up nearby towers & troops and boosts farm income. Never stacks with itself. */
+export interface AuraStats { radius: number; ratePct: number; incomePct: number }
+/** Sunflower: energy orbs that fuel MAC Blast / Heal Drop. */
+export interface OrbStats { energy: number; perMin: number }
 
 export interface CoverStats {
   auraRadius: number;
@@ -69,6 +97,10 @@ export interface CoverStats {
   garrisonSlots: number;
   /** HP regen per second for units inside the aura. */
   regen: number;
+  /** Garrisoned troops take this much less damage (0.5 = -50%). */
+  garrisonProtect?: number;
+  /** Garrisoned troops get +range (0.35 = +35%). */
+  garrisonRangePct?: number;
 }
 
 export interface FarmStats {
@@ -91,10 +123,14 @@ export interface TowerTier {
   combat?: CombatStats;
   cover?: CoverStats;
   farm?: FarmStats;
+  aura?: AuraStats;
+  orbs?: OrbStats;
+  /** Path objects (Wall-Nut barrier / Cherry pod). */
+  barrier?: { hp: number; blockCap: number; blast?: number; blastRadius?: number };
 }
 
-export type TowerKind = 'combat' | 'cover' | 'farm';
-export type ProjectileKind = 'dart' | 'pea' | 'gpea' | 'shuriken' | 'magic' | 'melon' | 'star' | 'bullet' | 'laser' | 'rail' | 'ice';
+export type TowerKind = 'combat' | 'cover' | 'farm' | 'support' | 'path';
+export type ProjectileKind = 'dart' | 'pea' | 'gpea' | 'shuriken' | 'magic' | 'melon' | 'star' | 'bullet' | 'laser' | 'rail' | 'ice' | 'glue' | 'flak' | 'seed';
 
 export interface TowerData {
   id: string;
@@ -112,6 +148,19 @@ export interface TowerData {
   hitsAir?: boolean;
   /** Can it hit ground (bugs)? default true. */
   hitsGround?: boolean;
+  /** Anti-air: can hit true aircraft (Hive Gargoyles). Only AA towers / units can. */
+  antiAir?: boolean;
+  /** Armor-piercing shots ignore Ironback plating. */
+  armorPiercing?: boolean;
+  /** Fires straight down a fixed lane direction chosen at placement (Repeater). */
+  fixedLane?: boolean;
+  defaultTargeting?: TargetingMode;
+  /** Single-use path object. */
+  singleUse?: boolean;
+  /** Farm crates stack on the tower and bank at the end of the wave (Banana Drop). */
+  bankCrates?: boolean;
+  /** Player-triggered tower ability. */
+  ability?: AbilityId;
   /** tiers[0] is the base tower; tiers[1..] are upgrades. */
   tiers: TowerTier[];
 }
@@ -138,7 +187,7 @@ export interface UnitTier {
   visual: TierVisual;
   stats: UnitStats;
   /** Weapon at this tier. */
-  weapon: { name: string; type: DamageType; hitsAir: boolean; projectile?: ProjectileKind; hitscan?: boolean; splash?: number };
+  weapon: { name: string; type: DamageType; hitsAir: boolean; projectile?: ProjectileKind; hitscan?: boolean; splash?: number; antiAir?: boolean; armorPiercing?: boolean; beam?: boolean };
   /** Reactor tech level required to research this tier (defaults to tier index). */
   tech?: number;
   /** Optional special every N seconds (Line Watch Power Shot). */
@@ -165,6 +214,12 @@ export interface UnitData {
   /** Barracks training time (s) at Barracks tier 1. */
   trainTime: number;
   tiers: UnitTier[];
+  /** Enemies one unit can hold (default 2). */
+  blockCap?: number;
+  /** Vehicle: fires while moving. */
+  vehicle?: boolean;
+  hero?: boolean;
+  abilities?: AbilityId[];
 }
 
 export type EnemyFamily = 'bloon' | 'bug';
@@ -200,6 +255,16 @@ export interface EnemyData {
   swarm?: number;
   /** Chance (0..1) to drop a credit shard pickup on death. */
   dropChance?: number;
+  /** True aircraft: only anti-air towers / units can hit it. */
+  air?: boolean;
+  /** Ironback plating: damage reduction vs non-piercing, non-explosive hits. */
+  armored?: number;
+  /** Energy shield HP that must be popped first (EMP strips it). */
+  shield?: number;
+  /** Heavy / mechanical: drops scrap troops can gather. */
+  scrap?: number;
+  /** Heavy: EMP / Hijack stun works on it. */
+  heavy?: boolean;
   color: string;
 }
 

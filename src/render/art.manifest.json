@@ -167,6 +167,30 @@
 256,
 165
 ],
+"unsc_flak_head_0": [
+256,
+167
+],
+"unsc_flak_head_1": [
+256,
+174
+],
+"unsc_flak_head_2": [
+256,
+191
+],
+"stone_wall_0": [
+256,
+195
+],
+"stone_wall_1": [
+256,
+237
+],
+"stone_wall_2": [
+210,
+256
+],
 "unsc_rail_head_0": [
 256,
 156
@@ -178,6 +202,110 @@
 "unsc_rail_head_2": [
 256,
 143
+],
+"sniper_monkey_0": [
+212,
+256
+],
+"sniper_monkey_1": [
+224,
+256
+],
+"sniper_monkey_2": [
+237,
+256
+],
+"glue_slinger_0": [
+195,
+256
+],
+"glue_slinger_1": [
+192,
+256
+],
+"glue_slinger_2": [
+198,
+256
+],
+"banana_drop_0": [
+179,
+256
+],
+"banana_drop_1": [
+159,
+256
+],
+"banana_drop_2": [
+214,
+256
+],
+"repeater_gatling_0": [
+213,
+256
+],
+"repeater_gatling_1": [
+207,
+256
+],
+"repeater_gatling_2": [
+211,
+256
+],
+"sunflower_0": [
+166,
+256
+],
+"sunflower_1": [
+146,
+256
+],
+"sunflower_2": [
+168,
+256
+],
+"arcane_obelisk_0": [
+136,
+256
+],
+"arcane_obelisk_1": [
+120,
+256
+],
+"arcane_obelisk_2": [
+128,
+256
+],
+"env_bunker": [
+256,
+239
+],
+"env_watchtower": [
+148,
+256
+],
+"env_ruins": [
+211,
+256
+],
+"obs_log": [
+224,
+203
+],
+"obs_rock": [
+224,
+218
+],
+"wallnut_barrier_0": [
+123,
+160
+],
+"cherry_pod_0": [
+91,
+128
+],
+"fx_scrap": [
+96,
+82
 ],
 "hq_0": [
 384,
@@ -253,6 +381,66 @@
 ],
 "marine_2": [
 129,
+160
+],
+"odst_0": [
+121,
+160
+],
+"odst_1": [
+130,
+160
+],
+"odst_2": [
+127,
+160
+],
+"bug_ironback": [
+176,
+149
+],
+"bug_warden": [
+162,
+176
+],
+"bug_gargoyle": [
+192,
+185
+],
+"spartan_0": [
+122,
+160
+],
+"spartan_1": [
+128,
+160
+],
+"spartan_2": [
+124,
+160
+],
+"warthog_0": [
+200,
+177
+],
+"warthog_1": [
+200,
+193
+],
+"warthog_2": [
+200,
+196
+],
+"paladin_0": [
+113,
+160
+],
+"paladin_1": [
+100,
+160
+],
+"paladin_2": [
+106,
 160
 ],
 "monkey_soldier_0": [

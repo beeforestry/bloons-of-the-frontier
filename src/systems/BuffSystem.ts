@@ -19,9 +19,13 @@ export interface Buff {
   bonusMaxHp: number;
   bonusRangePct: number;
   regen: number;
+  /** Flora / sun aura (stackKey 'flora'): +attack speed %. */
+  ratePct?: number;
+  /** Flora / sun aura: +farm income %. */
+  incomePct?: number;
 }
-export interface BuffTotals { bonusMaxHp: number; bonusRangePct: number; regen: number }
-const ZERO: BuffTotals = { bonusMaxHp: 0, bonusRangePct: 0, regen: 0 };
+export interface BuffTotals { bonusMaxHp: number; bonusRangePct: number; regen: number; ratePct: number; incomePct: number }
+const ZERO: BuffTotals = { bonusMaxHp: 0, bonusRangePct: 0, regen: 0, ratePct: 0, incomePct: 0 };
 
 export class BuffReceiver {
   private buffs = new Map<string, Buff>();
@@ -35,7 +39,7 @@ export class BuffReceiver {
   /** Add or replace the buff from buff.sourceId. */
   apply(buff: Buff) {
     const old = this.buffs.get(buff.sourceId);
-    if (old && old.bonusMaxHp === buff.bonusMaxHp && old.bonusRangePct === buff.bonusRangePct && old.regen === buff.regen) return;
+    if (old && old.bonusMaxHp === buff.bonusMaxHp && old.bonusRangePct === buff.bonusRangePct && old.regen === buff.regen && (old.ratePct ?? 0) === (buff.ratePct ?? 0) && (old.incomePct ?? 0) === (buff.incomePct ?? 0)) return;
     this.buffs.set(buff.sourceId, buff);
     this.recalc();
   }
@@ -51,10 +55,12 @@ export class BuffReceiver {
       cur.bonusMaxHp = Math.max(cur.bonusMaxHp, b.bonusMaxHp);
       cur.bonusRangePct = Math.max(cur.bonusRangePct, b.bonusRangePct);
       cur.regen = Math.max(cur.regen, b.regen);
+      cur.ratePct = Math.max(cur.ratePct, b.ratePct ?? 0);
+      cur.incomePct = Math.max(cur.incomePct, b.incomePct ?? 0);
       byKey.set(b.stackKey, cur);
     }
     const t = { ...ZERO };
-    for (const v of byKey.values()) { t.bonusMaxHp += v.bonusMaxHp; t.bonusRangePct += v.bonusRangePct; t.regen += v.regen; }
+    for (const v of byKey.values()) { t.bonusMaxHp += v.bonusMaxHp; t.bonusRangePct += v.bonusRangePct; t.regen += v.regen; t.ratePct += v.ratePct; t.incomePct += v.incomePct; }
     this.totals = t;
     this.onChange?.(t);
   }

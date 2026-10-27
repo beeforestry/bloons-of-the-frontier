@@ -3,11 +3,16 @@ import { TargetingMode, type Vec } from '../core/types';
 import { dist2 } from '../core/math';
 import type { Enemy } from '../entities/Enemy';
 
-export interface TargetFilter { hitsAir: boolean; hitsGround: boolean; exclude?: Set<Enemy> }
+export interface TargetFilter { hitsAir: boolean; hitsGround: boolean; antiAir?: boolean; exclude?: Set<Enemy> }
+/** Can this source hit e at all? Aircraft (air) need anti-air; other flyers need hitsAir. */
+export function canHit(e: Enemy, f: { hitsAir?: boolean; hitsGround?: boolean; antiAir?: boolean }): boolean {
+  if (e.data.air) return !!f.antiAir;
+  return e.data.flying ? f.hitsAir !== false : f.hitsGround !== false;
+}
 
 export function inRange(enemies: Enemy[], origin: Vec, range: number, f: TargetFilter): Enemy[] {
   // An enemy counts as in range when any part of its body is inside the circle.
-  return enemies.filter((e) => e.alive && e.targetable && (e.data.flying ? f.hitsAir : f.hitsGround) &&
+  return enemies.filter((e) => e.alive && e.targetable && canHit(e, f) &&
     !f.exclude?.has(e) && dist2(e, origin) <= (range + e.data.radius) ** 2);
 }
 
@@ -19,7 +24,9 @@ export function pickTarget(enemies: Enemy[], origin: Vec, range: number, mode: T
       case TargetingMode.First: s = -e.remaining; break;
       case TargetingMode.Last: s = e.remaining; break;
       case TargetingMode.Strong: s = e.strength * 1e4 - e.remaining; break;
+      case TargetingMode.Weak: s = -(e.hp + e.shield) * 1e4 - e.remaining; break;
       case TargetingMode.Close: s = -dist2(e, origin); break;
+      default: s = -e.remaining;
     }
     if (s > score) { score = s; best = e; }
   }

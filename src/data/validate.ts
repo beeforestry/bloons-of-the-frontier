@@ -43,6 +43,11 @@ export function towerPower(t: TowerTier): number {
   }
   if (t.cover) p += (t.cover.auraRadius / 100) * (t.cover.bonusMaxHp / 10 + t.cover.bonusRangePct * 20) + t.cover.garrisonSlots + t.cover.regen;
   if (t.farm) p += (t.farm.income * t.farm.payoutsPerMin) / 10 + t.farm.waveBonus / 20;
+  if (t.aura) p += (t.aura.radius / 100) * (t.aura.ratePct * 20 + t.aura.incomePct * 20);
+  if (t.orbs) p += (t.orbs.energy * t.orbs.perMin) / 10;
+  if (t.barrier) p += t.barrier.hp / 50 + t.barrier.blockCap + (t.barrier.blast ?? 0) * (t.barrier.blastRadius ?? 0) / 1000;
+  if (t.combat) p += (t.combat.armorShred ?? 0) * 5 + (t.combat.shieldBreak ?? 0);
+  if (t.cover) p += (t.cover.garrisonProtect ?? 0) * 5 + (t.cover.garrisonRangePct ?? 0) * 5;
   return p;
 }
 export function unitPower(t: UnitTier): number {
@@ -64,12 +69,16 @@ export function validateTower(t: TowerData): Issue[] {
     if (t.kind === 'combat' && !tier.combat) out.push({ owner: t.id, tier: i, msg: 'combat tower tier without combat stats' });
     if (t.kind === 'cover' && !tier.cover) out.push({ owner: t.id, tier: i, msg: 'cover tower tier without cover stats' });
     if (t.kind === 'farm' && !tier.farm) out.push({ owner: t.id, tier: i, msg: 'farm tower tier without farm stats' });
+    if (t.kind === 'support' && !tier.aura) out.push({ owner: t.id, tier: i, msg: 'support tower tier without an aura' });
+    if (t.kind === 'path' && !tier.barrier) out.push({ owner: t.id, tier: i, msg: 'path object without barrier stats' });
     if (i === 0) return;
     const a = t.tiers[i - 1];
     if (tier.maxHp < a.maxHp) out.push({ owner: t.id, tier: i, msg: `maxHp goes DOWN ${a.maxHp} -> ${tier.maxHp}` });
     compareNumbers(t.id, i, 'combat', a.combat, tier.combat, out);
     compareNumbers(t.id, i, 'cover', a.cover, tier.cover, out);
     compareNumbers(t.id, i, 'farm', a.farm, tier.farm, out);
+    compareNumbers(t.id, i, 'aura', a.aura, tier.aura, out);
+    compareNumbers(t.id, i, 'orbs', a.orbs, tier.orbs, out);
     if (!(towerPower(tier) > towerPower(a))) out.push({ owner: t.id, tier: i, msg: 'overall power did not increase' });
     checkVisual(t.id, i, a.visual, tier.visual, out);
   });

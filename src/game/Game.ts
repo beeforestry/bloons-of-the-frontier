@@ -3,7 +3,7 @@
 // (firing, splash, deploying squads, garrisoning, organizing farms, leaks).
 // Rendering and DOM UI only READ from this object.
 // =============================================================================
-import { Faction, TargetingMode, type CombatStats, type DamageType, type UnitTier, type Vec } from '../core/types';
+import { Faction, TargetingMode, TARGETING_ORDER, type AbilityId, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
 import { MAPS, toVec, type MapDef } from '../data/maps';
@@ -25,9 +25,14 @@ import { Pickup } from '../entities/Pickup';
 import { BuildPad, Building } from '../entities/Building';
 import { BUILDINGS, HEAL, MAC, MAX_ENERGY, POWERS, buildingById } from '../data/buildings';
 import type { BuildingKind } from '../core/types';
+import { Barrier, EnvStructure, Obstacle, gEnter, gFree, gLeave, laneOffset, type EnvKind, type Garrisonable } from '../entities/Garrison';
+import type { PickupKind } from '../entities/Pickup';
+import type { Blocker } from '../entities/Enemy';
+import { ABILITIES, EMP, HIJACK, STIM } from '../data/abilities';
 
 /** Anything bugs / acid can hurt. */
-export type Damageable = (Tower | Unit | Building) & { takeDamage(g: Game, n: number): void };
+export type Damageable = (Tower | Unit | Building | Barrier) & { takeDamage(g: Game, n: number): void };
+export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp';
 export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number }
 export interface Decal { x: number; y: number; r: number; ang: number; t: number }
 
@@ -35,9 +40,9 @@ export const START_CREDITS = 700;
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
 export interface Effect {
-  kind: 'text' | 'ring' | 'pop' | 'splat' | 'boom' | 'boom_fire' | 'beam' | 'dust' | 'acid' | 'pod' | 'slide';
+  kind: 'text' | 'ring' | 'pop' | 'splat' | 'boom' | 'boom_fire' | 'beam' | 'dust' | 'acid' | 'pod' | 'slide' | 'dmg' | 'emp';
   x: number; y: number; r?: number; color?: string; text?: string; dur: number; t?: number;
-  x2?: number; y2?: number; width?: number;
+  x2?: number; y2?: number; width?: number; crit?: boolean; vx?: number;
 }
 
 export class Game {
@@ -73,8 +78,24 @@ export class Game {
   private unitTiers: Record<string, number> = {};
   /** Deploy cooldown per troop type. */
   deployCd: Record<string, number> = {};
-  stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0 };
+  stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0,
+    orbs: 0, scrap: 0, promotions: 0, abilities: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0 };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
+  /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
+  envs: EnvStructure[] = [];
+  obstacles: Obstacle[] = [];
+  barriers: Barrier[] = [];
+  /** Juice: camera shake amplitude (px) + shockwave ripples, read by the renderer. */
+  shakeAmt = 0;
+  shocks: { x: number; y: number; r: number; t: number; dur: number }[] = [];
+  /** WebAudio hook (main.ts wires Sfx); no-op headless. */
+  sfxHook: (n: SfxName, x?: number, y?: number) => void = () => {};
+  /** Floating damage numbers on/off (quality governor) + live count. */
+  dmgNumbers = true;
+  private dmgLive = 0;
+  /** Group-move formation for multi-select. */
+  formation: Formation = 'line';
+  private blockLoad = new Map<Blocker, number>();
 
   constructor(readonly map: MapDef = MAPS[0]) {
     this.res = new ResourceManager(this.bus, START_CREDITS);
@@ -86,11 +107,69 @@ export class Game {
     this.hq.tier = 0;
     this.buildings.push(this.hq);
     this.pads = (map.pads ?? []).map((p, i) => new BuildPad(i, p[0], p[1]));
+    this.setupMapObjects();
   }
 
+  // ------------------------------------------------------------------ map objects
+  /** Claim free buildable cells around p (env structures / obstacles); null if the spot is bad. */
+  private claimCells(p: Vec, radius: number) {
+    const cc = this.grid.worldToCell(p);
+    if (!this.grid.isFree(cc.c, cc.r)) return null;
+    for (const pd of this.pads) if (dist(pd, p) < 140) return null;
+    if (dist(this.hq, p) < 220) return null;
+    for (const e of [...this.envs, ...this.obstacles]) if (dist(e, p) < 150) return null;
+    const cells: Cell[] = [], n = Math.ceil(radius / this.grid.cell) + 1;
+    for (let dc = -n; dc <= n; dc++) for (let dr = -n; dr <= n; dr++) {
+      const c = cc.c + dc, r = cc.r + dr, q = this.grid.cellCenter(c, r);
+      if (dist(q, p) <= radius && this.grid.block(c, r)) cells.push({ c, r });
+    }
+    return cells;
+  }
+  private setupMapObjects() {
+    const L = this.paths.length;
+    const kinds: EnvKind[] = ['bunker', 'watchtower', 'ruins'];
+    const fr = [0.34, 0.55, 0.74];
+    kinds.forEach((k, i) => {
+      for (const side of [110, -110, 140, -140, 85, -85, 175, -175]) {
+        for (const df of [0, 0.04, -0.04, 0.08]) {
+          const p = laneOffset(this, i % L, fr[i] + df, side);
+          const cells = this.claimCells(p, 40);
+          if (cells) { const e = new EnvStructure(k, p.x, p.y); e.cells = cells; this.envs.push(e); return; }
+        }
+      }
+    });
+    const of = [0.2, 0.45, 0.64, 0.86, 0.3];
+    of.forEach((f, i) => {
+      const kind = i % 2 ? 'log' : 'rock';
+      for (const side of [95, -95, 125, -125, 160, -160]) {
+        const p = laneOffset(this, (i + 1) % L, f, side);
+        const cells = this.claimCells(p, kind === 'log' ? 46 : 34);
+        if (cells) { const o = new Obstacle(kind, p.x, p.y, (i * 1.3) % 3); o.cells = cells; this.obstacles.push(o); return; }
+      }
+    });
+  }
+  clearObstacle(o: Obstacle) {
+    if (!o.alive) return;
+    o.alive = false;
+    for (const c of o.cells) this.grid.unblock(c.c, c.r);
+    this.obstacles = this.obstacles.filter((x) => x !== o);
+    this.stats.cleared++;
+    this.fx({ kind: 'dust', x: o.x, y: o.y, r: 60, color: '#bfae8e', dur: 0.8 });
+    this.fx({ kind: 'text', x: o.x, y: o.y - 30, text: `${o.kind === 'rock' ? 'Rocks' : 'Fallen tree'} cleared! +${o.cells.length} build spots`, color: '#b6f78f', dur: 1.6 });
+    this.shake(5);
+    this.sfx('explosion', o.x, o.y);
+  }
+  /** Explosive damage chips terrain. */
+  private blastTerrain(x: number, y: number, r: number, dmg: number) {
+    for (const o of [...this.obstacles]) if (dist(o, { x, y }) < r + 40) o.blast(this, dmg);
+  }
+  garrisonables(): Garrisonable[] { return [...this.towers.filter((t) => t.alive && t.gSlots() > 0 && !t.disabled), ...this.envs]; }
+
   // ------------------------------------------------------------------ base layer
-  get tech() { return this.buildings.filter((b) => b.built && b.data.id === 'reactor').reduce((s, b) => s + (b.t.stats.tech ?? 0), 0); }
-  get popCap() { return this.buildings.filter((b) => b.built && (b.isHQ || b.data.id === 'reactor')).reduce((s, b) => s + (b.t.stats.pop ?? 0), 0); }
+  /** Debug/test-only tech + pop override (never set by gameplay). */
+  techBonus = 0; popBonus = 0;
+  get tech() { return this.techBonus + this.buildings.filter((b) => b.built && b.data.id === 'reactor').reduce((s, b) => s + (b.t.stats.tech ?? 0), 0); }
+  get popCap() { return this.popBonus + this.buildings.filter((b) => b.built && (b.isHQ || b.data.id === 'reactor')).reduce((s, b) => s + (b.t.stats.pop ?? 0), 0); }
   get pop() { return this.squads.filter((s) => s.alive).reduce((n, s) => n + (s.data.population ?? 0), 0); }
   get energyRegen() { return this.buildings.filter((b) => b.built && (b.isHQ || b.data.id === 'reactor')).reduce((s, b) => s + (b.t.stats.energyRegen ?? 0), 0); }
   buildingsOf(id: BuildingKind) { return this.buildings.filter((b) => b.alive && b.data.id === id); }
@@ -171,6 +250,9 @@ export class Game {
         while (s.segs < k) {
           const along = (s.segs / (N - 1) - 0.5) * MAC.length, px = s.x + c * along, py = s.y + sn * along, r = MAC.length / N * 0.9;
           this.fx({ kind: 'boom_fire', x: px, y: py, r: MAC.width, dur: 0.55 });
+          this.blastTerrain(px, py, MAC.width, 999);
+          if (s.segs === 0) { this.shake(16); this.sfx('mac', px, py); }
+          if (s.segs % 2 === 0) this.shock(px, py, MAC.width * 2.2, 0.6);
           this.decals.push({ x: px, y: py, r: MAC.width * 0.9, ang: Math.random() * 6, t: 0 });
           for (const e of this.enemies) {
             if (!e.alive || s.hit.has(e.uid)) continue;
@@ -187,7 +269,8 @@ export class Game {
       } else if (s.kind === 'heal' && s.t >= 0.7 && s.segs === 0) {
         s.segs = 1;
         const r2 = HEAL.radius ** 2;
-        for (const u of this.units) if (u.alive && dist2(u, s) <= r2) u.health.heal(HEAL.unitHeal);
+        for (const u of this.units) if (u.alive && dist2(u, s) <= r2) { const h = u.health.heal(HEAL.unitHeal); if (h > 0) this.healNumber(u.x, u.y - 24, h); }
+        this.sfx('ability', s.x, s.y);
         for (const t of this.towers) if (t.alive && dist2(t, s) <= r2) { if (t.disabled) t.repair(this, 999); t.health.heal(HEAL.towerHeal); }
         for (const b of this.buildings) if (b.alive && dist2(b, s) <= (HEAL.radius + 60) ** 2) b.repair(this, HEAL.towerHeal);
         this.bus.emit('lives', { lives: this.lives });
@@ -213,13 +296,18 @@ export class Game {
     for (const u of this.units) if (u.alive && !u.garrison && u.dropT <= 0 && !u.isWorker) { const d = dist(u, p); if (d < bd) { bd = d; best = u; } }
     return best;
   }
-  /** A troop standing in this bug's way (max 3 bugs per troop). */
-  findBlocker(e: Enemy): Unit | null {
+  /** A troop or Wall-Nut barrier standing in this bug's way (each holds blockCap bugs). */
+  findBlocker(e: Enemy): Blocker | null {
+    for (const b of this.barriers) {
+      if (!b.alive || !b.blockCap || dist2(b, e) > (e.data.radius + 24) ** 2) continue;
+      const load = this.blockLoad.get(b) ?? 0;
+      if (load < b.blockCap) { this.blockLoad.set(b, load + 1); return b; }
+    }
     for (const u of this.units) {
       if (!u.alive || u.garrison || u.dropT > 0) continue;
       if (dist2(u, e) > (e.data.radius + 14) ** 2) continue;
-      const load = this.enemies.filter((x) => x.blockedBy === u).length;
-      if (load < 3) return u;
+      const load = this.blockLoad.get(u) ?? 0;
+      if (load < u.blockCap) { this.blockLoad.set(u, load + 1); return u; }
     }
     return null;
   }
@@ -227,12 +315,45 @@ export class Game {
     let best: Damageable | null = null, bd = r;
     for (const b of this.buildings) if (b.alive) { const d = dist(b, p) - 40; if (d < bd) { bd = d; best = b; } }
     for (const t of this.towers) if (t.alive && !t.disabled) { const d = dist(t, p); if (d < bd) { bd = d; best = t; } }
-    for (const u of this.units) if (u.alive && !u.garrison && u.dropT <= 0) { const d = dist(u, p); if (d < bd) { bd = d; best = u; } }
+    for (const u of this.units) if (u.alive && u.dropT <= 0) { const d = dist(u, p); if (d < bd) { bd = d; best = u; } }
+    for (const b of this.barriers) if (b.alive) { const d = dist(b, p); if (d < bd) { bd = d; best = b; } }
     return best;
   }
 
   // ------------------------------------------------------------------ effects
   fx(e: Effect) { e.t = 0; this.effects.push(e); if (this.effects.length > 600) this.effects.splice(0, 100); }
+  sfx(n: SfxName, x?: number, y?: number) { this.sfxHook(n, x, y); }
+  shake(a: number) { this.shakeAmt = Math.min(22, Math.max(this.shakeAmt, a)); }
+  shock(x: number, y: number, r: number, dur = 0.5) { this.shocks.push({ x, y, r, t: 0, dur }); if (this.shocks.length > 8) this.shocks.shift(); }
+  /** Floating damage numbers: crit yellow, normal white, shield cyan. Throttled. */
+  dmgNumber(x: number, y: number, n: number, color: string, crit = false) {
+    if (!this.dmgNumbers || n < 0.05) return;
+    if (this.dmgLive > (crit ? 90 : 60)) return;
+    if (!crit && n < 1 && Math.random() > 0.35) return;
+    this.dmgLive++;
+    const txt = n >= 10 ? `${Math.round(n)}` : `${Math.round(n * 10) / 10}`;
+    this.fx({ kind: 'dmg', x: x + rand(-8, 8), y, text: crit ? txt + '!' : txt, color, crit, dur: crit ? 0.9 : 0.65, vx: rand(-20, 20) });
+  }
+  healNumber(x: number, y: number, n: number) { if (n >= 0.5) this.fx({ kind: 'dmg', x: x + rand(-6, 6), y, text: `+${Math.round(n)}`, color: '#7dff7a', dur: 0.8, vx: 0 }); }
+  /** Big explosion: damage + terrain + shake + shockwave (Cherry Pod, ODST pods, Spartan). */
+  bigBlast(x: number, y: number, r: number, dmg: number, type: DamageType, hit?: HitOpts) {
+    this.splash(x, y, r, dmg, type, { x, y }, 'boom_fire', { antiAir: false, ...hit });
+    this.blastTerrain(x, y, r, 999);
+    this.shake(Math.min(14, 4 + r / 12)); this.shock(x, y, r * 1.6, 0.5);
+    this.sfx('explosion', x, y);
+  }
+  /** Drop-pod landing: ODST / Spartan pods hit the ground hard. */
+  podImpact(u: Unit) {
+    if (u.index !== 0 || !(u.data.id === 'odst' || u.data.hero)) return;
+    this.bigBlast(u.x, u.y, 55, 20, 'explosive', { src: u });
+  }
+  /** Super Monkey Laser Sweep tick: a long line hitting everything (incl. aircraft). */
+  sweepBeam(from: Vec, ang: number, len: number, dmg: number, tw: Tower) {
+    const ex = from.x + Math.cos(ang) * len, ey = from.y + Math.sin(ang) * len;
+    for (const e of this.enemies) if (e.alive && segDist(e, from, { x: ex, y: ey }) < e.data.radius + 10) e.takeDamage(this, dmg, 'energy', from, { antiAir: true, ap: true });
+    this.fx({ kind: 'beam', x: from.x, y: from.y, x2: ex, y2: ey, color: '#ff3355', width: 9, dur: 0.07 });
+    void tw;
+  }
   toast(text: string, color?: string) { this.bus.emit('toast', { text, color }); }
 
   // ------------------------------------------------------------------ combat
@@ -240,55 +361,83 @@ export class Game {
     const type = tw.data.damageType ?? 'sharp';
     const kind = tw.data.projectile ?? 'dart';
     const muzzle = { x: tw.x + Math.cos(tw.aim) * 18, y: tw.y - 14 + Math.sin(tw.aim) * 12 };
+    const crit = Math.random() < 0.08; if (crit) this.stats.crits++;
+    const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
+    const dmg0 = c.damage * (crit ? 2 : 1);
     if (tw.data.hitscan) {
-      for (const tgt of targets) this.beam(muzzle, tgt, c.damage, type, c.pierce, kind === 'rail' ? '#8fd0ff' : '#ff4040', kind === 'rail' ? 5 : 2.5);
+      const sniper = tw.data.id === 'sniper_monkey';
+      for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, sniper ? '#fff6d0' : kind === 'rail' ? '#8fd0ff' : '#ff4040', sniper ? 2 : kind === 'rail' ? 5 : 2.5, hit);
+      this.sfx(kind === 'rail' ? 'rail' : 'laser', tw.x, tw.y);
       return;
     }
+    if (shotNo % 3 === 0) this.sfx('fire', tw.x, tw.y);
     const tgt = targets[0];
     const special = c.specialRate && shotNo % Math.round(1 / c.specialRate) === 0;
     if (kind === 'melon') {
-      this.projectiles.push(new Projectile({ kind, x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: c.damage, type: 'fire', pierce: 1, splash: c.splash,
+      this.projectiles.push(new Projectile({ kind, x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg0, type: 'fire', pierce: 1, splash: c.splash, hit,
         lob: { tx: tgt.x + Math.cos(tgt.ang) * tgt.data.speed * 0.5, ty: tgt.y + Math.sin(tgt.ang) * tgt.data.speed * 0.5, dur: 0.75 } }));
       return;
     }
     const shots = c.shots ?? 1;
-    const base = Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x);
+    const base = tw.fixedAim ?? Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x);
     for (let i = 0; i < shots; i++) {
       const spread = shots > 1 ? (i - (shots - 1) / 2) * (kind === 'shuriken' ? 0.22 : 0.16) : 0;
       this.projectiles.push(new Projectile({
         kind: special ? 'gpea' : kind, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: c.projectileSpeed ?? 600,
-        damage: special ? c.specialDamage ?? c.damage : c.damage, type: special ? 'explosive' : type, pierce: c.pierce,
-        splash: special ? c.splash : kind === 'magic' ? c.splash : undefined, slow: c.slow,
-        homing: kind === 'magic' ? tgt : null, scale: special ? 1.8 : 1,
+        damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? 2 : 1), type: special ? 'explosive' : type, pierce: c.pierce,
+        splash: special ? c.splash : kind === 'magic' || kind === 'flak' || kind === 'glue' ? c.splash : undefined, slow: c.slow,
+        homing: kind === 'magic' ? tgt : null, scale: special ? 1.8 : tw.data.id === 'arcane_obelisk' ? 2 : 1, hit,
+        hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround,
       }));
     }
   }
-  beam(from: Vec, tgt: Enemy, dmg: number, type: DamageType, pierce: number, color: string, width: number) {
+  beam(from: Vec, tgt: Enemy, dmg: number, type: DamageType, pierce: number, color: string, width: number, hit?: HitOpts) {
     // hitscan: hit target + up to (pierce-1) enemies along the line behind it
     const ang = Math.atan2(tgt.y - from.y, tgt.x - from.x), len = dist(from, tgt) + 60;
     const ex = from.x + Math.cos(ang) * len, ey = from.y + Math.sin(ang) * len;
-    const hits = this.enemies.filter((e) => e.alive && segDist(e, from, { x: ex, y: ey }) < e.data.radius + 4)
+    const hits = this.enemies.filter((e) => e.alive && (!e.data.air || hit?.antiAir) && segDist(e, from, { x: ex, y: ey }) < e.data.radius + 4)
       .sort((a, b) => dist2(a, from) - dist2(b, from)).slice(0, pierce);
     if (!hits.includes(tgt)) hits.unshift(tgt);
-    for (const e of hits) e.takeDamage(this, dmg, type, from);
+    for (const e of hits) e.takeDamage(this, dmg, type, from, hit);
     this.fx({ kind: 'beam', x: from.x, y: from.y, x2: ex, y2: ey, color, width, dur: 0.08 });
   }
-  splash(x: number, y: number, r: number, dmg: number, type: DamageType, from?: Vec, look: 'boom' | 'boom_fire' = 'boom') {
-    for (const e of this.enemies) if (e.alive && dist2(e, { x, y }) <= (r + e.data.radius) ** 2) e.takeDamage(this, dmg, type, from);
+  splash(x: number, y: number, r: number, dmg: number, type: DamageType, from?: Vec, look: 'boom' | 'boom_fire' = 'boom', hit?: HitOpts, slow?: number) {
+    for (const e of this.enemies) if (e.alive && dist2(e, { x, y }) <= (r + e.data.radius) ** 2) {
+      e.takeDamage(this, dmg, type, from, hit);
+      if (slow && !e.data.boss) { e.slowAmt = Math.max(e.slowAmt, slow); e.slowT = 1.6; }
+    }
+    if (type === 'explosive' || type === 'fire') {
+      this.blastTerrain(x, y, r, dmg);
+      if (r >= 70) { this.shake(r / 14); this.shock(x, y, r * 1.4, 0.4); }
+      if (r >= 45) this.sfx('explosion', x, y);
+    }
     this.fx({ kind: look, x, y, r, dur: 0.35 });
   }
   unitAttack(u: Unit, tgt: Enemy, t: UnitTier) {
-    const w = t.weapon, dmg = t.stats.damage;
-    if (t.stats.range < 60) { tgt.takeDamage(this, dmg, w.type, u); this.fx({ kind: 'text', x: tgt.x, y: tgt.y - 12, text: '⚔', color: '#fff', dur: 0.25 }); return; }
-    if (w.hitscan) { this.beam({ x: u.x, y: u.y - 10 }, tgt, dmg, w.type, 1, '#ffe08a', 1.5); return; }
+    const w = t.weapon, crit = Math.random() < 0.08, dmg = t.stats.damage * u.dmgMul * (crit ? 2 : 1);
+    if (crit) this.stats.crits++;
+    const hit: HitOpts = { antiAir: !!w.antiAir, ap: !!w.armorPiercing, src: u, crit };
+    if (t.stats.range < 60) {
+      if (w.splash) this.splash(tgt.x, tgt.y, w.splash, dmg, w.type, u, 'boom', { ...hit, ap: true });
+      else tgt.takeDamage(this, dmg, w.type, u, hit);
+      this.fx({ kind: 'text', x: tgt.x, y: tgt.y - 12, text: '⚔', color: '#fff', dur: 0.25 }); return;
+    }
+    const from = { x: u.x + u.facing * 8, y: u.y - 12 };
+    if (w.hitscan) {
+      if (w.splash) { this.splash(tgt.x, tgt.y, w.splash, dmg, w.type, from, 'boom', hit); this.fx({ kind: 'beam', x: from.x, y: from.y, x2: tgt.x, y2: tgt.y, color: '#ffb35a', width: 3, dur: 0.1 }); return; }
+      if (w.beam) this.beam(from, tgt, dmg, w.type, 6, '#ff5040', 3, hit);
+      else this.beam(from, tgt, dmg, w.type, 1, '#ffe08a', 1.5, hit);
+      return;
+    }
     const ang = Math.atan2(tgt.y - u.y, tgt.x - u.x);
-    this.projectiles.push(new Projectile({ kind: w.projectile ?? 'bullet', x: u.x, y: u.y - 10, angle: ang, speed: 800, damage: dmg, type: w.type, pierce: 1, splash: w.splash, hitsAir: w.hitsAir }));
+    this.projectiles.push(new Projectile({ kind: w.projectile ?? 'bullet', x: u.x, y: u.y - 10, angle: ang, speed: 800, damage: dmg, type: w.type, pierce: 1, splash: w.splash, hitsAir: w.hitsAir, hit }));
   }
   lobAcid(from: Enemy, target: Damageable, dmg: number) {
     this.acids.push({ x: from.x, y: from.y - 30, tx: target.x, ty: target.y, t: 0, target, dmg });
   }
   stompUnits(e: Enemy, dmg: number) {
     for (const u of this.units) if (u.alive && !u.garrison && dist2(u, e) < (e.data.radius + 18) ** 2) u.takeDamage(this, dmg);
+    for (const b of this.barriers) if (b.alive && dist2(b, e) < (e.data.radius + 24) ** 2) b.takeDamage(this, dmg * 3);
   }
 
   // ------------------------------------------------------------------ spawning
@@ -301,9 +450,11 @@ export class Game {
     this.enemies.push(e);
     return e;
   }
-  spawnPickup(x: number, y: number, value: number) {
+  spawnPickup(x: number, y: number, value: number, kind: PickupKind = 'credit') {
     x = Math.max(16, Math.min(this.map.width - 16, x)); y = Math.max(16, Math.min(this.map.height - 16, y));
-    this.pickups.push(new Pickup(x, y, value));
+    const p = new Pickup(x, y, value, kind);
+    this.pickups.push(p);
+    return p;
   }
   /** A bloon reached the HQ: it slams into the base for its total layer value. */
   leak(e: Enemy, lives: number) {
@@ -320,13 +471,39 @@ export class Game {
 
   // ------------------------------------------------------------------ player actions
   canPlace(id: string, cell: Cell | null) { return !!cell && this.grid.isFree(cell.c, cell.r) && this.res.canAfford({ credits: towerById(id).tiers[0].cost }); }
+  /** Path objects go ON the road: returns the snapped road point or null. */
+  roadSpot(p: Vec): (Vec & { lane: number }) | null {
+    const nl = this.nearestLane(p);
+    if (nl.dist > this.map.pathWidth * 0.75 + 10) return null;
+    const q = this.paths[nl.lane].at(nl.d);
+    if (nl.d < 60 || nl.d > this.paths[nl.lane].length - 120) return null;
+    for (const b of this.barriers) if (b.alive && dist(b, q) < 34) return null;
+    return { x: q.x, y: q.y, lane: nl.lane };
+  }
+  placeBarrier(id: string, at: Vec): Barrier | null {
+    const data = towerById(id), spot = this.roadSpot(at);
+    if (!spot) { this.toast('Place it ON the road (not too close to the gate)', '#ff8a7a'); this.sfx('error'); return null; }
+    if (!this.res.spend({ credits: data.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
+    const b = new Barrier(data, spot.x, spot.y, spot.lane);
+    this.barriers.push(b);
+    this.fx({ kind: 'dust', x: b.x, y: b.y + 10, r: 26, color: '#c9b48a', dur: 0.5 });
+    this.sfx('command');
+    return b;
+  }
   placeTower(id: string, cell: Cell): Tower | null {
     const data = towerById(id);
+    if (data.kind === 'path') return null;
     if (!this.grid.isFree(cell.c, cell.r)) return null;
     if (!this.res.spend({ credits: data.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
     const t = new Tower(data, cell, this);
     this.grid.occupy(t, cell.c, cell.r);
     this.towers.push(t);
+    if (data.fixedLane) {
+      const nl = this.nearestLane(t), q = this.paths[nl.lane].at(nl.d);
+      t.fixedAim = t.aim = Math.atan2(q.y - t.y, q.x - t.x);
+      if (nl.dist < 20) t.fixedAim = t.aim = q.ang + Math.PI;
+    }
+    this.sfx('command');
     this.fx({ kind: 'dust', x: t.x, y: t.y + 16, r: 26, color: '#e8d8b0', dur: 0.4 });
     return t;
   }
@@ -334,15 +511,15 @@ export class Game {
     if (!t.alive) return;
     this.res.add(t.sellValue);
     this.grid.release(t.cell.c, t.cell.r);
-    t.cover?.ejectAll(this);
     t.remove();
     this.towers = this.towers.filter((x) => x !== t);
     this.fx({ kind: 'text', x: t.x, y: t.y - 20, text: `+${t.sellValue}`, color: '#ffe14d', dur: 1 });
   }
   cycleTargeting(t: Tower) {
-    const order = [TargetingMode.First, TargetingMode.Last, TargetingMode.Strong, TargetingMode.Close];
+    const order = TARGETING_ORDER;
     t.targeting = order[(order.indexOf(t.targeting) + 1) % order.length];
   }
+  setTargeting(o: Tower | Squad, m: TargetingMode) { o.targeting = m; this.sfx('command'); }
   squadCount(id: string) { return this.squads.filter((s) => s.data.id === id && s.alive).length; }
   canDeploy(id: string) {
     const d = unitById(id);
@@ -382,32 +559,112 @@ export class Game {
     else for (const u of sq.units) u.dropT = 0;
     return sq;
   }
-  moveSquad(sq: Squad, to: Vec) {
-    sq.garrisonTarget = null;
-    for (const u of sq.units) if (u.garrison) u.garrison.cover?.ungarrison(u);
-    sq.rally = { x: Math.max(10, Math.min(this.map.width - 10, to.x)), y: Math.max(10, Math.min(this.map.height - 10, to.y)) };
+  private clampMap(p: Vec): Vec { return { x: Math.max(10, Math.min(this.map.width - 10, p.x)), y: Math.max(10, Math.min(this.map.height - 10, p.y)) }; }
+  /** Move order. queue=true (Shift-click / Queue mode) appends a waypoint instead. */
+  moveSquad(sq: Squad, to: Vec, queue = false) {
+    to = this.clampMap(to);
+    if (sq.stance === 'retreat') sq.stance = 'aggressive';
+    if (queue && (sq.waypoints.length || !sq.arrived())) { sq.waypoints.push(to); this.fx({ kind: 'ring', x: to.x, y: to.y, r: 12, color: '#ffd84a', dur: 0.5 }); return; }
+    sq.garrisonTarget = null; sq.waypoints = []; sq.patrol = null;
+    for (const u of sq.units) if (u.garrison) gLeave(u.garrison, u);
+    sq.rally = to;
     this.fx({ kind: 'ring', x: to.x, y: to.y, r: 18, color: '#7fd3ff', dur: 0.5 });
   }
-  /** Order a squad to garrison the nearest CoverTower with free slots: it walks there, units enter on arrival. */
-  garrisonSquad(sq: Squad, target?: Tower): number {
-    const c = target ?? this.towers.filter((t) => t.alive && t.cover && !t.disabled && t.cover.free(t) > 0)
-      .sort((a, b) => dist(a, sq.rally) - dist(b, sq.rally))[0];
-    if (!c || sq.data.role === 'worker') { this.toast('No Cover tower with free slots'); return 0; }
-    sq.garrisonTarget = c;
+  /** Patrol between the squad's post and the given points (loops). */
+  patrolSquad(sq: Squad, pts: Vec[]) {
+    if (!pts.length) return;
+    sq.garrisonTarget = null; sq.waypoints = [];
+    for (const u of sq.units) if (u.garrison) gLeave(u.garrison, u);
+    sq.patrol = [{ ...sq.rally }, ...pts.map((p) => this.clampMap(p))]; sq.patrolIdx = 1;
+    sq.rally = sq.patrol[1];
+    for (const p of pts) this.fx({ kind: 'ring', x: p.x, y: p.y, r: 14, color: '#b6f78f', dur: 0.6 });
+  }
+  /** Multi-select move: squads spread into a line or column across the move direction. */
+  moveGroup(sqs: Squad[], to: Vec, queue = false, formation: Formation = this.formation) {
+    sqs = sqs.filter((s) => s.alive);
+    if (sqs.length <= 1) { if (sqs[0]) this.moveSquad(sqs[0], to, queue); return; }
+    const cx = sqs.reduce((s, q) => s + q.center.x, 0) / sqs.length, cy = sqs.reduce((s, q) => s + q.center.y, 0) / sqs.length;
+    const ang = Math.atan2(to.y - cy, to.x - cx), sp = 46;
+    // assign slots by projection so squads don't cross paths
+    const across = (q: Squad) => formation === 'line' ? -(q.center.x - cx) * Math.sin(ang) + (q.center.y - cy) * Math.cos(ang) : -((q.center.x - cx) * Math.cos(ang) + (q.center.y - cy) * Math.sin(ang));
+    const order = [...sqs].sort((a, b) => across(a) - across(b));
+    order.forEach((q, i) => {
+      const k = i - (order.length - 1) / 2;
+      const a = formation === 'line' ? ang + Math.PI / 2 : ang;
+      const off = formation === 'line' ? k * sp : -i * sp;
+      q.formation = formation; q.face = ang;
+      this.moveSquad(q, { x: to.x + Math.cos(a) * off, y: to.y + Math.sin(a) * off }, queue);
+    });
+  }
+  setStance(sq: Squad, st: Stance) {
+    if (st === 'retreat') {
+      const c = sq.center, home = this.hq.door, dh = dist(c, home);
+      const cover = sq.data.role === 'worker' || sq.data.vehicle ? undefined : this.garrisonables().filter((x) => gFree(x) >= 1 && dist(x, c) < Math.min(700, dh))
+        .sort((a, b) => dist(a, c) - dist(b, c))[0];
+      sq.waypoints = []; sq.patrol = null;
+      if (cover) this.garrisonSquad(sq, cover); else { this.moveSquad(sq, home); }
+      sq.stance = 'retreat';
+      this.fx({ kind: 'text', x: c.x, y: c.y - 30, text: 'RETREAT!', color: '#ffb35a', dur: 0.9 });
+    } else sq.stance = st;
+    this.sfx('command');
+  }
+  /** Order a squad into the nearest Garrisonable (cover tower, stone wall, combat tower, bunker / watchtower / ruins). */
+  garrisonSquad(sq: Squad, target?: Garrisonable): number {
+    const c = target ?? this.garrisonables().filter((t) => gFree(t) > 0)
+      .sort((a, b) => dist(a, sq.center) - dist(b, sq.center))[0];
+    if (!c || sq.data.role === 'worker' || sq.data.vehicle) { this.toast(sq.data.vehicle ? 'Vehicles cannot garrison' : 'No structure with free slots'); return 0; }
+    sq.garrisonTarget = c; sq.waypoints = []; sq.patrol = null;
+    if (sq.stance !== 'retreat') sq.stance = 'aggressive';
     sq.rally = { x: c.x, y: c.y + 30 };
     this.updateGarrisons();
+    this.sfx('command');
     return sq.units.filter((u) => u.garrison === c).length || sq.units.length;
   }
   private updateGarrisons() {
     for (const sq of this.squads) {
       const c = sq.garrisonTarget;
       if (!c) continue;
-      if (!c.alive || !c.cover || c.disabled) { sq.garrisonTarget = null; continue; }
-      for (const u of sq.units) if (!u.garrison && u.dropT <= 0 && dist(u, c) < 72) c.cover.garrison(c, u);
-      if (sq.units.every((u) => u.garrison) || c.cover.free(c) <= 0) sq.garrisonTarget = null;
+      if (!c.alive || !c.gOpen()) { sq.garrisonTarget = null; continue; }
+      for (const u of sq.units) if (!u.garrison && u.dropT <= 0 && dist(u, c) < 72) gEnter(c, u);
+      if (sq.units.every((u) => u.garrison) || gFree(c) <= 0) sq.garrisonTarget = null;
     }
   }
-  ungarrisonSquad(sq: Squad) { sq.garrisonTarget = null; for (const u of sq.units) if (u.garrison) u.garrison.cover?.ungarrison(u); }
+  ungarrisonSquad(sq: Squad) { sq.garrisonTarget = null; for (const u of sq.units) if (u.garrison) gLeave(u.garrison, u); }
+  /** Waypoints, patrol loops, retreat completion. */
+  private updateSquads() {
+    for (const sq of this.squads) {
+      sq.pulse = Math.max(0, sq.pulse - 1 / 60 * 2);
+      for (const k of Object.keys(sq.abilityCd) as AbilityId[]) sq.abilityCd[k] = Math.max(0, (sq.abilityCd[k] ?? 0) - 1 / 60);
+      if (sq.garrisonTarget) continue;
+      if (sq.stance === 'retreat') { if (sq.arrived() || sq.units.every((u) => u.garrison)) sq.stance = 'hold'; continue; }
+      if (!sq.arrived()) continue;
+      if (sq.waypoints.length) sq.rally = sq.waypoints.shift()!;
+      else if (sq.patrol) { sq.patrolIdx = (sq.patrolIdx + 1) % sq.patrol.length; sq.rally = sq.patrol[sq.patrolIdx]; }
+    }
+  }
+  /** Squad abilities: ODST Stim / EMP, Spartan EMP Drop (Hijack). */
+  useAbility(sq: Squad, id: AbilityId): boolean {
+    if (!sq.alive || !(sq.data.abilities ?? []).includes(id) || (sq.abilityCd[id] ?? 0) > 0) return false;
+    const a = ABILITIES[id], c = sq.center;
+    sq.abilityCd[id] = a.cooldown; sq.pulse = 1; this.stats.abilities++;
+    if (id === 'stim') {
+      for (const u of sq.units) { u.stimT = STIM.dur; u.health.damage(u.health.hp * STIM.hpCost); u.hitPulse = 1; }
+      this.fx({ kind: 'text', x: c.x, y: c.y - 34, text: 'STIM!', color: '#ff7ad1', dur: 0.9 });
+      this.sfx('ability', c.x, c.y);
+    } else {
+      const R = id === 'emp' ? EMP.radius : HIJACK.radius, stun = id === 'emp' ? EMP.stun : HIJACK.stun;
+      for (const e of this.enemies) if (e.alive && dist(e, c) <= R + e.data.radius) {
+        const had = e.shield > 0; e.emp(this, stun); if (had) this.stats.shieldsPopped++;
+        if (id === 'hijack' && (e.data.heavy || e.data.armored)) e.takeDamage(this, HIJACK.damage, 'energy', c, { ap: true, antiAir: true, src: sq.units[0] });
+      }
+      this.fx({ kind: 'emp', x: c.x, y: c.y, r: R, color: '#7fe8ff', dur: 0.7 });
+      this.fx({ kind: 'text', x: c.x, y: c.y - 40, text: a.name + '!', color: '#7fe8ff', dur: 1 });
+      this.shock(c.x, c.y, R * 1.2, 0.55); this.shake(id === 'hijack' ? 9 : 5);
+      this.sfx('emp', c.x, c.y);
+    }
+    for (const u of sq.units) u.hitPulse = 1;
+    return true;
+  }
   /** Tech required for the NEXT research tier of a troop. */
   researchTech(id: string) { const d = unitById(id), n = d.tiers[this.unitTier(id) + 1]; return n ? n.tech ?? this.unitTier(id) + 1 : 0; }
   researchUnit(id: string): boolean {
@@ -480,6 +737,12 @@ export class Game {
     for (const t of this.towers) t.update(this, dt);
     for (const u of this.units) u.update(this, dt);
     this.updateGarrisons();
+    this.updateSquads();
+    for (const b of this.barriers) b.update(this, dt);
+    for (const e of this.envs) e.update();
+    for (const o of this.obstacles) o.hitFlash = Math.max(0, o.hitFlash - dt);
+    this.blockLoad.clear();
+    for (const e of this.enemies) if (e.alive && e.blockedBy) this.blockLoad.set(e.blockedBy, (this.blockLoad.get(e.blockedBy) ?? 0) + 1);
     for (const e of this.enemies) if (e.alive) e.update(this, dt);
     for (const p of this.projectiles) p.update(this, dt);
     for (const p of this.pickups) p.update(this, dt);
@@ -497,10 +760,16 @@ export class Game {
     this.units = this.units.filter((u) => u.alive);
     for (const s of this.squads) s.units = s.units.filter((u) => u.alive);
     this.squads = this.squads.filter((s) => s.units.length);
+    this.barriers = this.barriers.filter((b) => b.alive);
   }
   private updateEffects(dt: number) {
     for (const e of this.effects) e.t! += dt;
     this.effects = this.effects.filter((e) => e.t! < e.dur);
+    let n = 0; for (const e of this.effects) if (e.kind === 'dmg') n++;
+    this.dmgLive = n;
+    this.shakeAmt = Math.max(0, this.shakeAmt - dt * 40);
+    for (const s of this.shocks) s.t += dt;
+    this.shocks = this.shocks.filter((s) => s.t < s.dur);
   }
 }
 

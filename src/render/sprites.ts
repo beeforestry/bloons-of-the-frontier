@@ -26,7 +26,7 @@ function load(key: string, src: string) {
 
 export async function loadSprites(mapImages: string[]) {
   await Promise.all([...Object.entries(FILES).map(([k, v]) => load(k, v)), ...mapImages.map((m) => load('map:' + m, m))]);
-  for (const k of ['unsc_autoturret', 'unsc_rail']) for (let t = 0; t < 3; t++) IMG[`${k}_icon_${t}`] = turretIcon(k, t);
+  for (const k of ['unsc_autoturret', 'unsc_rail', 'unsc_flak']) for (let t = 0; t < 3; t++) IMG[`${k}_icon_${t}`] = turretIcon(k, t);
   tint('fx_pea', 'fx_pea_cherry', [255, 70, 60]);
   tint('fx_boom', 'fx_boom_fire', [255, 150, 60]);
 }

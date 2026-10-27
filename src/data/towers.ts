@@ -4,7 +4,7 @@
 // GAME RULE: every tier must be strictly better AND look better (visual.level up).
 // src/data/validate.ts checks this at dev boot and in `npm run validate`.
 // =============================================================================
-import { Faction, type TowerData } from '../core/types';
+import { Faction, TargetingMode, type TowerData } from '../core/types';
 
 const G1 = '#7fd3ff', G2 = '#ffd84a'; // tier-1 / tier-2 glow colors (blue -> gold)
 
@@ -48,7 +48,7 @@ export const TOWERS: TowerData[] = [
   },
   {
     id: 'super_monkey', name: 'Super Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'super_monkey',
-    desc: 'Laser eyes: insanely fast hitscan beams. Energy pops Lead.', damageType: 'energy', projectile: 'laser', hitscan: true,
+    desc: 'Laser eyes: insanely fast hitscan beams. Hits aircraft. Ability: Laser Sweep. Energy pops Lead.', damageType: 'energy', projectile: 'laser', hitscan: true, antiAir: true, ability: 'laser_sweep',
     tiers: [
       { name: 'Super Monkey', cost: 1600, blurb: 'Rapid laser beams.', visual: { level: 0, scale: 1 }, maxHp: 200,
         combat: { damage: 1, fireRate: 10, range: 190, pierce: 2 } },
@@ -73,14 +73,14 @@ export const TOWERS: TowerData[] = [
   // -------------------------------------------------------------------- FLORA
   {
     id: 'solar_pea_fusion', name: 'Solar Pea Fusion', faction: Faction.Flora, kind: 'combat', sprite: 'solar_pea_fusion',
-    desc: 'Glowing golden peas. Cheap starter plant.', damageType: 'sharp', projectile: 'pea',
+    desc: 'Glowing golden peas. Small sun aura: +attack speed nearby (flora auras never stack).', damageType: 'sharp', projectile: 'pea',
     tiers: [
       { name: 'Solar Pea Fusion', cost: 250, blurb: 'Golden peas.', visual: { level: 0, scale: 1 }, maxHp: 120,
-        combat: { damage: 1, fireRate: 1.6, range: 150, pierce: 1, projectileSpeed: 520 } },
+        combat: { damage: 1, fireRate: 1.6, range: 150, pierce: 1, projectileSpeed: 520 }, aura: { radius: 90, ratePct: 0.04, incomePct: 0 } },
       { name: 'Twin Pods', cost: 220, blurb: 'Two peas per volley.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 150,
-        combat: { damage: 2, fireRate: 1.8, range: 160, pierce: 1, shots: 2, projectileSpeed: 560 } },
+        combat: { damage: 2, fireRate: 1.8, range: 160, pierce: 1, shots: 2, projectileSpeed: 560 }, aura: { radius: 100, ratePct: 0.06, incomePct: 0 } },
       { name: 'Sun-Blast Triple', cost: 480, blurb: 'Three sun-blast peas, pierce 2.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 180,
-        combat: { damage: 2, fireRate: 2.4, range: 175, pierce: 2, shots: 3, projectileSpeed: 600 } },
+        combat: { damage: 2, fireRate: 2.4, range: 175, pierce: 2, shots: 3, projectileSpeed: 600 }, aura: { radius: 115, ratePct: 0.08, incomePct: 0 } },
     ],
   },
   {
@@ -126,13 +126,13 @@ export const TOWERS: TowerData[] = [
     damageType: 'cold', projectile: 'ice',
     tiers: [
       { name: 'Frost Bastion', cost: 350, blurb: 'Aura +20 HP, +10% range.', visual: { level: 0, scale: 1 }, maxHp: 300,
-        cover: { auraRadius: 130, bonusMaxHp: 20, bonusRangePct: 0.1, garrisonSlots: 1, regen: 2 },
+        cover: { auraRadius: 130, bonusMaxHp: 20, bonusRangePct: 0.1, garrisonSlots: 1, regen: 2, garrisonProtect: 0.4, garrisonRangePct: 0.15 },
         combat: { damage: 1, fireRate: 0.8, range: 130, pierce: 1, slow: 0.3, projectileSpeed: 480 } },
       { name: 'Glacier Shell', cost: 300, blurb: 'Aura +35 HP, +15% range.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 420,
-        cover: { auraRadius: 150, bonusMaxHp: 35, bonusRangePct: 0.15, garrisonSlots: 2, regen: 3 },
+        cover: { auraRadius: 150, bonusMaxHp: 35, bonusRangePct: 0.15, garrisonSlots: 2, regen: 3, garrisonProtect: 0.45, garrisonRangePct: 0.18 },
         combat: { damage: 1, fireRate: 1.0, range: 150, pierce: 1, slow: 0.4, projectileSpeed: 520 } },
       { name: 'Permafrost Citadel', cost: 650, blurb: 'Aura +55 HP, +22% range.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 600,
-        cover: { auraRadius: 175, bonusMaxHp: 55, bonusRangePct: 0.22, garrisonSlots: 3, regen: 5 },
+        cover: { auraRadius: 175, bonusMaxHp: 55, bonusRangePct: 0.22, garrisonSlots: 3, regen: 5, garrisonProtect: 0.5, garrisonRangePct: 0.22 },
         combat: { damage: 2, fireRate: 1.2, range: 175, pierce: 2, slow: 0.5, projectileSpeed: 560 } },
     ],
   },
@@ -166,11 +166,11 @@ export const TOWERS: TowerData[] = [
     desc: 'COVER. Aura +max HP / +range for towers & troops. Garrison troops inside: they fire from cover with +25% range.',
     tiers: [
       { name: 'Firebase', cost: 450, blurb: '2 garrison slots.', visual: { level: 0, scale: 1 }, maxHp: 400,
-        cover: { auraRadius: 140, bonusMaxHp: 30, bonusRangePct: 0.15, garrisonSlots: 2, regen: 3 } },
+        cover: { auraRadius: 140, bonusMaxHp: 30, bonusRangePct: 0.15, garrisonSlots: 2, regen: 3, garrisonProtect: 0.5, garrisonRangePct: 0.25 } },
       { name: 'Reinforced Firebase', cost: 380, blurb: '3 slots, stronger aura.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 550,
-        cover: { auraRadius: 160, bonusMaxHp: 50, bonusRangePct: 0.2, garrisonSlots: 3, regen: 4 } },
+        cover: { auraRadius: 160, bonusMaxHp: 50, bonusRangePct: 0.2, garrisonSlots: 3, regen: 4, garrisonProtect: 0.55, garrisonRangePct: 0.28 } },
       { name: 'Fortified Command Post', cost: 800, blurb: '4 slots, best aura.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 750,
-        cover: { auraRadius: 185, bonusMaxHp: 80, bonusRangePct: 0.28, garrisonSlots: 4, regen: 6 } },
+        cover: { auraRadius: 185, bonusMaxHp: 80, bonusRangePct: 0.28, garrisonSlots: 4, regen: 6, garrisonProtect: 0.6, garrisonRangePct: 0.32 } },
     ],
   },
   {
@@ -183,6 +183,124 @@ export const TOWERS: TowerData[] = [
         farm: { income: 40, payoutsPerMin: 7.5, waveBonus: 100 } },
       { name: 'Orbital Requisition', cost: 1100, blurb: 'Orbital supply line.', visual: { level: 2, scale: 1.1, glow: G2 }, maxHp: 220,
         farm: { income: 60, payoutsPerMin: 9, waveBonus: 200 } },
+    ],
+  },
+  // ------------------------------------------------------------ PRIMATES (t25)
+  {
+    id: 'sniper_monkey', name: 'Sniper Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'sniper_monkey',
+    desc: 'Infinite range. Defaults to Strongest. Armor-piercing rounds shred Ironbacks; hits aircraft.', damageType: 'ballistic', projectile: 'rail', hitscan: true,
+    antiAir: true, armorPiercing: true, defaultTargeting: TargetingMode.Strong,
+    tiers: [
+      { name: 'Sniper Monkey', cost: 450, blurb: 'Heavy AP round, map-wide.', visual: { level: 0, scale: 1 }, maxHp: 110,
+        combat: { damage: 6, fireRate: 0.55, range: 4000, pierce: 1 } },
+      { name: 'Full Metal Jacket', cost: 420, blurb: 'Pierce 2, faster bolt.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
+        combat: { damage: 10, fireRate: 0.7, range: 4000, pierce: 2 } },
+      { name: 'Elite Deadeye', cost: 950, blurb: 'Devastating AP, pierce 3.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
+        combat: { damage: 18, fireRate: 0.9, range: 4000, pierce: 3 } },
+    ],
+  },
+  {
+    id: 'glue_slinger', name: 'Corrosive Glue Slinger', faction: Faction.Primates, kind: 'combat', sprite: 'glue_slinger',
+    desc: 'Glue globs slow by 40% and corrode armor (Ironbacks lose plating).', damageType: 'sharp', projectile: 'glue',
+    tiers: [
+      { name: 'Glue Slinger', cost: 270, blurb: '40% slow, corrodes armor.', visual: { level: 0, scale: 1 }, maxHp: 110,
+        combat: { damage: 1, fireRate: 1.1, range: 150, pierce: 2, slow: 0.4, armorShred: 0.12, projectileSpeed: 460 } },
+      { name: 'Corrosive Glue', cost: 280, blurb: 'Stronger acid, splash.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
+        combat: { damage: 2, fireRate: 1.3, range: 160, pierce: 3, slow: 0.45, armorShred: 0.2, splash: 30, projectileSpeed: 500 } },
+      { name: 'Bloon Dissolver', cost: 620, blurb: 'Melts plating fast.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
+        combat: { damage: 3, fireRate: 1.6, range: 175, pierce: 4, slow: 0.5, armorShred: 0.3, splash: 40, projectileSpeed: 540 } },
+    ],
+  },
+  {
+    id: 'banana_drop', name: 'Banana Supply Drop', faction: Faction.Primates, kind: 'farm', sprite: 'banana_drop', bankCrates: true,
+    desc: 'FARM. Stacks banana crates on its pad during the wave; every crate converts to credits when the wave ends (no collection needed).',
+    tiers: [
+      { name: 'Banana Drop', cost: 420, blurb: 'Crates bank at wave end.', visual: { level: 0, scale: 1 }, maxHp: 110,
+        farm: { income: 18, payoutsPerMin: 6, waveBonus: 45 } },
+      { name: 'Banana Republic', cost: 480, blurb: 'Bigger crates.', visual: { level: 1, scale: 1.05, glow: G1 }, maxHp: 140,
+        farm: { income: 30, payoutsPerMin: 7.5, waveBonus: 95 } },
+      { name: 'Banana Central', cost: 980, blurb: 'Crate airlift.', visual: { level: 2, scale: 1.1, glow: G2 }, maxHp: 170,
+        farm: { income: 48, payoutsPerMin: 9.5, waveBonus: 180 } },
+    ],
+  },
+  // --------------------------------------------------------------- FLORA (t25)
+  {
+    id: 'sunflower', name: 'Sunflower', faction: Faction.Flora, kind: 'support', sprite: 'sunflower',
+    desc: 'SUPPORT. Green sun aura: +attack speed for towers & troops and +farm income. Grows energy orbs that fuel MAC Blast & Heal (click or they auto-collect). Flora auras never stack.',
+    tiers: [
+      { name: 'Sunflower', cost: 300, blurb: '+12% rate, +10% income aura.', visual: { level: 0, scale: 1 }, maxHp: 110,
+        aura: { radius: 140, ratePct: 0.12, incomePct: 0.1 }, orbs: { energy: 6, perMin: 3 } },
+      { name: 'Twin Sunflower', cost: 320, blurb: '+18% rate, +15% income.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
+        aura: { radius: 160, ratePct: 0.18, incomePct: 0.15 }, orbs: { energy: 8, perMin: 4 } },
+      { name: 'Solar Bloom', cost: 700, blurb: '+25% rate, +22% income.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
+        aura: { radius: 185, ratePct: 0.25, incomePct: 0.22 }, orbs: { energy: 10, perMin: 5 } },
+    ],
+  },
+  {
+    id: 'repeater_gatling', name: 'Repeater Seed Gatling', faction: Faction.Flora, kind: 'combat', sprite: 'repeater_gatling',
+    desc: 'Locks to the nearest lane direction at placement and hoses it with seeds: very high damage density down that line.', damageType: 'sharp', projectile: 'seed', fixedLane: true,
+    tiers: [
+      { name: 'Repeater Gatling', cost: 520, blurb: 'Fixed-lane seed stream.', visual: { level: 0, scale: 1 }, maxHp: 140,
+        combat: { damage: 1, fireRate: 8, range: 240, pierce: 2, projectileSpeed: 700 } },
+      { name: 'Twin Repeater', cost: 460, blurb: 'Twin streams.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 170,
+        combat: { damage: 2, fireRate: 9, range: 260, pierce: 2, shots: 2, projectileSpeed: 760 } },
+      { name: 'Seed Minigun', cost: 980, blurb: 'Triple seed torrent.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
+        combat: { damage: 2, fireRate: 12, range: 280, pierce: 3, shots: 3, projectileSpeed: 820 } },
+    ],
+  },
+  {
+    id: 'wallnut_barrier', name: 'Wall-Nut Barrier Sprout', faction: Faction.Flora, kind: 'path', sprite: 'wallnut_barrier', singleUse: true,
+    desc: 'PATH. Place ON the road: a high-HP blocker that holds up to 6 ground bugs. Dies when chewed through.',
+    tiers: [
+      { name: 'Wall-Nut Barrier', cost: 180, blurb: '600 HP road block.', visual: { level: 0, scale: 1 }, maxHp: 600,
+        barrier: { hp: 600, blockCap: 6 } },
+    ],
+  },
+  {
+    id: 'cherry_pod', name: 'Cherry Bomb Blast Pod', faction: Faction.Flora, kind: 'path', sprite: 'cherry_pod', singleUse: true,
+    desc: 'PATH, single use. Place ON the road; when an enemy gets close the fuse burns (0.7s) and it erupts in a huge fire blast. Also clears rocks & logs.',
+    tiers: [
+      { name: 'Cherry Pod', cost: 240, blurb: 'Huge fire AoE.', visual: { level: 0, scale: 1 }, maxHp: 80,
+        barrier: { hp: 80, blockCap: 0, blast: 60, blastRadius: 120 } },
+    ],
+  },
+  // ---------------------------------------------------------------- UNSC (t24)
+  {
+    id: 'unsc_flak', name: 'Flak AA Battery', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_flak',
+    desc: 'ANTI-AIR. Flak bursts shred aircraft (Hive Gargoyles are AA-only) and bloons. Cannot hit ground bugs.', damageType: 'explosive', projectile: 'flak',
+    antiAir: true, hitsGround: false,
+    tiers: [
+      { name: 'Flak Battery', cost: 400, blurb: 'Twin flak, burst 34.', visual: { level: 0, scale: 1 }, maxHp: 170,
+        combat: { damage: 2, fireRate: 2.2, range: 210, pierce: 1, splash: 34, projectileSpeed: 900 } },
+      { name: 'Quad Flak', cost: 380, blurb: 'Faster, bigger bursts.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 210,
+        combat: { damage: 3, fireRate: 2.8, range: 230, pierce: 1, splash: 42, shots: 2, projectileSpeed: 950 } },
+      { name: 'Skyguard Array', cost: 820, blurb: 'Radar-guided flak storm.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 260,
+        combat: { damage: 4, fireRate: 3.6, range: 255, pierce: 2, splash: 50, shots: 3, projectileSpeed: 1000 } },
+    ],
+  },
+  // ------------------------------------------------------------ FRONTIER (t24/25)
+  {
+    id: 'stone_wall', name: 'Stone Wall', faction: Faction.Frontier, kind: 'cover', sprite: 'stone_wall',
+    desc: 'COVER / GARRISON. Thick masonry: garrisoned troops take far less damage and shoot farther.',
+    tiers: [
+      { name: 'Stone Wall', cost: 220, blurb: '2 slots, -55% dmg, +20% range.', visual: { level: 0, scale: 1 }, maxHp: 500,
+        cover: { auraRadius: 90, bonusMaxHp: 15, bonusRangePct: 0.05, garrisonSlots: 2, regen: 1, garrisonProtect: 0.55, garrisonRangePct: 0.2 } },
+      { name: 'Rampart', cost: 260, blurb: '3 slots, -62% dmg, +26% range.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 700,
+        cover: { auraRadius: 100, bonusMaxHp: 25, bonusRangePct: 0.08, garrisonSlots: 3, regen: 2, garrisonProtect: 0.62, garrisonRangePct: 0.26 } },
+      { name: 'Keep Wall', cost: 560, blurb: '4 slots, -70% dmg, +32% range.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 950,
+        cover: { auraRadius: 115, bonusMaxHp: 40, bonusRangePct: 0.1, garrisonSlots: 4, regen: 3, garrisonProtect: 0.7, garrisonRangePct: 0.32 } },
+    ],
+  },
+  {
+    id: 'arcane_obelisk', name: 'Arcane Mystic Obelisk', faction: Faction.Frontier, kind: 'combat', sprite: 'arcane_obelisk',
+    desc: 'Slow, heavy arcane blasts: strip energy shields, destroy armor plating, splash. Magic pops Lead.', damageType: 'magic', projectile: 'magic',
+    tiers: [
+      { name: 'Mystic Obelisk', cost: 650, blurb: 'Shield-breaking blasts.', visual: { level: 0, scale: 1 }, maxHp: 160,
+        combat: { damage: 12, fireRate: 0.4, range: 200, pierce: 1, splash: 50, armorShred: 0.5, shieldBreak: 3, projectileSpeed: 380 } },
+      { name: 'Runed Obelisk', cost: 600, blurb: 'Bigger blasts.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 200,
+        combat: { damage: 20, fireRate: 0.5, range: 220, pierce: 1, splash: 62, armorShred: 0.7, shieldBreak: 4, projectileSpeed: 420 } },
+      { name: 'Astral Monolith', cost: 1300, blurb: 'Annihilates plating.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 240,
+        combat: { damage: 32, fireRate: 0.6, range: 240, pierce: 2, splash: 75, armorShred: 1, shieldBreak: 5, projectileSpeed: 460 } },
     ],
   },
 ];

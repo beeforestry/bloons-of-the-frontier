@@ -120,12 +120,12 @@ export class Building {
     if (s.gun) {
       this.gunCd -= dt;
       if (this.gunCd <= 0) {
-        const tg = pickTargets(g.enemies, this, s.gun.range, TargetingMode.Close, { hitsAir: true, hitsGround: true }, s.gun.pierce);
+        const tg = pickTargets(g.enemies, this, s.gun.range, TargetingMode.Close, { hitsAir: true, hitsGround: true, antiAir: true }, s.gun.pierce);
         if (tg.length) {
           this.gunCd = 1 / s.gun.fireRate; this.recoil = 1;
           this.aim = Math.atan2(tg[0].y - this.y, tg[0].x - this.x);
           const from = { x: this.x + Math.cos(this.aim) * 30, y: this.y - 70 };
-          for (const e of tg) g.beam(from, e, s.gun.damage, 'ballistic', 1, '#ffe08a', 2.5);
+          for (const e of tg) g.beam(from, e, s.gun.damage, 'ballistic', 1, '#ffe08a', 2.5, { antiAir: true });
         } else this.gunCd = 0.1;
       }
     }

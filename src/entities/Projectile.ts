@@ -1,5 +1,6 @@
 // Travelling projectiles (darts, peas, shurikens, homing magic, lobbed melons, acid).
-import type { DamageType, ProjectileKind } from '../core/types';
+import type { DamageType, HitOpts, ProjectileKind } from '../core/types';
+import { canHit } from '../systems/TargetingSystem';
 import { dist2 } from '../core/math';
 import type { Game } from '../game/Game';
 import type { Enemy } from './Enemy';
@@ -7,7 +8,7 @@ import type { Enemy } from './Enemy';
 export interface ProjectileOpts {
   kind: ProjectileKind; x: number; y: number; angle: number; speed: number; damage: number; type: DamageType;
   pierce: number; splash?: number; slow?: number; homing?: Enemy | null; lob?: { tx: number; ty: number; dur: number };
-  hitsAir?: boolean; hitsGround?: boolean; scale?: number;
+  hitsAir?: boolean; hitsGround?: boolean; scale?: number; hit?: HitOpts;
 }
 
 export class Projectile {
@@ -35,7 +36,7 @@ export class Projectile {
       const t = Math.min(1, this.lobT);
       this.x = this.sx + (o.lob.tx - this.sx) * t; this.y = this.sy + (o.lob.ty - this.sy) * t;
       this.height = Math.sin(t * Math.PI) * 90;
-      if (t >= 1) { this.alive = false; g.splash(this.x, this.y, o.splash ?? 40, o.damage, o.type, this.origin, o.kind === 'melon' ? 'boom_fire' : 'boom'); }
+      if (t >= 1) { this.alive = false; g.splash(this.x, this.y, o.splash ?? 40, o.damage, o.type, this.origin, o.kind === 'melon' ? 'boom_fire' : 'boom', o.hit, o.slow); }
       return;
     }
     if (o.homing && o.homing.alive) {
@@ -50,11 +51,11 @@ export class Projectile {
     if (this.x < -50 || this.y < -50 || this.x > g.map.width + 50 || this.y > g.map.height + 50) { this.alive = false; return; }
     for (const e of g.enemies) {
       if (!e.alive || this.hit.has(e)) continue;
-      if (e.data.flying ? o.hitsAir === false : o.hitsGround === false) continue;
+      if (!canHit(e, { hitsAir: o.hitsAir, hitsGround: o.hitsGround, antiAir: o.hit?.antiAir })) continue;
       if (dist2(e, this) > (e.data.radius + 6) ** 2) continue;
       this.hit.add(e);
-      if (o.splash) { this.alive = false; g.splash(this.x, this.y, o.splash, o.damage, o.type, this.origin, 'boom'); return; }
-      e.takeDamage(g, o.damage, o.type, this.origin);
+      if (o.splash) { this.alive = false; g.splash(this.x, this.y, o.splash, o.damage, o.type, this.origin, o.kind === 'flak' ? 'boom_fire' : 'boom', o.hit, o.slow); return; }
+      e.takeDamage(g, o.damage, o.type, this.origin, o.hit);
       if (o.slow) { e.slowAmt = Math.max(e.slowAmt, o.slow); e.slowT = 1.6; }
       if (--this.pierce <= 0) { this.alive = false; return; }
     }

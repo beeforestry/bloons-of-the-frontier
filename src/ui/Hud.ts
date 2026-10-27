@@ -10,7 +10,9 @@ import type { ViewState } from '../render/Renderer';
 import { FACTIONS, factionInfo } from '../data/factions';
 import { TOWERS, towerById } from '../data/towers';
 import { UNITS, unitById } from '../data/units';
-import { Faction, type TowerTier, type UnitTier } from '../core/types';
+import { Faction, TARGETING_ORDER, TARGETING_LABEL, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
+import { ABILITIES } from '../data/abilities';
+import { gEject } from '../entities/Garrison';
 import { IMG, sprite } from '../render/sprites';
 import type { Building, BuildPad } from '../entities/Building';
 import { PAD_BUILDINGS, POWERS, MAX_ENERGY, TRAIN_DISCOUNT } from '../data/buildings';
@@ -32,6 +34,9 @@ function statLine(t: TowerTier): string {
   if (t.combat) s.push(`⚔ ${t.combat.damage}${t.combat.shots && t.combat.shots > 1 ? '×' + t.combat.shots : ''}`, `⏱ ${t.combat.fireRate}/s`, `◎ ${t.combat.range}`, `➹ ${t.combat.pierce}`);
   if (t.cover) s.push(`🛡 +${t.cover.bonusMaxHp}HP`, `◎ +${Math.round(t.cover.bonusRangePct * 100)}%`, `👤 ${t.cover.garrisonSlots}`);
   if (t.farm) s.push(`¢ ${t.farm.income}×${t.farm.payoutsPerMin}/min`, `+${t.farm.waveBonus}/wave`);
+  if (t.aura) s.push(`🌿 ${t.aura.radius}: +${Math.round(t.aura.ratePct * 100)}% rate${t.aura.incomePct ? ` +${Math.round(t.aura.incomePct * 100)}% income` : ''}`);
+  if (t.orbs) s.push(`🔆 ${t.orbs.energy}⚡×${t.orbs.perMin}/min`);
+  if (t.barrier) s.push(t.barrier.blast ? `💥 ${t.barrier.blast} r${t.barrier.blastRadius}` : `🧱 blocks ${t.barrier.blockCap}`);
   s.push(`❤ ${t.maxHp}`);
   return s.join(' · ');
 }
@@ -47,6 +52,10 @@ function deltaLine(a: TowerTier, b: TowerTier): string {
   cmp('Aura', a.cover?.auraRadius, b.cover?.auraRadius); cmp('+HP', a.cover?.bonusMaxHp, b.cover?.bonusMaxHp); cmp('+Range', a.cover?.bonusRangePct, b.cover?.bonusRangePct, true);
   cmp('Slots', a.cover?.garrisonSlots, b.cover?.garrisonSlots); cmp('Income', a.farm?.income, b.farm?.income); cmp('Payouts/min', a.farm?.payoutsPerMin, b.farm?.payoutsPerMin);
   cmp('Wave bonus', a.farm?.waveBonus, b.farm?.waveBonus); cmp('HP', a.maxHp, b.maxHp);
+  cmp('Aura', a.aura?.radius, b.aura?.radius); cmp('Aura rate', a.aura?.ratePct, b.aura?.ratePct, true); cmp('Aura income', a.aura?.incomePct, b.aura?.incomePct, true);
+  cmp('Orb ⚡', a.orbs?.energy, b.orbs?.energy); cmp('Orbs/min', a.orbs?.perMin, b.orbs?.perMin);
+  cmp('Shred', a.combat?.armorShred, b.combat?.armorShred, true); cmp('Slow', a.combat?.slow, b.combat?.slow, true);
+  cmp('Garrison armor', a.cover?.garrisonProtect, b.cover?.garrisonProtect, true); cmp('Garrison range', a.cover?.garrisonRangePct, b.cover?.garrisonRangePct, true);
   return d.join('<br>');
 }
 function bldLine(t: BuildingTier) {
@@ -60,7 +69,11 @@ function bldLine(t: BuildingTier) {
   return o.join(' · ');
 }
 function unitLine(t: UnitTier) {
-  return `❤ ${t.stats.maxHp} · ⚔ ${t.stats.damage} · ⏱ ${t.stats.attackRate}/s · ◎ ${t.stats.range}${t.weapon.hitsAir ? ' · ✈' : ''}${t.special ? ' · ★ ' + t.special.name : ''}`;
+  return `❤ ${t.stats.maxHp} · ⚔ ${t.stats.damage} · ⏱ ${t.stats.attackRate}/s · ◎ ${t.stats.range}${t.weapon.antiAir ? ' · ✈AA' : ''}${t.weapon.armorPiercing ? ' · AP' : ''}${t.special ? ' · ★ ' + t.special.name : ''}`;
+}
+const STANCES: [Stance, string][] = [['aggressive', '⚔ Aggressive'], ['hold', '✋ Hold'], ['retreat', '🏃 Retreat']];
+function tgtButtons(cur: string) {
+  return `<div class="seg tgt">${TARGETING_ORDER.map((m) => `<button class="${m === cur ? 'on' : ''}" data-tgt="${m}">${TARGETING_LABEL[m]}</button>`).join('')}</div>`;
 }
 
 export class Hud {
@@ -136,15 +149,18 @@ export class Hud {
   }
 
   // ---------------------------------------------------------------- selection
-  select(t: Tower | null, s: Squad | null) {
+  select(t: Tower | null, s: Squad | null, group?: Squad[]) {
     this.view.selTower = t; this.view.selSquad = s; this.view.selBuilding = null; this.view.selPad = null;
+    this.view.selSquads = group ?? (s ? [s] : []);
+    if (t || s || group?.length) this.g.sfx('select');
+    for (const q of this.view.selSquads) q.pulse = 0.6;
     this.g.bus.emit('selection', { kind: t ? 'tower' : s ? 'squad' : 'none' });
     this.lastSel = '\u0000';
     this.refresh(true);
   }
   /** Select a base building or an empty build pad. */
   selectBase(b: Building | null, pad: BuildPad | null) {
-    this.view.selTower = null; this.view.selSquad = null; this.view.selBuilding = b; this.view.selPad = pad;
+    this.view.selTower = null; this.view.selSquad = null; this.view.selSquads = []; this.view.selBuilding = b; this.view.selPad = pad;
     this.lastSel = '\u0000';
     this.g.bus.emit('selection', { kind: 'none' });
     this.refresh(true);
@@ -195,47 +211,118 @@ export class Hud {
     }
   }
   private selPanel() {
-    const p = $('#sel-panel'), g = this.g, t = this.view.selTower, s = this.view.selSquad;
+    const p = $('#sel-panel'), g = this.g, t = this.view.selTower, s = this.view.selSquad, grp = this.view.selSquads.filter((q) => q.alive);
     if (!t && !s && this.basePanel(p)) return;
-    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.cover?.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}`
-      : s ? `s${s.units.length}:${g.unitTier(s.data.id)}:${s.units.filter((u) => u.garrison).length}` : '';
+    if (!t && grp.length > 1) return this.groupPanel(p, grp);
+    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}`
+      : s ? `s${s.uid}:${s.units.length}:${g.unitTier(s.data.id)}:${s.units.filter((u) => u.garrison).length}:${s.stance}:${s.targeting}:${s.units.map((u) => u.stars).join('')}:${this.view.queueMode}:${this.view.patrolMode}` : '';
     if (key === this.lastSel) { if (t) this.liveTower(t); return; }
     this.lastSel = key;
     if (t && !t.alive) { this.select(null, null); return; }
     if (s && !s.alive) { this.select(null, null); return; }
     p.classList.toggle('show', !!(t || s));
     if (t) {
-      const n = t.nextTier, f = factionInfo(t.data.faction);
+      const n = t.nextTier, f = factionInfo(t.data.faction), slots = t.gSlots();
       p.style.setProperty('--fc', f.color);
+      const tags = [t.data.antiAir ? '✈ Anti-air' : '', t.data.armorPiercing ? 'Armor-piercing' : '', t.data.fixedLane ? 'Fixed lane' : '', t.data.hitsAir === false ? 'Air only' : ''].filter(Boolean).join(' · ');
       p.innerHTML = `<div class="sp-head">${th(t.t.visual.sprite ?? t.data.sprite, t.tier, 56)}<div><div class="sp-name">${t.t.name}</div>
-        <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}</div></div></div>
+        <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${tags ? ' · ' + tags : ''}</div></div></div>
         <div class="sp-stats">${statLine(t.t)}</div><div class="sp-live"></div>
         ${n ? `<button class="btn up" id="sp-up" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
-        <div class="row">${t.combat ? `<button class="btn" id="sp-tgt">🎯 Target: <b>${t.targeting}</b></button>` : ''}
-        <button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
-        ${t.cover ? `<div class="sp-sub">Garrison: ${t.cover.garrisoned.length}/${t.t.cover!.garrisonSlots} · select a squad and press Garrison</div><button class="btn" id="sp-eject">Eject troops</button>` : ''}
+        ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
+        ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
+        <div class="row"><button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
+        ${slots ? `<div class="sp-sub">Garrison: ${t.garrisoned.length}/${slots} · −${Math.round(t.gProtect() * 100)}% dmg taken · +${Math.round(t.gRange() * 100)}% range · select a squad and press Garrison</div>${t.garrisoned.length ? '<button class="btn" id="sp-eject">Eject troops</button>' : ''}` : ''}
         ${t.isFarm ? '<div class="sp-sub">Tip: deploy a Sprout Farmhand, then press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
       const up = $('#sp-up', p); if (up) up.onclick = () => { t.upgrade(g); this.lastSel = ''; this.refresh(true); };
-      const tg = $('#sp-tgt', p); if (tg) tg.onclick = () => { g.cycleTargeting(t); this.lastSel = ''; this.refresh(true); };
+      for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-tgt]'))) el.onclick = () => { g.setTargeting(t, el.dataset.tgt as never); this.lastSel = ''; this.refresh(true); };
+      const ab = $('#sp-abil', p); if (ab) ab.onclick = () => t.useAbility(g);
       $('#sp-sell', p).onclick = () => { g.sellTower(t); this.select(null, null); };
-      const ej = $('#sp-eject', p); if (ej) ej.onclick = () => { t.cover!.ejectAll(g); this.lastSel = ''; };
+      const ej = $('#sp-eject', p); if (ej) ej.onclick = () => { gEject(t); this.lastSel = ''; };
       this.liveTower(t);
     } else if (s) {
       const tier = g.unitTier(s.data.id), td = s.data.tiers[tier], f = factionInfo(s.data.faction);
       p.style.setProperty('--fc', f.color);
-      const worker = s.data.role === 'worker';
-      p.innerHTML = `<div class="sp-head">${th(td.visual.sprite ?? s.data.sprite, tier, 56)}<div><div class="sp-name">${td.name}</div>
-        <div class="sp-sub">${s.data.name} · ${s.units.length} unit(s)</div></div></div>
+      const worker = s.data.role === 'worker', stars = Math.max(...s.units.map((u) => u.stars));
+      p.innerHTML = `<div class="sp-head">${th(td.visual.sprite ?? s.data.sprite, tier, 56)}<div><div class="sp-name">${td.name} <span class="stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</span></div>
+        <div class="sp-sub">${s.data.name} · ${s.units.length} unit(s) · XP ${s.units.reduce((n, u) => n + u.xp, 0)}${s.data.hero ? ' · HERO' : ''}${s.data.vehicle ? ' · fires on the move' : ''}</div></div></div>
         <div class="sp-stats">${unitLine(td)}</div>
-        <div class="sp-sub">${worker ? 'Workers auto-collect dropped credits (100%) and repair towers near their post.' : 'Click the map (or right-click) to set a rally point. Troops block ground bugs and attack the nearest enemy.'}</div>
+        ${worker ? '<div class="sp-sub">Workers collect credits, orbs & scrap, repair towers, and spawn energy orbs during waves.</div>' : `
+        <div class="seg stance">${STANCES.map(([k, l]) => `<button class="${s.stance === k ? 'on' : ''}" data-stance="${k}">${l}</button>`).join('')}</div>
+        <div class="sp-sub">🎯 Targeting</div>${tgtButtons(s.targeting)}`}
+        <div class="row"><button class="btn${this.view.queueMode ? ' on' : ''}" id="sp-queue-m" title="Shift-click also queues">➕ Queue</button><button class="btn${this.view.patrolMode ? ' on' : ''}" id="sp-patrol" title="Tap points then Done; or press P">🔁 Patrol</button></div>
         <div class="row">${worker ? '<button class="btn" id="sp-org">🧹 Organize Farms</button>' : '<button class="btn" id="sp-gar">🏰 Garrison</button><button class="btn" id="sp-ungar">Leave cover</button>'}
         <button class="btn" id="sp-desel">Done</button></div>`;
+      for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-stance]'))) el.onclick = () => { g.setStance(s, el.dataset.stance as Stance); this.lastSel = ''; };
+      for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-tgt]'))) el.onclick = () => { g.setTargeting(s, el.dataset.tgt as never); this.lastSel = ''; };
+      $('#sp-queue-m', p).onclick = () => { this.view.queueMode = !this.view.queueMode; this.view.patrolMode = false; this.lastSel = ''; };
+      $('#sp-patrol', p).onclick = () => this.togglePatrol();
       const ga = $('#sp-gar', p); if (ga) ga.onclick = () => { g.garrisonSquad(s); this.lastSel = ''; };
       const ug = $('#sp-ungar', p); if (ug) ug.onclick = () => { g.ungarrisonSquad(s); this.lastSel = ''; };
       const og = $('#sp-org', p); if (og) og.onclick = () => g.orderOrganizeFarms();
       $('#sp-desel', p).onclick = () => this.select(null, null);
     } else p.innerHTML = '';
   }
+  /** Patrol mode: first toggle starts collecting points, second commits them. */
+  togglePatrol() {
+    const v = this.view;
+    if (v.patrolMode) { for (const q of v.selSquads) if (v.patrolPts.length) this.g.patrolSquad(q, v.patrolPts); v.patrolPts = []; v.patrolMode = false; }
+    else { v.patrolMode = true; v.queueMode = false; v.patrolPts = []; this.toast('Patrol: tap/click points, then press Patrol (or P) again'); }
+    this.lastSel = ''; this.refresh(true);
+  }
+  private groupPanel(p: HTMLElement, grp: Squad[]) {
+    const g = this.g, key = `g${grp.map((q) => q.uid).join(',')}:${g.formation}:${grp.map((q) => q.stance).join('')}:${this.view.queueMode}:${this.view.patrolMode}`;
+    if (key === this.lastSel) return;
+    this.lastSel = key;
+    p.classList.add('show'); p.style.setProperty('--fc', '#7fd3ff');
+    const n = grp.reduce((a, q) => a + q.units.length, 0);
+    p.innerHTML = `<div class="sp-head"><div class="sp-icon">⬚</div><div><div class="sp-name">${grp.length} squads selected</div><div class="sp-sub">${n} troops · ${[...new Set(grp.map((q) => q.data.name))].join(', ')}</div></div></div>
+      <div class="sp-sub">Formation (G)</div><div class="seg form"><button data-form="line" class="${g.formation === 'line' ? 'on' : ''}">━ Line</button><button data-form="column" class="${g.formation === 'column' ? 'on' : ''}">┃ Column</button></div>
+      <div class="seg stance">${STANCES.map(([k, l]) => `<button class="${grp.every((q) => q.stance === k) ? 'on' : ''}" data-stance="${k}">${l}</button>`).join('')}</div>
+      <div class="row"><button class="btn${this.view.queueMode ? ' on' : ''}" id="sp-queue-m">➕ Queue</button><button class="btn${this.view.patrolMode ? ' on' : ''}" id="sp-patrol">🔁 Patrol</button></div>
+      <div class="row"><button class="btn" id="sp-gar">🏰 Garrison all</button><button class="btn" id="sp-desel">Done</button></div>`;
+    for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-form]'))) el.onclick = () => { g.formation = el.dataset.form as 'line'; this.lastSel = ''; };
+    for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-stance]'))) el.onclick = () => { for (const q of grp) g.setStance(q, el.dataset.stance as Stance); this.lastSel = ''; };
+    $('#sp-queue-m', p).onclick = () => { this.view.queueMode = !this.view.queueMode; this.view.patrolMode = false; this.lastSel = ''; };
+    $('#sp-patrol', p).onclick = () => this.togglePatrol();
+    $('#sp-gar', p).onclick = () => { for (const q of grp) g.garrisonSquad(q); this.lastSel = ''; };
+    $('#sp-desel', p).onclick = () => this.select(null, null);
+  }
+  /** Ability bar with cooldown sweeps: selected squads' abilities + every Super Monkey's Laser Sweep. */
+  private abilityBar() {
+    const bar = $('#abilities'); if (!bar) return;
+    const g = this.g, items: { key: string; icon: string; name: string; cd: number; max: number; use: () => void; hot: number }[] = [];
+    const sel = this.view.selSquads.filter((q) => q.alive);
+    const pool = sel.length ? sel : g.squads.filter((q) => q.alive && q.data.abilities?.length);
+    for (const id of ['stim', 'emp', 'hijack'] as AbilityId[]) {
+      const sqs = pool.filter((q) => q.data.abilities?.includes(id)); if (!sqs.length) continue;
+      const ready = sqs.find((q) => (q.abilityCd[id] ?? 0) <= 0), cd = Math.min(...sqs.map((q) => q.abilityCd[id] ?? 0));
+      items.push({ key: id, icon: ABILITIES[id].icon, name: ABILITIES[id].name, cd, max: ABILITIES[id].cooldown, use: () => { const q = ready ?? sqs[0]; g.useAbility(q, id); }, hot: items.length + 1 });
+    }
+    const sms = (this.view.selTower?.data.ability ? [this.view.selTower] : g.towers.filter((t) => t.alive && t.data.ability));
+    if (sms.length) {
+      const ready = sms.find((t) => t.abilityCd <= 0), t0 = sms[0], id = t0.data.ability!;
+      items.push({ key: id, icon: ABILITIES[id].icon, name: ABILITIES[id].name, cd: Math.min(...sms.map((t) => Math.max(0, t.abilityCd))), max: t0.abilityMax, use: () => (ready ?? t0).useAbility(g), hot: items.length + 1 });
+    }
+    const sig = items.map((i) => i.key).join(',');
+    if (bar.dataset.sig !== sig) {
+      bar.dataset.sig = sig; bar.innerHTML = '';
+      for (const it of items) {
+        const b = h('button', 'abil', `<span class="ai">${it.icon}</span><span class="an">${it.name}</span><kbd>${it.hot}</kbd><i class="acd"></i><em class="at"></em>`);
+        b.dataset.ab = it.key; bar.appendChild(b);
+      }
+    }
+    this.abilityUse = items.map((i) => i.use);
+    Array.from(bar.children).forEach((el, i) => {
+      const it = items[i]; if (!it) return;
+      (el as HTMLElement).onclick = () => it.use();
+      (el as HTMLElement).classList.toggle('ready', it.cd <= 0);
+      $('.acd', el).style.height = `${Math.min(100, (it.cd / it.max) * 100)}%`;
+      $('.at', el).textContent = it.cd > 0 ? `${Math.ceil(it.cd)}` : '';
+    });
+  }
+  /** Hotkeys 1..n fire the ability bar. */
+  abilityUse: (() => void)[] = [];
   private liveTower(t: Tower) {
     const el = $('#sel-panel .sp-live'); if (!el) return;
     const b = t.buffs.totals;
@@ -297,7 +384,13 @@ export class Hud {
       : this.view.deploying ? `Deploy ${unitById(this.view.deploying).name}: click where the drop pod should land`
       : this.view.power === 'mac' ? 'MAC Blast: click a lane — the strike runs along the road (Esc cancels)'
       : this.view.power === 'heal' ? 'Heal Drop: click to drop a medical canister on your troops / towers / base'
-      : this.view.rallyFor ? 'Click to set the Barracks rally point' : '';
+      : this.view.rallyFor ? 'Click to set the Barracks rally point'
+      : this.view.patrolMode ? `Patrol: tap points (${this.view.patrolPts.length}) then press 🔁 Patrol / P to start the loop`
+      : this.view.queueMode ? 'Queue: each tap adds a waypoint (Shift-click on desktop)'
+      : this.view.boxMode ? 'Box-select: drag a box around troops' : '';
+    const orbs = $('#orbs'); if (orbs) orbs.textContent = `${g.stats.orbs}`;
+    const bm = $('#btn-box'); if (bm) bm.classList.toggle('on', this.view.boxMode);
+    this.abilityBar();
     this.selPanel();
   }
 

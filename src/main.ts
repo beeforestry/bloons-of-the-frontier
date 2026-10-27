@@ -8,7 +8,11 @@ import { assetUrl } from './assetUrl';
 import { MAPS } from './data/maps';
 import { validateAll } from './data/validate';
 import { dist } from './core/math';
-import type { Vec } from './core/types';
+import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
+import { Sfx } from './audio/Sfx';
+import type { Squad } from './entities/Unit';
+import type { Garrisonable } from './entities/Garrison';
+import { towerById } from './data/towers';
 
 declare global { interface Window { __game?: ReturnType<typeof testHooks> } }
 
@@ -33,7 +37,13 @@ function start(mapId: string) {
   document.getElementById('menu')!.classList.remove('show');
   const g = new Game(MAPS.find((m) => m.id === mapId)!);
   const canvas = document.getElementById('game') as HTMLCanvasElement;
-  const view: ViewState = { placing: null, deploying: null, hoverCell: null, mouse: null, selTower: null, selSquad: null, selBuilding: null, selPad: null, power: null, rallyFor: null };
+  const view: ViewState = { placing: null, deploying: null, hoverCell: null, mouse: null, selTower: null, selSquad: null, selBuilding: null, selPad: null, power: null, rallyFor: null,
+    selSquads: [], box: null, boxMode: false, queueMode: false, patrolMode: false, patrolPts: [], showFps: false };
+  // WebAudio SFX (unlocked on first input); the counter lets the e2e verify cues fire headless.
+  const sfx = new Sfx(), sfxCount: Record<string, number> = {};
+  g.sfxHook = (n) => { sfxCount[n] = (sfxCount[n] ?? 0) + 1; sfx.play(n); };
+  const unlock = () => sfx.unlock();
+  window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
   window.addEventListener('resize', () => r.resize());
@@ -44,20 +54,34 @@ function start(mapId: string) {
   // base at a height-fit zoom instead (pinch out / minimap still show everything).
   if (r.vw < 700 && r.vh > r.vw) r.focus(g.hq.x - r.vw / (2 * (r.vh / g.map.height)) + 120, g.hq.y, r.vh / g.map.height);
 
-  // ------------------------------------------------------------ camera input
-  // Pointer events cover mouse + touch + pen. Left-drag (>6px) pans, a tap is a
-  // click, two fingers pinch-zoom, wheel zooms about the cursor, screen edges
-  // and WASD / arrows pan, the minimap jumps the camera.
+  // ------------------------------------------------------------ input
+  // Mouse: left-click selects / commands, LEFT-DRAG box-selects troops (smooth box,
+  // corner brackets, select chirp), right-click = move / garrison (Shift queues),
+  // right- or middle-drag pans, wheel zooms. Touch: tap = click, one-finger drag pans
+  // (or box-selects when the ⬚ Select mode button is on), long-press (500 ms) queues
+  // a waypoint, two fingers pinch-zoom. WASD / arrows / screen edges pan.
   const local = (ev: { clientX: number; clientY: number }) => { const b = canvas.getBoundingClientRect(); return { x: ev.clientX - b.left, y: ev.clientY - b.top }; };
   const toMap = (ev: { clientX: number; clientY: number }): Vec => { const l = local(ev); return r.screenToWorld(l.x, l.y); };
-  const ptrs = new Map<number, { x: number; y: number; sx: number; sy: number; moved: boolean; button: number }>();
-  let pinch: { d: number; zoom: number } | null = null, edge: { x: number; y: number } | null = null, dragging = false;
+  type Ptr = { x: number; y: number; sx: number; sy: number; moved: boolean; button: number; touch: boolean; box: boolean; lp: number; long: boolean };
+  const ptrs = new Map<number, Ptr>();
+  let pinch: { d: number; zoom: number } | null = null, edge: { x: number; y: number } | null = null;
   canvas.style.touchAction = 'none';
+  const busy = () => !!(view.placing || view.deploying || view.power || view.rallyFor);
   canvas.addEventListener('pointerdown', (ev) => {
-    const l = local(ev);
-    ptrs.set(ev.pointerId, { x: l.x, y: l.y, sx: l.x, sy: l.y, moved: false, button: ev.button });
+    const l = local(ev), touch = ev.pointerType !== 'mouse';
+    const pt: Ptr = { x: l.x, y: l.y, sx: l.x, sy: l.y, moved: false, button: ev.button, touch, box: false, lp: 0, long: false };
+    ptrs.set(ev.pointerId, pt);
     canvas.setPointerCapture?.(ev.pointerId);
-    if (ptrs.size === 2) { const [p1, p2] = [...ptrs.values()]; pinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, zoom: r.cam.zoom }; }
+    if (ptrs.size === 2) { for (const q of ptrs.values()) { clearTimeout(q.lp); q.box = false; } view.box = null; const [p1, p2] = [...ptrs.values()]; pinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, zoom: r.cam.zoom }; }
+    if (touch && ptrs.size === 1 && view.selSquads.length && !busy()) {
+      const at = toMap(ev);
+      pt.lp = window.setTimeout(() => {
+        if (pt.moved || ptrs.size !== 1) return;
+        pt.long = true; navigator.vibrate?.(20);
+        if (view.patrolMode) view.patrolPts.push(at); else g.moveGroup(view.selSquads, at, true);
+        g.sfx('command'); hud.refresh(true);
+      }, 500);
+    }
   });
   canvas.addEventListener('pointermove', (ev) => {
     const l = local(ev), p = r.screenToWorld(l.x, l.y);
@@ -71,74 +95,134 @@ function start(mapId: string) {
       return;
     }
     const dx = l.x - pt.x, dy = l.y - pt.y;
-    if (!pt.moved && Math.hypot(l.x - pt.sx, l.y - pt.sy) > (ev.pointerType === 'mouse' ? 6 : 10)) pt.moved = true;
-    if (pt.moved && (pt.button === 0 || pt.button === 1)) { r.pan(-dx, -dy); dragging = true; }
+    if (!pt.moved && Math.hypot(l.x - pt.sx, l.y - pt.sy) > (pt.touch ? 10 : 6)) {
+      pt.moved = true; clearTimeout(pt.lp);
+      // decide drag kind once: box-select or pan
+      pt.box = !busy() && ((!pt.touch && pt.button === 0) || (pt.touch && view.boxMode));
+      if (pt.box) { const a = r.screenToWorld(pt.sx, pt.sy); view.box = { x0: a.x, y0: a.y, x1: p.x, y1: p.y }; }
+    }
+    if (pt.moved) {
+      if (pt.box && view.box) { view.box.x1 = p.x; view.box.y1 = p.y; }
+      else r.pan(-dx, -dy);
+    }
     pt.x = l.x; pt.y = l.y;
     if (ev.pointerType !== 'mouse') { view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p) : null; }
   });
   const up = (ev: PointerEvent) => {
     const pt = ptrs.get(ev.pointerId); ptrs.delete(ev.pointerId);
+    if (pt) clearTimeout(pt.lp);
     if (ptrs.size < 2) pinch = null;
-    if (!pt || ev.type === 'pointercancel') return;
-    if (!pt.moved && !pinch && ptrs.size === 0 && pt.button === 0) click(toMap(ev), ev.shiftKey);
-    setTimeout(() => { dragging = false; }, 0);
+    if (!pt || ev.type === 'pointercancel') { view.box = null; return; }
+    if (pt.box && view.box) { const b = view.box; view.box = null; boxSelect(b.x0, b.y0, b.x1, b.y1, ev.shiftKey); return; }
+    if (pt.long || pt.moved || pinch || ptrs.size) return;
+    if (pt.button === 0) click(toMap(ev), ev.shiftKey);
+    else if (pt.button === 2) command(toMap(ev), ev.shiftKey);
   };
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
   canvas.addEventListener('pointerleave', (ev) => { if (ev.pointerType === 'mouse') { view.mouse = null; view.hoverCell = null; edge = null; } });
   canvas.addEventListener('wheel', (ev) => { ev.preventDefault(); const l = local(ev); r.zoomAt(l.x, l.y, Math.exp(-ev.deltaY * 0.0015)); }, { passive: false });
-  canvas.addEventListener('contextmenu', (ev) => {
-    ev.preventDefault();
-    if (view.placing || view.deploying || view.power || view.rallyFor) { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; hud.refresh(true); return; }
-    if (view.selSquad) g.moveSquad(view.selSquad, toMap(ev));
-    else if (view.selBuilding?.data.id === 'barracks') g.setRally(view.selBuilding, toMap(ev));
-  });
-  void dragging;
+  canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
   const keys = new Set<string>();
   window.addEventListener('keyup', (ev) => keys.delete(ev.key.toLowerCase()));
   window.addEventListener('blur', () => keys.clear());
 
+  /** Select every (non-worker) troop squad inside a world-space box. */
+  function boxSelect(x0: number, y0: number, x1: number, y1: number, add = false): number {
+    const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
+    const hit = new Set<Squad>();
+    for (const u of g.units) if (u.alive && u.dropT <= 0 && u.x >= xa - 8 && u.x <= xb + 8 && u.y >= ya - 8 && u.y <= yb + 8) hit.add(u.squad);
+    let list = [...hit];
+    if (list.some((q) => q.data.role !== 'worker')) list = list.filter((q) => q.data.role !== 'worker');
+    if (add) list = [...new Set([...view.selSquads.filter((q) => q.alive), ...list])];
+    if (!list.length) { hud.select(null, null); return 0; }
+    hud.select(null, list[0], list);
+    g.fx({ kind: 'ring', x: (xa + xb) / 2, y: (ya + yb) / 2, r: Math.max(xb - xa, yb - ya) / 2, color: '#7fd3ff', dur: 0.3 });
+    return list.length;
+  }
+  function garrisonableAt(p: Vec): Garrisonable | null {
+    const c = g.grid.worldToCell(p), tw = g.grid.occupant(c.c, c.r);
+    if (tw && tw.gSlots() > 0) return tw;
+    return g.envs.find((e) => dist(e, p) < 70) ?? null;
+  }
+  /** Right-click / command: garrison the structure under the cursor, else move (Shift queues). */
+  function command(p: Vec, queue = false) {
+    if (busy()) { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; hud.refresh(true); return; }
+    const sqs = view.selSquads.filter((q) => q.alive);
+    if (sqs.length) {
+      if (view.patrolMode) { view.patrolPts.push(p); g.sfx('command'); return; }
+      const gs = garrisonableAt(p);
+      if (gs) { for (const q of sqs) g.garrisonSquad(q, gs); return; }
+      g.moveGroup(sqs, p, queue || view.queueMode); g.sfx('command'); return;
+    }
+    if (view.selBuilding?.data.id === 'barracks') g.setRally(view.selBuilding, p);
+  }
   function click(p: Vec, keep = false) {
     if (view.power) {
       const id = view.power;
-      if (g.castPower(id, p)) view.power = null;
+      if (g.castPower(id, p)) { view.power = null; g.sfx('ability'); }
       hud.refresh(true); return;
     }
-    if (view.rallyFor) { g.setRally(view.rallyFor, p); view.rallyFor = null; hud.refresh(true); return; }
+    if (view.rallyFor) { g.setRally(view.rallyFor, p); view.rallyFor = null; g.sfx('command'); hud.refresh(true); return; }
     if (view.placing) {
+      if (towerById(view.placing).kind === 'path') { if (g.placeBarrier(view.placing, p) && !keep) view.placing = null; hud.refresh(true); return; }
       const cell = g.grid.snap(p);
       if (cell && g.placeTower(view.placing, cell)) { if (!keep) view.placing = null; }
-      else if (!cell) g.toast("Can't build there");
+      else if (!cell) { g.toast("Can't build there"); g.sfx('error'); }
       hud.refresh(true); return;
     }
     if (view.deploying) {
       const sq = g.deploySquad(view.deploying, p); view.deploying = null;
-      if (sq) hud.select(null, sq); else hud.refresh(true);
+      if (sq) { hud.select(null, sq); g.sfx('command'); } else hud.refresh(true);
       return;
     }
-    const pk = g.pickups.find((k) => k.alive && dist(k, p) < 24);
+    const pk = g.pickups.find((k) => k.alive && dist(k, p) < 26);
     if (pk) { pk.collect(g, 1, 'click'); return; }
+    const sqs = view.selSquads.filter((q) => q.alive);
+    if (sqs.length && view.patrolMode) { view.patrolPts.push(p); g.sfx('command'); hud.refresh(true); return; }
+    const u = g.units.filter((u) => !u.garrison && u.dropT <= 0).sort((a, b) => dist(a, p) - dist(b, p))[0];
+    if (u && dist(u, p) < 26) {
+      if (keep && sqs.length) { const l = sqs.includes(u.squad) ? sqs.filter((q) => q !== u.squad) : [...sqs, u.squad]; hud.select(null, l[0] ?? null, l); }
+      else hud.select(null, u.squad);
+      return;
+    }
+    if (sqs.length && (keep || view.queueMode)) { g.moveGroup(sqs, p, true); g.sfx('command'); return; }
+    const env = g.envs.find((e) => dist(e, p) < 70);
+    if (env && sqs.length) { for (const q of sqs) g.garrisonSquad(q, env); return; }
     const c = g.grid.worldToCell(p), tw = g.grid.occupant(c.c, c.r);
     if (tw) { hud.select(tw, null); return; }
-    const u = g.units.filter((u) => !u.garrison).sort((a, b) => dist(a, p) - dist(b, p))[0];
-    if (u && dist(u, p) < 26) { hud.select(null, u.squad); return; }
+    if (env) { g.toast(`${env.gName()}: select troops, then click/right-click it to garrison (−50% damage taken, +35% range)`); return; }
+    const ob = g.obstacles.find((o) => dist(o, p) < 50);
+    if (ob && !sqs.length) { g.toast(`${ob.kind === 'rock' ? 'Boulders' : 'Fallen tree'} — clear with explosives, a Cherry Pod or the MAC to free build space`); return; }
     const bl = g.buildings.find((b) => Math.abs(b.x - p.x) < (b.isHQ ? 100 : 62) && p.y > b.y - (b.isHQ ? 150 : 110) && p.y < b.y + (b.isHQ ? 80 : 56));
-    if (bl && !view.selSquad) { hud.selectBase(bl, null); return; }
+    if (bl && !sqs.length) { hud.selectBase(bl, null); return; }
     const pad = g.pads.find((pd) => !pd.building && dist(pd, p) < 56);
-    if (pad && !view.selSquad) { hud.selectBase(null, pad); return; }
-    if (view.selSquad) { g.moveSquad(view.selSquad, p); return; }
+    if (pad && !sqs.length) { hud.selectBase(null, pad); return; }
+    if (sqs.length) { g.moveGroup(sqs, p, false); g.sfx('command'); return; }
     hud.select(null, null);
   }
+  const fpsEl = document.getElementById('fps');
+  document.getElementById('btn-box')?.addEventListener('click', () => { view.boxMode = !view.boxMode; hud.refresh(true); });
+  const formBtn = document.getElementById('btn-form');
+  const syncForm = () => { if (formBtn) formBtn.textContent = g.formation === 'line' ? '━ Line' : '┃ Column'; };
+  formBtn?.addEventListener('click', () => { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); hud.refresh(true); });
   window.addEventListener('keydown', (ev) => {
     const k = ev.key.toLowerCase();
     if ((ev.target as HTMLElement)?.tagName === 'INPUT') return;
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { keys.add(k); if (k.startsWith('arrow')) ev.preventDefault(); return; }
-    if (ev.key === 'Escape') { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; hud.select(null, null); }
+    const sq = view.selSquads.filter((q) => q.alive);
+    if (ev.key === 'Escape') { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; view.patrolMode = false; view.queueMode = false; view.patrolPts = []; hud.select(null, null); }
     else if (ev.key === ' ') { ev.preventDefault(); g.waves.start(g); }
     else if (k === 'u' && view.selTower) { view.selTower.upgrade(g); hud.refresh(true); }
     else if (k === 'u' && view.selBuilding) { view.selBuilding.upgrade(g); hud.refresh(true); }
     else if ((ev.key === 'Delete' || ev.key === 'Backspace') && view.selTower) { g.sellTower(view.selTower); hud.select(null, null); }
     else if (k === 't' && view.selTower) { g.cycleTargeting(view.selTower); hud.refresh(true); }
+    else if (k === 'f') { view.showFps = !view.showFps; if (fpsEl) fpsEl.hidden = !view.showFps; }
+    else if (k === 'q') { view.boxMode = !view.boxMode; hud.refresh(true); }
+    else if (k === 'g') { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); g.toast(`Formation: ${g.formation}`); hud.refresh(true); }
+    else if (k === 'p' && sq.length) hud.togglePatrol();
+    else if (k === 'r' && sq.length) { for (const q of sq) g.setStance(q, 'retreat'); hud.refresh(true); }
+    else if (/^[1-9]$/.test(k)) { hud.abilityUse[+k - 1]?.(); }
     else if (k === 'o') g.orderOrganizeFarms();
     else if (k === 'm') { view.power = 'mac'; hud.refresh(true); }
     else if (k === 'h') { view.power = 'heal'; hud.refresh(true); }
@@ -178,9 +262,22 @@ function start(mapId: string) {
     mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5; mctx.strokeRect(tl.x * k, tl.y * k, (br.x - tl.x) * k, (br.y - tl.y) * k);
   }
 
+  // FPS meter + auto-quality governor (drops particle caps / shockwave refraction /
+  // damage numbers when frames dip below 45 fps, restores above 57).
+  const fps = { cur: 60, lowT: 0, highT: 0, acc: 0, n: 0, t: 0, sample: null as null | number[] };
   let last = performance.now();
   function frame(now: number) {
-    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const raw = (now - last) / 1000, dt = Math.min(0.1, raw); last = now;
+    fps.acc += raw; fps.n++; fps.t += raw;
+    if (fps.sample) fps.sample.push(raw);
+    if (fps.t >= 0.5) {
+      fps.cur = fps.n / fps.acc; fps.acc = 0; fps.n = 0;
+      if (fps.cur < 45) { fps.lowT += fps.t; fps.highT = 0; } else if (fps.cur > 57) { fps.highT += fps.t; fps.lowT = 0; } else { fps.lowT = fps.highT = 0; }
+      if (fps.lowT >= 1.5 && r.quality < 2) { r.setQuality(r.quality + 1); fps.lowT = 0; }
+      if (fps.highT >= 4 && r.quality > 0) { r.setQuality(r.quality - 1); fps.highT = 0; }
+      fps.t = 0;
+      if (view.showFps && fpsEl) fpsEl.textContent = `${fps.cur.toFixed(0)} FPS · Q${r.quality} · ${r.drawn.parts} parts · ${g.enemies.length} foes · ${r.drawn.objs} drawn`;
+    }
     g.update(dt);
     hud.update(dt);
     // keyboard + screen-edge panning (speed in screen px / s)
@@ -199,7 +296,14 @@ function start(mapId: string) {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  window.__game = testHooks(g, view, hud, click, r);
+  window.__game = Object.assign(testHooks(g, view, hud, click, r), {
+    boxSelect, command, sfxCount: () => ({ ...sfxCount }),
+    fpsStart: () => { fps.sample = []; },
+    fpsStop: () => { const s = fps.sample ?? []; fps.sample = null; const f = s.map((x) => 1 / Math.max(1e-4, x)).sort((a, b) => a - b); return { frames: s.length, avg: s.length / Math.max(1e-6, s.reduce((a, b) => a + b, 0)), p5: f[Math.floor(f.length * 0.05)] ?? 0, min: f[0] ?? 0, quality: r.quality, parts: r.parts.n }; },
+    fpsNow: () => ({ fps: fps.cur, quality: r.quality }),
+    setQuality: (q: number) => r.setQuality(q),
+    keyFps: () => !!fpsEl && !fpsEl.hidden,
+  });
 }
 
 /** Automation hooks for the headless Playwright playtest (and for debugging in devtools). */
@@ -236,6 +340,40 @@ function testHooks(g: Game, view: ViewState, hud: Hud, click: (p: Vec) => void, 
     addEnergy: (n: number) => { g.energy = Math.min(100, g.energy + n); },
     lanePoint: (lane: number, frac: number) => { const p = g.paths[lane % g.paths.length]; return p.at(p.length * frac); },
     lanes: () => g.paths.length,
+    sandbox: (tech = 2, pop = 60) => { g.techBonus = tech; g.popBonus = pop; g.deployCd = {}; },
+    // ---- RTS / t24-t25 hooks
+    selectSquads: (idx: number[]) => { const l = idx.map((i) => g.squads[i]).filter(Boolean); hud.select(null, l[0] ?? null, l); return l.length; },
+    selected: () => view.selSquads.map((q) => g.squads.indexOf(q)),
+    moveGroup: (idx: number[], x: number, y: number, queue = false, formation: Formation = 'line') => g.moveGroup(idx.map((i) => g.squads[i]), { x, y }, queue, formation),
+    move: (i: number, x: number, y: number, queue = false) => g.moveSquad(g.squads[i], { x, y }, queue),
+    patrol: (i: number, pts: [number, number][]) => g.patrolSquad(g.squads[i], pts.map(([x, y]) => ({ x, y }))),
+    squad: (i: number) => { const q = g.squads[i]; if (!q) return null; return { id: q.data.id, rally: q.rally, waypoints: q.waypoints.length, patrol: q.patrol?.length ?? 0, patrolIdx: q.patrolIdx, stance: q.stance, targeting: q.targeting, formation: q.formation, face: q.face, center: q.center, n: q.units.length,
+      units: q.units.map((u) => ({ x: u.x, y: u.y, hp: u.health.hp, max: u.health.max, stars: u.stars, xp: u.xp, garrison: u.garrison?.gName() ?? null, range: u.range(g), base: u.data.tiers[g.unitTier(u.data.id)].stats.range, dmgMul: u.dmgMul, rateMul: u.rateMul, stim: u.stimT })), cd: { ...q.abilityCd } }; },
+    squadIndex: (id: string) => g.squads.findIndex((q) => q.data.id === id && q.alive),
+    setStance: (i: number, st: Stance) => g.setStance(g.squads[i], st),
+    setSquadTargeting: (i: number, m: TargetingMode) => g.setTargeting(g.squads[i], m),
+    setTowerTargeting: (i: number, m: TargetingMode) => g.setTargeting(g.towers[i], m),
+    ability: (i: number, id: AbilityId) => g.useAbility(g.squads[i], id),
+    towerAbility: (i: number) => g.towers[i]?.useAbility(g) ?? false,
+    towerInfo: (i: number) => { const t = g.towers[i]; return t ? { id: t.data.id, tier: t.tier, targeting: t.targeting, cd: t.abilityCd, sweep: !!t.sweep, ratePct: t.buffs.totals.ratePct, incomePct: t.buffs.totals.incomePct, garrisoned: t.garrisoned.length, slots: t.gSlots(), fixedAim: t.fixedAim, crates: t.farm?.crates ?? 0, x: t.x, y: t.y } : null; },
+    towerIndex: (id: string) => g.towers.findIndex((t) => t.data.id === id),
+    garrisonInto: (i: number, kind: 'env' | 'tower', j: number) => g.garrisonSquad(g.squads[i], kind === 'env' ? g.envs[j] : g.towers[j]),
+    envs: () => g.envs.map((e) => ({ kind: e.kind, x: e.x, y: e.y, n: e.garrisoned.length, slots: e.gSlots() })),
+    obstacles: () => g.obstacles.map((o) => ({ kind: o.kind, x: o.x, y: o.y, hp: o.hp, cells: o.cells.map((c) => [c.c, c.r]) })),
+    cellFree: (c: number, rr: number) => g.grid.isFree(c, rr),
+    barriers: () => g.barriers.map((b) => ({ id: b.data.id, x: b.x, y: b.y, hp: b.hp, fuse: b.fuse })),
+    placeBarrier: (id: string, x: number, y: number) => !!g.placeBarrier(id, { x, y }),
+    spawn: (id: string, lane: number, frac: number, hpMul = 1) => { const p = g.paths[lane % g.paths.length]; const e = g.spawnEnemy(id, p.length * frac, 0, lane % g.paths.length, hpMul); return e.uid; },
+    enemy: (uid: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? { alive: e.alive, hp: e.hp, maxHp: e.maxHp, shield: e.shield, shieldDown: e.shieldDown, armor: e.armor, stun: e.stunT, x: e.x, y: e.y, slow: e.slowAmt } : null; },
+    killAllEnemies: () => { for (const e of g.enemies) e.alive = false; g.enemies = []; },
+    addXp: (i: number, n: number) => { for (const u of g.squads[i].units) u.addXp(n); },
+    spawnPickup: (x: number, y: number, v: number, kind: 'credit' | 'orb' | 'scrap') => g.spawnPickup(x, y, v, kind).uid,
+    pickupsList: () => g.pickups.filter((p) => p.alive).map((p) => ({ uid: p.uid, kind: p.kind, x: p.x, y: p.y, v: p.value })),
+    stats: () => ({ ...g.stats }),
+    effects: () => { const m: Record<string, number> = {}; for (const e of g.effects) m[e.kind] = (m[e.kind] ?? 0) + 1; return { ...m, shocks: g.shocks.length, shake: g.shakeAmt }; },
+    view: () => ({ sel: view.selSquads.length, box: !!view.box, boxMode: view.boxMode, queue: view.queueMode, patrol: view.patrolMode }),
+    fx: () => g.effects.length,
+    setFormation: (f: Formation) => { g.formation = f; },
     state: () => ({
       credits: Math.floor(g.res.credits), lives: g.lives, wave: g.waves.index, waveActive: g.waves.active, state: g.state,
       towers: g.towers.length, units: g.units.length, squads: g.squads.length, enemies: g.enemies.length, kills: g.stats.kills,
