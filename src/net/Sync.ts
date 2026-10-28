@@ -125,6 +125,7 @@ export class Sync {
       net.onLeave = () => { const bye = net.endReason === 'bye'; g.toast(bye ? 'The host left the match' : 'Lost connection to the host', '#ff6b6b'); this.onEvent({ k: 'disconnected', bye }); };
       g.netCollect = (p, rate, by) => { const u = this.l2h.get(p); if (u !== undefined) { p.alive = false; this.send({ t: 'op', op: 'collect', u, rate, by }); } };
     }
+    g.netPause = (on) => this.pause(on);
     // Route every player action through local() (host: permission + wallet swap; client: command)
     const gg = g as unknown as Record<string, (...a: unknown[]) => unknown>;
     for (const m of G_METHODS) { const o = gg[m].bind(g); this.gOrig[m] = o; gg[m] = (...a: unknown[]) => this.local(m, a); }
@@ -240,9 +241,12 @@ export class Sync {
   setAllow(on: boolean) { this.op('allow', { on }); }
   card(id: string, lane: number) { this.op('card', { id, lane }); }
   spell(id: string, at: Vec) { this.op('spell', { id, x: at.x, y: at.y }); }
+  pause(on: boolean) { if (this.isHost) this.setPause(this.localPid, on); else if (this.coop) this.op('pause', { on }); else this.g.toast('Only the host can pause a Versus match', '#ffd24a'); }
+  private setPause(pid: number, on: boolean) { if (this.g.paused === on) return; this.g.paused = on; this.event({ k: 'paused', pid, on }); this.snapT = 0; }
 
   private hostOp(pid: number, op: string, d: Record<string, unknown>) {
     const g = this.g;
+    if (op === 'pause') { if (this.coop) this.setPause(pid, !!d.on); return; }
     if (op === 'ping') { const ev = { k: 'ping', kind: d.kind, x: d.x, y: d.y, pid }; this.event(ev); return; }
     if (op === 'allow') { this.allowAlly.set(pid, !!d.on); this.event({ k: 'allow', pid, on: !!d.on }); return; }
     if (op === 'donate') {
@@ -273,6 +277,7 @@ export class Sync {
   private applyEvent(ev: Record<string, unknown>) {
     const g = this.g;
     switch (ev.k) {
+      case 'paused': g.paused = !!ev.on; g.toast(`${ev.on ? '⏸ Paused' : '▶ Resumed'} by P${(ev.pid as number) + 1}`, '#ffd24a'); break;
       case 'ping': g.addPing({ x: ev.x as number, y: ev.y as number, kind: ev.kind as PingKind, pid: ev.pid as number }); break;
       case 'combo': if (!this.isHost) g.fx({ kind: 'text', x: ev.x as number, y: (ev.y as number) - 30, text: 'COMBO! +20% AoE', color: '#ffd84a', dur: 1.2 }); break;
       case 'toast': g.bus.emit('toast', { text: ev.text as string, color: ev.color as string }); break;

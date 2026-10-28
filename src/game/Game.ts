@@ -155,6 +155,8 @@ export class Game {
   addPing(p: Omit<Ping, 't'>) { this.pings.push({ ...p, t: 0 }); if (this.pings.length > 12) this.pings.shift(); this.sfx('select'); }
   /** Client: clicking / hovering a pickup asks the host to bank it. */
   netCollect: ((p: Pickup, rate: number, by: string) => void) | null = null;
+  /** MP: pause/resume for everyone (client -> host request; host broadcasts via snapshots). */
+  netPause: ((on: boolean) => void) | null = null;
   /** Per-player collector cap etc.: squads owned by the acting player (solo: all). */
   ownedSquads(pid = this.actingPid) { return this.squads.filter((s) => s.alive && (this.net === 'solo' || s.owner === pid)); }
 

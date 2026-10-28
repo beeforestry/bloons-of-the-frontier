@@ -107,6 +107,11 @@ with sync_playwright() as p:
     rj.evaluate(f'(() => {{ const t = __game.g.towers.find(t => t.owner === {dpid}); t.upgrade(__game.g); }})()')
     check(bool(until(host, f"__game.mp().towers.some(t => t.owner === {dpid} && t.tier >= 1)", 8000)), 'rejoined player can upgrade their own tower (ownership restored)')
     clients[1] = rj
+    # ---------- co-op pause from a client pauses everyone (host-authoritative)
+    clients[0].click('#btn-pause')
+    check(bool(until(host, '__game.g.paused === true', 5000)) and bool(until(clients[2], '__game.g.paused === true', 5000)), 'client ⏸ pauses host + other clients')
+    clients[2].click('#btn-pause')
+    check(bool(until(host, '__game.g.paused === false', 5000)) and bool(until(clients[0], '__game.g.paused === false', 5000)), 'another client ▶ resumes for everyone')
     # ---------- long 4x game: drift check
     def drift(tag):
         H('__game.mpPause(true)'); time.sleep(1.8)

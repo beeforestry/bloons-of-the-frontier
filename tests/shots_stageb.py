@@ -21,7 +21,8 @@ fit_js = """(() => { const H = __game, g = H.g; H.camReset(); const c = H.cam(),
   const pts = g.map.lanes.flatMap((l) => [l[0], l[l.length - 1]]);
   const inside = pts.every(([x, y]) => x >= c.x - 1 && x <= c.x + vw + 1 && y >= c.y - 1 && y <= c.y + vh + 1);
   return { inside, mapIn: c.x <= 0.5 && c.y <= 0.5 && c.x + vw >= g.map.width - 0.5 && c.y + vh >= g.map.height - 0.5, pts, cam: c }; })()"""
-rows_js = """(() => { const ys = new Set(); for (const e of document.querySelectorAll('#topbar > *')) { if (e.id === 'hud-more') continue; const r = e.getBoundingClientRect(); if (r.width && r.height) ys.add(Math.round(r.top / 8)); } return ys.size; })()"""
+rows_js = """(() => { const rs = [...document.querySelectorAll('#topbar > *')].filter((e) => e.id !== 'hud-more').map((e) => e.getBoundingClientRect()).filter((r) => r.width && r.height).sort((a, b) => a.top - b.top);
+  let rows = 0, bottom = -1e9; for (const r of rs) { if (r.top >= bottom - 2) { rows++; bottom = r.bottom; } else bottom = Math.max(bottom, r.bottom); } return rows; })()"""
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=CH, headless=True)
     pg = page(b, BASE + 'index.html?map=morro', viewport={'width': 1600, 'height': 960}); pg.wait_for_function('window.__game'); time.sleep(1.2)

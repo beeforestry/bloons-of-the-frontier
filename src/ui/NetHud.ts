@@ -26,7 +26,13 @@ export class NetHud {
     b.classList.add('mp', s.coop ? 'mp-coop' : 'mp-versus', `role-${s.localRole}`);
     b.style.setProperty('--me', PCOLORS[s.localPid]);
     this.bar = document.createElement('div'); this.bar.id = 'mp-bar';
-    document.getElementById('topbar')!.insertBefore(this.bar, document.querySelector('#topbar .spacer'));
+    // desktop: its own slim row under the top bar; phone (co-op): inside the ☰ menu so the HUD stays 2 rows
+    const top = document.getElementById('topbar')!, more = document.getElementById('hud-more');
+    const mq = window.matchMedia('(max-width: 820px)');
+    const place = () => { if (mq.matches && s.coop && more) more.prepend(this.bar); else top.appendChild(this.bar); };
+    mq.addEventListener('change', place); place();
+    // pause: co-op = anyone (host-authoritative); versus = host only
+    if (!s.coop && !s.isHost) { const pb = document.getElementById('btn-pause'); if (pb) pb.hidden = true; }
     this.banner = document.createElement('div'); this.banner.id = 'tele-banner'; this.banner.hidden = true;
     document.getElementById('stage')!.appendChild(this.banner);
     this.pingMenu = document.createElement('div'); this.pingMenu.id = 'ping-menu'; this.pingMenu.hidden = true;

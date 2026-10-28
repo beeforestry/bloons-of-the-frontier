@@ -99,13 +99,30 @@ export class Renderer {
     }
     return (this._b = { x0, y0, x1, y1 });
   }
-  /** Fill the off-map margin by stretching the image's edge pixels (sea stays sea). */
+  /** Fill the off-map margin with a mirror of the adjoining map strip (sea continues as sea). */
   private edgeFill(c: CanvasRenderingContext2D, bg: CanvasImageSource & { width: number; height: number }) {
-    const b = this.bounds, m = this.g.map, iw = bg.width, ih = bg.height;
-    if (b.y1 > m.height) c.drawImage(bg, 0, ih - 2, iw, 2, 0, m.height - 1, m.width, b.y1 - m.height + 1);
-    if (b.y0 < 0) c.drawImage(bg, 0, 0, iw, 2, 0, b.y0, m.width, -b.y0 + 1);
-    if (b.x1 > m.width) c.drawImage(bg, iw - 2, 0, 2, ih, m.width - 1, 0, b.x1 - m.width + 1, m.height);
-    if (b.x0 < 0) c.drawImage(bg, 0, 0, 2, ih, b.x0, 0, -b.x0 + 1, m.height);
+    const b = this.bounds, m = this.g.map, kx = bg.width / m.width, ky = bg.height / m.height;
+    const mir = (sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, fx: number, fy: number) => {
+      c.save(); c.translate(dx, dy); c.scale(fx, fy); c.drawImage(bg, sx * kx, sy * ky, sw * kx, sh * ky, 0, 0, sw, sh); c.restore();
+    };
+    const dB = b.y1 - m.height, dT = -b.y0, dR = b.x1 - m.width, dL = -b.x0;
+    if (dB > 0) mir(0, m.height - dB, m.width, dB, 0, m.height + dB, 1, -1);
+    if (dT > 0) mir(0, 0, m.width, dT, 0, 0, 1, -1);
+    if (dR > 0) mir(m.width - dR, 0, dR, m.height, m.width + dR, 0, -1, 1);
+    if (dL > 0) mir(0, 0, dL, m.height, 0, 0, -1, 1);
+    if (dB > 0 && dL > 0) mir(0, m.height - dB, dL, dB, 0, m.height + dB, -1, -1);
+    if (dB > 0 && dR > 0) mir(m.width - dR, m.height - dB, dR, dB, m.width + dR, m.height + dB, -1, -1);
+    if (dT > 0 && dL > 0) mir(0, 0, dL, dT, 0, 0, -1, -1);
+    if (dT > 0 && dR > 0) mir(m.width - dR, 0, dR, dT, m.width + dR, 0, -1, -1);
+    // fade the margin so it reads as "beyond the map edge", not more map
+    const fade = (x0: number, y0: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
+      const gr = c.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, 'rgba(10,14,20,0.15)'); gr.addColorStop(1, 'rgba(10,14,20,0.8)');
+      c.fillStyle = gr; c.fillRect(rx, ry, rw, rh);
+    };
+    if (dB > 0) fade(0, m.height, 0, b.y1, b.x0, m.height, b.x1 - b.x0, dB);
+    if (dT > 0) fade(0, 0, 0, b.y0, b.x0, b.y0, b.x1 - b.x0, dT);
+    if (dR > 0) fade(m.width, 0, b.x1, 0, m.width, 0, dR, m.height);
+    if (dL > 0) fade(0, 0, b.x0, 0, b.x0, 0, dL, m.height);
   }
   get maxZoom() { return 2.2; }
   clamp() {

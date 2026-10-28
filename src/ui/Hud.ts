@@ -97,7 +97,7 @@ export class Hud {
     $('#btn-auto').onclick = () => { this.g.waves.auto = !this.g.waves.auto; };
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-speed]'))) b.onclick = () => { this.g.speed = +b.dataset.speed!; };
     this.compactTopbar();
-    $('#btn-pause').onclick = () => { this.g.paused = !this.g.paused; };
+    $('#btn-pause').onclick = () => { const on = !this.g.paused; if (this.g.netPause) this.g.netPause(on); else this.g.paused = on; };
     $('#btn-organize').onclick = () => this.g.orderOrganizeFarms();
     this.buildPowers();
     g.bus.on('toast', (t) => this.toast(t.text, t.color));
