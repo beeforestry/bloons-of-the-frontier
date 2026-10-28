@@ -143,7 +143,7 @@ with sync_playwright() as p:
     pg.click('#sp-auto'); pg.wait_for_timeout(200)
     check(not G('g.squads[0].auto') and G('g.squads[1].auto'), 'unit-panel toggle switches only that squad off')
     pg.keyboard.press('g'); pg.wait_for_timeout(200)
-    check(G('g.squads[0].auto'), 'Y with a selection toggles the selected squad back on')
+    check(G('g.squads[0].auto'), 'G with a selection toggles the selected squad back on')
     G('H.selectSquad(-1)'); pg.keyboard.press('Escape'); pg.wait_for_timeout(200)
     pg.keyboard.press('g'); pg.wait_for_timeout(200)
     check(not G('g.autoArmy[0]') and not any(G('g.squads.map((q) => q.auto)')), 'G with nothing selected toggles the global Auto Army off')

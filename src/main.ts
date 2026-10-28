@@ -53,7 +53,9 @@ async function boot() {
   paint();
   document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start('garden', diff, true); };
   // Multiplayer modes + lobby (Co-Op Defense / 1v1 Versus); ?room=1234 auto-joins.
-  window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp));
+  // Multiplayer is still in development: hidden from the menu unless opted in with ?mp=1 (or a ?room= invite link).
+  const MP_ENABLED = qs.get('mp') === '1' || /^\d{4}$/.test(qs.get('room') ?? '');
+  if (MP_ENABLED) window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp));
   const q = qs.get('map');
   if (q && MAPS.some((m) => m.id === q)) start(q, diff);
 }
