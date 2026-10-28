@@ -278,3 +278,15 @@ body.role-invader #tower-cards, body.role-invader #faction-tabs, body.role-invad
 @media (max-width: 700px) { .mode-pick { min-width: 120px; font-size: 15px; } .lobby-code b { font-size: 30px; } #mp-bar { font-size: 11px; } .vs-card small { display: none; } }
 #tele-banner button { pointer-events: auto; margin-left: 6px; }
 .mp-status.err { color: #ff8a7a; background: #3a1010aa; border: 1px solid #ff6b6b; border-radius: 8px; padding: 6px 10px; }
+/* ---- Phone top HUD: two rows; less-used items live in the ☰ dropdown */
+#hud-more[hidden] { display: none !important; }
+@media (max-width: 820px) {
+  #topbar { position: relative; row-gap: 4px; column-gap: 5px; }
+  #topbar .stat { font-size: 13px; padding: 2px 5px; }
+  #topbar .stat .lbl, #topbar .ebar { display: none; }
+  #topbar .wave-stat { margin-left: 0; }
+  #btn-start { padding: 5px 10px; font-size: 14px; }
+  #hud-more { position: absolute; right: 6px; top: 100%; z-index: 30; display: flex; flex-wrap: wrap; gap: 6px; max-width: 260px; justify-content: flex-end;
+    background: #1a2028f2; border: 2px solid #0b0e12; border-radius: 10px; padding: 8px; box-shadow: 0 6px 18px #000a; }
+  #hud-more .btn.small { padding: 6px 10px; font-size: 14px; }
+}

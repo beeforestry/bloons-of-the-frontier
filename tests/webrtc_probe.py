@@ -3,7 +3,7 @@ Reports each stage (broker, room claim, join signalling, ICE, DataChannel) so a 
 import sys, time, json, os
 from playwright.sync_api import sync_playwright
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'https://beeforestry.github.io/bloons-of-the-frontier/').rstrip('/') + '/'
-Q = sys.argv[2] if len(sys.argv) > 2 else '?mp=1'
+Q = sys.argv[2] if len(sys.argv) > 2 else ''
 CHROME = os.environ.get('CHROME', '/usr/bin/google-chrome')
 logs = {'host': [], 'client': []}
 def page(b, name):

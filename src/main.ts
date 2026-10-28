@@ -413,6 +413,23 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     mpCard: (id: string, lane: number) => sync?.card(id, lane),
     mpSpell: (id: string, x: number, y: number) => sync?.spell(id, { x, y }),
     mpDigest: () => sync?.digest() ?? null,
+    /** Quantized full-state hash for host-vs-client drift checks (compare while the host is paused). */
+    mpStateHash: () => {
+      if (!sync) return null;
+      const q = (n: number, k = 1) => Math.round(Math.round(n * 10) / 10 / k); // via the snapshot's 0.1 rounding
+      const parts = {
+        wave: `${g.waves.index}:${g.waves.active ? 1 : 0}`, hq: String(q(g.hq.health.hp)),
+        towers: g.towers.filter((t) => t.alive).map((t) => `${t.data.id}@${t.cell.c},${t.cell.r}:${t.tier}:${t.owner}:${t.targeting}`).sort().join(';'),
+        squads: g.squads.filter((s) => s.alive).map((s) => `${s.data.id}:${s.owner}:${s.units.filter((u) => u.alive).map((u) => `${Math.round(Math.round(u.x) / 8)},${Math.round(Math.round(u.y) / 8)}`).join('/')}`).sort().join(';'),
+        buildings: g.buildings.filter((b) => b.alive).map((b) => `${b.data.id}:${b.tier}:${b.owner}`).sort().join(';'),
+        enemies: g.enemies.filter((e) => e.alive).map((e) => `${e.data.id}:${e.lane}:${q(e.progress, 8)}:${q(e.hp)}`).sort().join(';'),
+        credits: (sync.isHost ? sync.players.map((p) => Math.floor(sync.creditsOf(p.pid))) : sync.players.map((p) => sync.allCredits[p.pid] ?? -1)).join(','),
+      };
+      const str = Object.values(parts).join('|');
+      let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return { h: (h >>> 0).toString(16), parts };
+    },
+    mpPause: (on: boolean) => { g.paused = on; },
     mpRequestDigest: () => sync?.requestDigest(),
     mpHostDigest: () => sync?.hostDigest ?? null,
     mpOpenPing: (x: number, y: number) => { const s = r.worldToScreen(x, y); netHud?.openPing(s.x, s.y, { x, y }); },

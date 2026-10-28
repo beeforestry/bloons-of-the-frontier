@@ -86,14 +86,34 @@ export class Renderer {
     this.clamp();
   }
   /** Zoom at which the whole map fits the view. */
-  get minZoom() { return Math.min(this.vw / this.g.map.width, this.vh / this.g.map.height); }
+  get minZoom() { const b = this.bounds; return Math.min(this.vw / (b.x1 - b.x0), this.vh / (b.y1 - b.y0)); }
+  private _b: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /** Camera bounds: the map, grown to include every lane entry/exit that lies off the map
+   *  (e.g. El Morro's sea lane starts below the image) + a margin, so full zoom-out shows it. */
+  get bounds() {
+    if (this._b) return this._b;
+    const m = this.g.map, P = 70; let x0 = 0, y0 = 0, x1 = m.width, y1 = m.height;
+    for (const ln of m.lanes) for (const [x, y] of ln) {
+      if (x < 0) x0 = Math.min(x0, x - P); if (y < 0) y0 = Math.min(y0, y - P);
+      if (x > m.width) x1 = Math.max(x1, x + P); if (y > m.height) y1 = Math.max(y1, y + P);
+    }
+    return (this._b = { x0, y0, x1, y1 });
+  }
+  /** Fill the off-map margin by stretching the image's edge pixels (sea stays sea). */
+  private edgeFill(c: CanvasRenderingContext2D, bg: CanvasImageSource & { width: number; height: number }) {
+    const b = this.bounds, m = this.g.map, iw = bg.width, ih = bg.height;
+    if (b.y1 > m.height) c.drawImage(bg, 0, ih - 2, iw, 2, 0, m.height - 1, m.width, b.y1 - m.height + 1);
+    if (b.y0 < 0) c.drawImage(bg, 0, 0, iw, 2, 0, b.y0, m.width, -b.y0 + 1);
+    if (b.x1 > m.width) c.drawImage(bg, iw - 2, 0, 2, ih, m.width - 1, 0, b.x1 - m.width + 1, m.height);
+    if (b.x0 < 0) c.drawImage(bg, 0, 0, 2, ih, b.x0, 0, -b.x0 + 1, m.height);
+  }
   get maxZoom() { return 2.2; }
   clamp() {
-    const c = this.cam, m = this.g.map;
+    const c = this.cam, b = this.bounds, W = b.x1 - b.x0, H = b.y1 - b.y0;
     c.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, c.zoom));
     const vwW = this.vw / c.zoom, vhW = this.vh / c.zoom;
-    c.x = vwW >= m.width ? (m.width - vwW) / 2 : Math.max(0, Math.min(m.width - vwW, c.x));
-    c.y = vhW >= m.height ? (m.height - vhW) / 2 : Math.max(0, Math.min(m.height - vhW, c.y));
+    c.x = vwW >= W ? b.x0 + (W - vwW) / 2 : Math.max(b.x0, Math.min(b.x1 - vwW, c.x));
+    c.y = vhW >= H ? b.y0 + (H - vhW) / 2 : Math.max(b.y0, Math.min(b.y1 - vhW, c.y));
   }
   screenToWorld(sx: number, sy: number) { return { x: this.cam.x + sx / this.cam.zoom, y: this.cam.y + sy / this.cam.zoom }; }
   worldToScreen(wx: number, wy: number) { return { x: (wx - this.cam.x) * this.cam.zoom, y: (wy - this.cam.y) * this.cam.zoom }; }
@@ -124,7 +144,7 @@ export class Renderer {
     c.setTransform(z, 0, 0, z, (-this.cam.x + sx) * z, (-this.cam.y + sy) * z);
     this.vx0 = this.cam.x; this.vy0 = this.cam.y; this.vx1 = this.cam.x + this.vw / this.cam.zoom; this.vy1 = this.cam.y + this.vh / this.cam.zoom;
     const bg = IMG['map:' + g.map.image];
-    if (bg) c.drawImage(bg, 0, 0, g.map.width, g.map.height); else { c.fillStyle = '#6aa84f'; c.fillRect(0, 0, g.map.width, g.map.height); }
+    if (bg) { this.edgeFill(c, bg as never); c.drawImage(bg, 0, 0, g.map.width, g.map.height); } else { c.fillStyle = '#6aa84f'; c.fillRect(0, 0, g.map.width, g.map.height); }
     for (const sc of g.shortcuts) this.shortcutTrail(sc);
     for (const d of g.decals) if (this.inView(d.x, d.y)) this.decal(d.x, d.y, d.r, d.ang, d.t);
     if (v.placing || v.selTower?.isFarm) this.gridOverlay(v);

@@ -96,6 +96,7 @@ export class Hud {
     $('#btn-start').onclick = () => this.g.waves.start(this.g);
     $('#btn-auto').onclick = () => { this.g.waves.auto = !this.g.waves.auto; };
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-speed]'))) b.onclick = () => { this.g.speed = +b.dataset.speed!; };
+    this.compactTopbar();
     $('#btn-pause').onclick = () => { this.g.paused = !this.g.paused; };
     $('#btn-organize').onclick = () => this.g.orderOrganizeFarms();
     this.buildPowers();
@@ -403,6 +404,7 @@ export class Hud {
     $('#btn-auto').classList.toggle('on', g.waves.auto);
     $('#btn-pause').textContent = g.paused ? '▶' : '⏸';
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-speed]'))) b.classList.toggle('on', +b.dataset.speed! === g.speed);
+    { const sb = document.getElementById('btn-speed'); const t = `${g.speed}×`; if (sb && sb.textContent !== t) { sb.textContent = t; sb.classList.toggle('on', g.speed > 1); } }
     for (const c of Array.from(document.querySelectorAll<HTMLElement>('#tower-cards .card'))) {
       const d = towerById(c.dataset.tower!);
       c.classList.toggle('poor', g.res.credits < d.tiers[0].cost);
@@ -487,6 +489,26 @@ export class Hud {
     el.innerHTML = `<div class="bb-name">💀 ${b.data.name} <span>PHASE ${b.bossPhase}/${phases}${b.bossPhase === 1 ? ' · plated + shielded' : b.bossPhase === 2 ? ' · reinforcements + attacks' : ' · FRENZY'}</span></div>
       <div class="bb-bar"><i class="bb-hp" style="width:${(b.hp / b.maxHp) * 100}%"></i>${b.maxShield ? `<i class="bb-sh" style="width:${(b.shield / b.maxShield) * 100}%"></i>` : ''}<s style="left:50%"></s>${k.frenzy ? '<s style="left:20%"></s>' : ''}</div>`;
   }
+  /** Phones: keep the top HUD to two rows by moving less-used items into a ☰ dropdown
+   *  (moved back into place on wider screens). */
+  private compactTopbar() {
+    const more = document.getElementById('hud-more')!, btn = document.getElementById('btn-more')!, sp = document.getElementById('btn-speed')!;
+    const items = ['#tech-stat', '#orbs-stat', '#btn-auto', '[data-speed="1"]', '[data-speed="2"]', '[data-speed="4"]', '#btn-voice'].map((q) => document.querySelector<HTMLElement>('#topbar ' + q)).filter((e): e is HTMLElement => !!e);
+    const marks = items.map((e) => { const c = document.createComment('hud-slot'); e.before(c); return c; });
+    const close = () => { more.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('on'); };
+    btn.onclick = (ev) => { ev.stopPropagation(); const open = more.hidden; more.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.classList.toggle('on', open); };
+    document.addEventListener('pointerdown', (ev) => { if (!more.hidden && !more.contains(ev.target as Node) && ev.target !== btn) close(); });
+    sp.onclick = () => { const order = [1, 2, 4]; this.g.speed = order[(order.indexOf(this.g.speed) + 1) % order.length] ?? 1; };
+    const mq = window.matchMedia('(max-width: 820px)');
+    const apply = () => {
+      const phone = mq.matches;
+      btn.hidden = !phone; sp.hidden = !phone; document.body.classList.toggle('hud-compact', phone);
+      if (phone) for (const e of items) more.appendChild(e);
+      else { items.forEach((e, i) => marks[i].after(e)); close(); }
+    };
+    mq.addEventListener('change', apply); apply();
+  }
+
 }
 
 const TAG_NAMES: Record<string, string> = { '⚡': 'fast', '⛨': 'armored', '🪽': 'flying', '🛡': 'shielded', '💀': 'boss', '🐘': 'heavy' };

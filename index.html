@@ -11,11 +11,11 @@
     <div class="brand">🎈 Bloons <small>of the</small> Frontier</div>
     <div class="stat"><img src="./assets/ui/sun.png" alt="">¢ <b id="credits">0</b></div>
     <div class="stat scrap" id="scrap-stat" title="Scrap — salvage currency. Troops gather scrap piles (heavy enemies, ceramic/lead bloons, cleared terrain). Spend it on Warthogs, Spartans, the HQ's Salvage Armory and shortcut demolition.">🔩 <b id="scrap">0</b></div>
-    <div class="stat" title="HQ hit points — if the HQ falls, the frontier is lost"><img src="./assets/ui/heart.png" alt="">HQ <b id="lives">0</b></div>
+    <div class="stat" title="HQ hit points — if the HQ falls, the frontier is lost"><img src="./assets/ui/heart.png" alt=""><span class="lbl">HQ </span><b id="lives">0</b></div>
     <div class="stat" title="Army population / cap (HQ + Reactors)">👥 <b id="pop">0</b></div>
-    <div class="stat" title="Tech level (Reactors)">⚛ <b id="tech">0</b></div>
+    <div class="stat" id="tech-stat" title="Tech level (Reactors)">⚛ <b id="tech">0</b></div>
     <div class="stat energy" title="Leader-power energy">⚡ <b id="energy">0</b><span class="ebar"><i id="energy-fill"></i></span></div>
-    <div class="stat" title="Energy orbs collected (Sunflowers / Farmhands) — fuel for MAC and Heal">🔆 <b id="orbs">0</b></div>
+    <div class="stat" id="orbs-stat" title="Energy orbs collected (Sunflowers / Farmhands) — fuel for MAC and Heal">🔆 <b id="orbs">0</b></div>
     <div class="stat wave-stat">Wave <b id="wave">0</b></div>
     <div id="wave-info" class="wave-info"></div>
     <div class="spacer"></div>
@@ -25,7 +25,10 @@
     <button class="btn small" data-speed="1">1×</button>
     <button class="btn small" data-speed="2">2×</button>
     <button class="btn small" data-speed="4">4×</button>
+    <button id="btn-speed" class="btn small" title="Game speed (tap to cycle 1× / 2× / 4×)" hidden>1×</button>
     <button id="btn-voice" class="btn small" title="Unit voice lines on/off">🗣</button>
+    <button id="btn-more" class="btn small" title="More: tech, orbs, auto-wave, speed, voice" aria-expanded="false" hidden>☰</button>
+    <div id="hud-more" hidden></div>
   </header>
   <main id="layout">
     <section id="stage">

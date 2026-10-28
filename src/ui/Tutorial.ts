@@ -22,7 +22,7 @@ const STEPS: Step[] = [
   { title: '9 · Orbs & scrap', text: 'Sunflowers and Farmhands make 🔆 <b>energy orbs</b> — <b>hover</b> or click them (coins too). Deploy ONE <b>Sprout Farmhand collector</b> (max 1 per player): it is <b>immune</b>, enemies ignore it, and it vacuums <b>every</b> coin, orb and 🔩 scrap pile on the whole map automatically.' },
   { title: '10 · Leader powers', text: '<b>☄ MAC Blast</b> (M) rakes a whole lane; <b>✚ Heal Drop</b> (J) mends troops, towers and base. Both spend ⚡ energy.', hi: '#powers', done: (g, _v, s) => g.stats.powers > s.powers, enter: (g) => { g.energy = Math.max(g.energy, 100); } },
   { title: '11 · Garrisons & shortcuts', text: 'Send troops into bunkers, watchtowers or El Morro <b>garitas</b>: <b>+35% range, −50% damage taken</b>. Blast rockslides open <b>shortcuts</b> — but enemies can use them too!' },
-  { title: '12 · Speed & panel', text: 'Use <b>1× / 2× / 4×</b> speed (top right). Press <b>H</b> or the ◧ button to hide the build panel for more battlefield. That\'s it — good luck, Commander!', hi: '[data-speed="2"]', done: (g, _v, s) => g.speed !== s.speed || document.body.classList.contains('panel-hidden') !== s.panel },
+  { title: '12 · Speed & panel', text: 'Use <b>1× / 2× / 4×</b> speed (top right). Press <b>H</b> or the ◧ button to hide the build panel for more battlefield. That\'s it — good luck, Commander!', hi: '#btn-speed:not([hidden]), [data-speed="2"]', done: (g, _v, s) => g.speed !== s.speed || document.body.classList.contains('panel-hidden') !== s.panel },
 ];
 
 export class Tutorial {

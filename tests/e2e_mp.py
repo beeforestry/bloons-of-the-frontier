@@ -53,7 +53,7 @@ class TS(socketserver.ThreadingTCPServer): daemon_threads = True; allow_reuse_ad
 h = TS(('127.0.0.1', 0), functools.partial(Q, directory=os.path.join(ROOT, 'dist'))); threading.Thread(target=h.serve_forever, daemon=True).start()
 RELAY = f'http://127.0.0.1:{h.server_address[1]}/__relay'
 BASE = args.url.rstrip('/') + '/' if args.url else f'http://127.0.0.1:{h.server_address[1]}/'
-fails = []; errors = []
+fails = []; errors = []; B2 = [None]
 def check(ok, msg):
     print(('  ok  ' if ok else '  FAIL ') + msg, flush=True)
     if not ok: fails.append(msg)
@@ -76,8 +76,8 @@ def new_page(b, name):
     return ctx, pg
 
 def lobby(b, mode, tag):
-    hc, host = new_page(b, f'{tag}-host'); cc, cli = new_page(b, f'{tag}-client')
-    host.goto(BASE + 'index.html?mp=1'); host.wait_for_selector('.mode-pick')
+    hc, host = new_page(b, f'{tag}-host'); cc, cli = new_page(B2[0], f'{tag}-client')  # client in its own browser process
+    host.goto(BASE + 'index.html'); host.wait_for_selector('.mode-pick')
     if tag == 'coop': host.screenshot(path=f'{SHOTS}/main_menu.png')
     host.click(f'.mode-pick[data-mode="{mode}"]'); host.click('#mp-host')
     code = until(host, "(() => { const e = document.getElementById('room-code'); return e && e.textContent })()", 30000)
@@ -88,7 +88,7 @@ def lobby(b, mode, tag):
     if mode == 'coop':
         cli.goto(BASE + f'index.html?room={code}')  # join via link
     else:
-        cli.goto(BASE + 'index.html?mp=1'); cli.wait_for_selector('.mode-pick'); cli.click('.mode-pick[data-mode="versus"]')
+        cli.goto(BASE + 'index.html'); cli.wait_for_selector('.mode-pick'); cli.click('.mode-pick[data-mode="versus"]')
         cli.fill('#mp-code', code); cli.click('#mp-joinb')  # join by typing the code
     ok = until(host, "document.querySelectorAll('.lobby-players li:not(.empty)').length === 2", 30000)
     check(bool(ok), f'[{tag}] client joined by {"link" if mode == "coop" else "code"}; host lists 2 players')
@@ -254,6 +254,7 @@ def versus(b):
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True, args=['--use-fake-ui-for-media-stream'])
+    B2[0] = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True)
     print('BASE', BASE, 'transport', 'webrtc' if args.webrtc else 'relay')
     coop(b); versus(b)
     b.close()

@@ -393,7 +393,7 @@ export class Sync {
     const en = (e: Enemy) => [e.uid, e.data.id, e.lane, r1(e.progress), r1(e.lateral), r1(e.hp), Math.round(e.maxHp), r1(e.shield), (e.ally ? 1 : 0) | (e.atBase ? 2 : 0) | (e.shieldDown ? 4 : 0), r1(e.stunT), r1(e.slowT), r1(e.smokeT), r1(e.surgeT), e.bossPhase, r1(e.allyPower), Math.round(e.x), Math.round(e.y)];
     const garCode = (u: Unit) => { const ga = u.garrison; if (!ga) return 0; if (ga instanceof Tower) return 't' + ga.uid; const i = g.envs.indexOf(ga as EnvStructure); return i >= 0 ? 'e' + i : 0; };
     const base = {
-      t: 's', tm: r1(g.time), st: g.state, sp: g.speed,
+      t: 's', tm: r1(g.time), st: g.state, sp: g.speed, pa: g.paused ? 1 : 0,
       w: [g.waves.index, g.waves.active ? 1 : 0, g.waves.freeplay ? 1 : 0, Math.ceil(this.waveCountdown)],
       hq: [r1(g.hq.health.hp), Math.round(g.hq.health.max)],
       all: this.players.map((p) => [p.pid, Math.floor(this.creditsOf(p.pid))]),
@@ -424,7 +424,7 @@ export class Sync {
     this.last = s; this.snaps++;
     g.syncing = true;
     try {
-      g.speed = s.sp as number;
+      g.speed = s.sp as number; g.paused = !!s.pa; // host pause freezes every mirror
       const [wi, wa, wf, cd] = s.w as number[];
       g.waves.index = wi; g.waves.active = !!wa; g.waves.freeplay = !!wf; this.waveCountdown = cd;
       const [hp, hmax] = s.hq as number[];
@@ -469,7 +469,7 @@ export class Sync {
       e.stunT = stun; if (slow > 0) e.slowT = Math.max(e.slowT, slow);
       e.smokeT = smoke; e.surgeT = surge; e.targetable = smoke <= 0; e.bossPhase = phase; e.allyPower = ap;
       const dp = prog - e.progress;
-      if (Math.abs(dp) > 80 || ally) e.progress = prog; else e.progress += dp * 0.3;
+      if (Math.abs(dp) > 80 || Math.abs(dp) < 0.05 || ally) e.progress = prog; else e.progress += dp * 0.3;
       e.lateral = lat;
       if (ally) { e.x += (hx - e.x) * 0.5; e.y += (hy - e.y) * 0.5; }
     }
@@ -496,6 +496,10 @@ export class Sync {
         g.grid.release(t.cell.c, t.cell.r); const fx = t.x, fy = t.y; t.cell = { c, r };
         const q = g.grid.cellCenter(c, r); t.x = q.x; t.y = q.y; g.grid.occupy(t, c, r);
         t.slide = { fx, fy, tx: q.x, ty: q.y, t: 0, dur: 0.6 };
+      }
+      if (t.tier > tier && t.data.tiers[tier]) { // client got ahead (rejected optimistic upgrade / corruption): host wins
+        t.tier = tier; t.invested = t.data.tiers.slice(0, tier + 1).reduce((a2, n) => a2 + n.cost, 0); t.health.setBase(t.data.tiers[tier].maxHp, 0);
+        (t as unknown as { attachModules(): void }).attachModules(); t.cover?.aura.refresh(); t.flora?.aura.refresh();
       }
       while (t.tier < tier) { // replay the tier-up locally (no spend)
         const n = t.data.tiers[t.tier + 1]; t.tier++; t.invested += n.cost; t.health.setBase(n.maxHp, 0);
@@ -538,7 +542,7 @@ export class Sync {
           sq.units.push(u); g.units.push(u); this.map(uuid, u);
         }
         const far = Math.hypot(u.x - x, u.y - y);
-        if (far > 60) { u.x = x; u.y = y; } else { u.x += (x - u.x) * 0.35; u.y += (y - u.y) * 0.35; }
+        if (far > 60 || far < 0.3) { u.x = x; u.y = y; } else { u.x += (x - u.x) * 0.35; u.y += (y - u.y) * 0.35; }
         u.health.hp = hp; u.stars = stars;
         const tgt: Garrisonable | null = !gar ? null : gar[0] === 't' ? (this.h2l.get(+gar.slice(1)) as Tower | undefined) ?? null : g.envs[+gar.slice(1)] ?? null;
         if (u.garrison !== tgt) { if (u.garrison) gLeave(u.garrison, u); if (tgt) gEnter(tgt, u); }
