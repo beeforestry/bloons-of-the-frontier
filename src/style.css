@@ -276,3 +276,5 @@ body.role-invader #tower-cards, body.role-invader #faction-tabs, body.role-invad
 #ping-menu { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 4px; transform: translate(-50%, -110%); background: #151b22ee; border: 2px solid var(--me, #7fd3ff); border-radius: 10px; padding: 6px; }
 #ping-menu[hidden] { display: none; }
 @media (max-width: 700px) { .mode-pick { min-width: 120px; font-size: 15px; } .lobby-code b { font-size: 30px; } #mp-bar { font-size: 11px; } .vs-card small { display: none; } }
+#tele-banner button { pointer-events: auto; margin-left: 6px; }
+.mp-status.err { color: #ff8a7a; background: #3a1010aa; border: 1px solid #ff6b6b; border-radius: 8px; padding: 6px 10px; }

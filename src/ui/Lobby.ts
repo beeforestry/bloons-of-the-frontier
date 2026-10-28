@@ -44,48 +44,54 @@ export class Lobby {
   private renderEntry() {
     this.el.innerHTML = `<div class="mp-entry">
       <button class="btn big go" id="mp-host">🏠 Host a ${this.settings.mode === 'coop' ? 'Co-Op' : 'Versus'} room</button>
-      <div class="mp-join"><input id="mp-code" inputmode="numeric" maxlength="4" placeholder="1234" aria-label="Room code"><button class="btn big" id="mp-joinb">Join</button></div>
-      </div><p class="mp-status" id="mp-status">${esc(this.status)}</p>
-      <p class="hint">Peer-to-peer (WebRTC). Share the 4-digit code or the link. Works on most home/office networks; some strict mobile/corporate NATs can block direct connections.</p>`;
+      <div class="mp-join"><input id="mp-code" inputmode="numeric" maxlength="4" placeholder="1234" aria-label="Room code" value="${esc(this.typed)}"><button class="btn big" id="mp-joinb" ${this.joining ? 'disabled' : ''}>${this.joining ? 'Joining…' : 'Join'}</button></div>
+      </div><p class="mp-status${this.status.startsWith('⚠') ? ' err' : ''}" id="mp-status">${esc(this.status)}</p>
+      <p class="hint">Peer-to-peer (WebRTC, TURN relay fallback). Share the 4-digit code or the link. Works on most home/office networks; some strict mobile/corporate NATs can block direct connections.</p>`;
     (this.el.querySelector('#mp-host') as HTMLElement).onclick = () => void this.host();
     const inp = this.el.querySelector('#mp-code') as HTMLInputElement;
-    (this.el.querySelector('#mp-joinb') as HTMLElement).onclick = () => { if (/^\d{4}$/.test(inp.value)) void this.join(inp.value); else this.setStatus('Enter the 4-digit room code'); };
+    (this.el.querySelector('#mp-joinb') as HTMLElement).onclick = () => { if (this.joining) return; if (/^\d{4}$/.test(inp.value.trim())) void this.join(inp.value.trim()); else this.setStatus('⚠ Enter the 4-digit room code'); };
     inp.onkeydown = (e) => { if (e.key === 'Enter') (this.el.querySelector('#mp-joinb') as HTMLElement).click(); };
   }
-  private setStatus(s: string) { this.status = s; const e = this.el.querySelector('#mp-status'); if (e) e.textContent = s; }
+  private joining = false;
+  private typed = '';
+  private setStatus(s: string) { this.status = s; const e = this.el.querySelector('#mp-status'); if (e) e.textContent = s; this.errorCls(s.startsWith('⚠')); }
+  private errorCls(on: boolean) { this.el.querySelector('#mp-status')?.classList.toggle('err', on); }
   get link() { return `${location.origin}${location.pathname}?room=${this.code}`; }
 
   async host() {
     const n = new NetSession('host', this.settings.mode === 'versus' ? 2 : 4);
     this.setStatus('Opening room…');
-    try { this.code = await n.host(); } catch (e) { this.setStatus(`Could not open a room: ${(e as Error).message}`); return; }
+    try { this.code = await n.host(); } catch (e) { this.setStatus(`⚠ Could not open a room: ${(e as Error).message}`); return; }
     this.net = n; this.localPid = 0;
     this.players = [{ pid: 0, name: 'P1 (host)', ready: true }];
-    n.onJoin = (pid) => { this.players.push({ pid, name: `P${pid + 1}`, ready: false }); this.players.sort((a, b) => a.pid - b.pid); n.send(pid, { t: 'welcome', pid }); this.pushLobby(); };
-    n.onLeave = (pid) => { this.players = this.players.filter((p) => p.pid !== pid); this.pushLobby(); };
+    n.onJoin = (pid) => { this.players = this.players.filter((p) => p.pid !== pid); this.players.push({ pid, name: `P${pid + 1}`, ready: false }); this.players.sort((a, b) => a.pid - b.pid); this.setStatus(`P${pid + 1} joined`); this.pushLobby(); };
+    n.onLeave = (pid) => { this.players = this.players.filter((p) => p.pid !== pid); this.setStatus(`P${pid + 1} left the room`); this.pushLobby(); };
+    window.addEventListener('beforeunload', () => n.bye());
     n.onMsg = (pid, m) => this.hostMsg(pid, m);
     n.onStatus = (s) => this.setStatus(s);
     history.replaceState(null, '', `?room=${this.code}`);
+    this.status = 'Room open — share the code or the invite link';
     this.renderLobby();
   }
   async join(code: string) {
+    this.typed = code;
     const n = new NetSession('client');
     this.setStatus(`Joining room ${code}…`);
     n.onMsg = (_p, m) => this.clientMsg(m);
-    n.onLeave = () => { this.setStatus('Host closed the room'); this.net = null; this.renderEntry(); };
-    try { await n.join(code); } catch (e) { this.setStatus((e as Error).message); this.renderEntry(); return; }
+    n.onLeave = () => { this.status = n.endReason === 'bye' ? '⚠ The host left — the room is closed' : '⚠ Lost connection to the host'; this.net = null; this.renderEntry(); this.errorCls(true); };
+    this.joining = true; this.renderEntry();
+    try { await n.join(code); } catch (e) { this.joining = false; this.status = '⚠ ' + (e as Error).message; this.renderEntry(); this.errorCls(true); return; }
+    this.joining = false;
     this.net = n; this.code = code;
-    n.send(0, { t: 'hello' });
-    this.setStatus(`Connected to room ${code}`);
+    history.replaceState(null, '', `?room=${code}`);
+    this.status = `Connected to room ${code}`;
   }
   private hostMsg(pid: number, m: Msg) {
     const p = this.players.find((x) => x.pid === pid); if (!p) return;
     if (m.t === 'ready') { p.ready = !!m.on; this.pushLobby(); }
-    if (m.t === 'hello') this.pushLobby();
   }
   private clientMsg(m: Msg) {
     if (m.t === 'welcome') this.localPid = m.pid as number;
-    else if (m.t === 'full') this.setStatus('Room is full');
     else if (m.t === 'lobby') { this.players = m.players as PlayerInfo[]; this.settings = m.settings as MpSettings; this.pickMode(this.settings.mode, true); this.renderLobby(); }
     else if (m.t === 'start') { this.settings = m.settings as MpSettings; this.players = m.players as PlayerInfo[]; this.launch(); }
   }
@@ -98,7 +104,7 @@ export class Lobby {
     const sel = (id: string, opts: [string | number, string][], v: string | number) => `<select id="${id}" ${host ? '' : 'disabled'}>${opts.map(([k, t]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
     this.el.innerHTML = `<div class="lobby">
       <div class="lobby-code"><span>${s.mode === 'coop' ? '🤝 Co-Op Defense' : '⚔ 1v1 Versus'} · Room</span><b id="room-code">${this.code}</b>
-        <button class="btn small" id="copy-link" title="${esc(this.link)}">🔗 Copy link</button></div>
+        <button class="btn small" id="copy-link" title="${esc(this.link)}">🔗 Copy invite link</button>${'share' in navigator ? '<button class="btn small" id="share-link">📤 Share</button>' : ''}</div>
       <input class="lobby-link" id="room-link" readonly value="${esc(this.link)}">
       <ul class="lobby-players">${this.players.map((p) => `<li style="--pc:${PCOLORS[p.pid]}"><i></i><b>P${p.pid + 1}</b> ${PNAMES[p.pid]}${p.pid === 0 ? ' · host' : ''}${p.pid === this.localPid ? ' (you)' : ''} <em>${roleOf(p.pid)}</em><span class="${p.ready ? 'ok' : 'wait'}">${p.ready ? '✔ Ready' : '… not ready'}</span></li>`).join('')}
         ${Array.from({ length: Math.max(0, (s.mode === 'coop' ? 2 : 2) - this.players.length) }, () => '<li class="empty"><i></i>Waiting for a player…</li>').join('')}</ul>
@@ -117,8 +123,14 @@ export class Lobby {
       </div>
       <p class="mp-status" id="mp-status">${esc(this.status)}</p></div>`;
     const $ = (id: string) => this.el.querySelector('#' + id) as HTMLElement | null;
-    $('copy-link')!.onclick = () => { const i = $('room-link') as HTMLInputElement; i.select(); navigator.clipboard?.writeText(this.link).catch(() => document.execCommand('copy')); this.setStatus('Link copied — send it to your friends'); };
-    $('btn-leave')!.onclick = () => { this.net?.close(); location.href = location.pathname; };
+    $('copy-link')!.onclick = () => {
+      const i = $('room-link') as HTMLInputElement; i.select();
+      const ok = () => this.setStatus('✔ Invite link copied — send it to your friends');
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(this.link).then(ok, () => { document.execCommand('copy'); ok(); });
+      else { document.execCommand('copy'); ok(); }
+    };
+    const sh = $('share-link'); if (sh) sh.onclick = () => { navigator.share({ title: 'Bloons of the Frontier', text: `Join my room ${this.code}`, url: this.link }).catch(() => {}); };
+    $('btn-leave')!.onclick = () => { if (this.net?.role === 'host') this.net.bye(); const n = this.net; setTimeout(() => { n?.close(); location.href = location.pathname; }, 150); };
     const rd = $('btn-ready'); if (rd) rd.onclick = () => { const on = !me?.ready; if (me) me.ready = on; this.net?.send(0, { t: 'ready', on }); this.renderLobby(); };
     const st = $('btn-mpstart'); if (st) st.onclick = () => { if (!this.canStart) return; for (const p of this.players) this.net!.send(p.pid, { t: 'start', settings: this.settings, players: this.players }); this.launch(); };
     if (host) {
@@ -128,7 +140,8 @@ export class Lobby {
   }
   private launch() {
     if (!this.net) return;
-    this.net.onJoin = () => {}; // late joiners are not supported mid-match
+    // mid-match only the original seats may (re)join; Sync handles the rejoin
+    if (this.net.role === 'host') this.net.lockSlots(this.players.map((p) => p.pid));
     this.onStart({ net: this.net, settings: { ...this.settings }, players: this.players.map((p) => ({ ...p })), localPid: this.localPid });
   }
 }

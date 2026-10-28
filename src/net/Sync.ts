@@ -110,11 +110,19 @@ export class Sync {
       this.waveCountdown = settings.mode === 'coop' ? settings.waveTimer : 0;
       g.netHook.onCombo = (x, y) => this.event({ k: 'combo', x: Math.round(x), y: Math.round(y) });
       net.onMsg = (pid, m) => this.hostMsg(pid, m);
-      net.onLeave = (pid) => { this.players = this.players.filter((p) => p.pid !== pid); g.toast(`P${pid + 1} disconnected — their towers keep fighting`, '#ff8a7a'); this.onPlayers(); };
+      const roster = players.map((p) => ({ ...p }));
+      net.onLeave = (pid) => { this.players = this.players.filter((p) => p.pid !== pid); g.toast(`P${pid + 1} disconnected — their towers keep fighting (rejoin with code ${net.code})`, '#ff8a7a'); this.onPlayers(); };
+      // rejoin by code: the seat (pid) comes back with its wallet, towers and squads; the next snapshot restores everything
+      net.onJoin = (pid) => {
+        const info = roster.find((p) => p.pid === pid); if (!info) return;
+        if (!this.players.some((p) => p.pid === pid)) { this.players.push({ ...info }); this.players.sort((x, y) => x.pid - y.pid); }
+        net.send(pid, { t: 'start', settings, players: roster, rejoin: true });
+        g.toast(`P${pid + 1} rejoined`, '#8affb0'); this.onPlayers(); this.snapT = 0;
+      };
     } else {
       g.res.frozen = true;
       net.onMsg = (_pid, m) => this.clientMsg(m);
-      net.onLeave = () => { g.toast('Lost connection to the host', '#ff6b6b'); this.onEvent({ k: 'disconnected' }); };
+      net.onLeave = () => { const bye = net.endReason === 'bye'; g.toast(bye ? 'The host left the match' : 'Lost connection to the host', '#ff6b6b'); this.onEvent({ k: 'disconnected', bye }); };
       g.netCollect = (p, rate, by) => { const u = this.l2h.get(p); if (u !== undefined) { p.alive = false; this.send({ t: 'op', op: 'collect', u, rate, by }); } };
     }
     // Route every player action through local() (host: permission + wallet swap; client: command)

@@ -104,7 +104,11 @@ export class NetHud {
       this.banner.hidden = false; this.banner.textContent = `⚠ ${ev.label} incoming — Lane ${(ev.lane as number) + 1} in ${ev.dur}s`;
       clearTimeout(this.bannerT); this.bannerT = window.setTimeout(() => { this.banner.hidden = true; }, ((ev.dur as number) + 1.5) * 1000);
     } else if (ev.k === 'disconnected') {
-      this.banner.hidden = false; this.banner.textContent = '⚠ Disconnected from the host — the match has ended';
+      this.banner.hidden = false; clearTimeout(this.bannerT);
+      if (ev.bye) this.banner.innerHTML = '⚠ The host left — the match has ended <button class="btn small" id="mp-tomenu">Menu</button>';
+      else this.banner.innerHTML = '⚠ Lost connection to the host <button class="btn small go" id="mp-rejoin">↻ Rejoin</button> <button class="btn small" id="mp-tomenu">Menu</button>';
+      const rj = document.getElementById('mp-rejoin'); if (rj) rj.onclick = () => location.reload();
+      document.getElementById('mp-tomenu')!.onclick = () => { location.href = location.pathname; };
     } else if (ev.k === 'vsend') { this.winner = ev.winner as 'defender' | 'invader'; this.gameOver(false); }
   }
   private gameOver(won: boolean) {
