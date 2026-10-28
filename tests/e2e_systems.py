@@ -38,6 +38,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True,
                           args=['--autoplay-policy=no-user-gesture-required'])
     pg = b.new_page(viewport={'width': 1600, 'height': 960})
+    pg.add_init_script("localStorage.setItem('bof.tutorialDone','1')")
     attach(pg)
     pg.goto(f'http://127.0.0.1:{port}/index.html?map={args.map}')
     pg.wait_for_function('window.__game')
@@ -462,9 +463,11 @@ with sync_playwright() as p:
     check('Salvage Armory' in pg.locator('#sel-panel').inner_text(), 'HQ panel lists the scrap-only Salvage Armory with costs')
     shot(pg, SHORT, 'scrap_hud_armory')
     hp0 = G(f'H.squad({mi2}).units[0].max')
-    check(G('H.buyArmory("plating")'), 'bought Salvaged Plating (40 scrap)')
+    bb = G('(() => { const a = H.scrap().scrap; const ok = H.buyArmory("plating"); return [a, H.scrap().scrap, ok]; })()')
+    check(bb[2], 'bought Salvaged Plating (40 scrap)')
     wait(150); hp1 = G(f'H.squad({mi2}).units[0].max')
-    check(G('H.scrap().scrap') == 5 and 'plating' in G('H.armory()'), f'scrap spent: 45 -> {G("H.scrap().scrap")}')
+    check(bb[0] - bb[1] == 40 and 'plating' in G('H.armory()'), f'scrap spent: {bb[0]} -> {bb[1]}')
+    G('H.setScrap(5)')
     check(hp1 > hp0 * 1.15, f'plating: troop max HP {hp0:.0f} -> {hp1:.0f}')
     check(not G('H.buyArmory("ap")'), 'AP Rounds (60) refused with only 5 scrap')
     wait(300); shot(pg, SHORT, 'scrap_purchase')
@@ -478,7 +481,7 @@ with sync_playwright() as p:
 
     # ---------------- mobile
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)
-    mp = ctx.new_page(); attach(mp)
+    mp = ctx.new_page(); attach(mp); mp.add_init_script("localStorage.setItem('bof.tutorialDone','1')")
     mp.goto(f'http://127.0.0.1:{port}/index.html?map={args.map}'); mp.wait_for_function('window.__game')
     M = lambda js: mp.evaluate(f'(() => {{ const H = window.__game; return eval({json.dumps(js)}); }})()')
     M('H.sandbox(2, 60); H.addCredits(5000)')

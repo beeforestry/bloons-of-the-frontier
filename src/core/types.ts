@@ -23,9 +23,11 @@ export enum TargetingMode {
   Strong = 'strong',
   Close = 'close',
   Weak = 'weak',
+  /** Closest to the player's HQ (last line of defence). */
+  HQ = 'hq',
 }
-export const TARGETING_ORDER: TargetingMode[] = [TargetingMode.First, TargetingMode.Last, TargetingMode.Strong, TargetingMode.Weak, TargetingMode.Close];
-export const TARGETING_LABEL: Record<TargetingMode, string> = { first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest', close: 'Closest' };
+export const TARGETING_ORDER: TargetingMode[] = [TargetingMode.First, TargetingMode.Last, TargetingMode.Strong, TargetingMode.Weak, TargetingMode.Close, TargetingMode.HQ];
+export const TARGETING_LABEL: Record<TargetingMode, string> = { first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest', close: 'Closest', hq: 'Closest to HQ' };
 /** Squad stance (Halo Wars style). */
 export type Stance = 'aggressive' | 'hold' | 'retreat';
 export type Formation = 'line' | 'column';
@@ -41,7 +43,7 @@ export interface HitOpts {
   src?: { addXp?: (n: number) => void } | null;
   crit?: boolean;
 }
-export type AbilityId = 'stim' | 'emp' | 'hijack' | 'laser_sweep';
+export type AbilityId = 'stim' | 'emp' | 'hijack' | 'laser_sweep' | 'rally';
 
 /** Damage types. Lead bloons ignore Sharp; Charger front armor ignores most non-explosive. */
 export type DamageType = 'sharp' | 'explosive' | 'energy' | 'magic' | 'fire' | 'cold' | 'ballistic' | 'melee';
@@ -80,6 +82,23 @@ export interface CombatStats {
   armorShred?: number;
   /** Bonus damage multiplier vs energy shields (arcane strips shields). */
   shieldBreak?: number;
+  /** Tesla: extra enemies a bolt arcs to (each jump deals 80%). */
+  chain?: number;
+  /** Chomper: instantly devours a non-boss enemy with at most this much HP (else bites for `damage`). */
+  devour?: number;
+}
+
+/** Hypno-Shroom: converts non-boss enemies to fight for you at FULL health. All higher-is-better. */
+export interface HypnoStats {
+  /** Conversions per minute (cooldown = 60 / perMin). */
+  perMin: number;
+  /** Max hypnotized allies alive at once from this shroom. */
+  maxConverted: number;
+  /** Largest enemy (max HP of its current layer, after wave scaling) it can convert. */
+  maxHp: number;
+  range: number;
+  /** Ally damage multiplier. */
+  power: number;
 }
 
 /** Flora / sun aura: green radius that speeds up nearby towers & troops and boosts farm income. Never stacks with itself. */
@@ -125,12 +144,13 @@ export interface TowerTier {
   farm?: FarmStats;
   aura?: AuraStats;
   orbs?: OrbStats;
+  hypno?: HypnoStats;
   /** Path objects (Wall-Nut barrier / Cherry pod). */
   barrier?: { hp: number; blockCap: number; blast?: number; blastRadius?: number };
 }
 
-export type TowerKind = 'combat' | 'cover' | 'farm' | 'support' | 'path';
-export type ProjectileKind = 'dart' | 'pea' | 'gpea' | 'shuriken' | 'magic' | 'melon' | 'star' | 'bullet' | 'laser' | 'rail' | 'ice' | 'glue' | 'flak' | 'seed';
+export type TowerKind = 'combat' | 'cover' | 'farm' | 'support' | 'path' | 'hypno';
+export type ProjectileKind = 'dart' | 'pea' | 'gpea' | 'shuriken' | 'magic' | 'melon' | 'star' | 'bullet' | 'laser' | 'rail' | 'ice' | 'glue' | 'flak' | 'seed' | 'boomerang' | 'tesla' | 'arrow' | 'shell';
 
 export interface TowerData {
   id: string;
@@ -263,11 +283,24 @@ export interface EnemyData {
   armored?: number;
   /** Energy shield HP that must be popped first (EMP strips it). */
   shield?: number;
+  /** Multi-phase boss kit. Phase 1 (> 50% HP): heavy plating + shield. Phase 2: sub-wave spawns + attacks on your towers. */
+  bossKit?: BossKit;
   /** Heavy / mechanical: drops scrap troops can gather. */
   scrap?: number;
   /** Heavy: EMP / Hijack stun works on it. */
   heavy?: boolean;
   color: string;
+}
+
+export interface BossKit {
+  /** Phase-1 armor (0..1) — drops to `armor2` in phase 2. */
+  armor1: number; armor2: number;
+  /** Phase-2 sub-wave. */
+  spawn: string; spawnCount: number; spawnEvery: number;
+  /** Phase-2 attack vs player turrets/troops. */
+  attack: 'laser' | 'bombs' | 'smash'; attackEvery: number; attackDamage: number; attackRadius: number;
+  /** Phase 3 below 20% HP: attacks twice as often, double sub-waves, every attack style. */
+  frenzy?: boolean;
 }
 
 export interface WaveGroup {
@@ -276,7 +309,7 @@ export interface WaveGroup {
   spacing: number;
   delay: number;
 }
-export interface WaveData { groups: WaveGroup[]; bonus: number }
+export interface WaveData { groups: WaveGroup[]; bonus: number; boss?: boolean }
 
 export interface Vec { x: number; y: number }
 

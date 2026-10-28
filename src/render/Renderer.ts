@@ -13,13 +13,16 @@ import type { TierVisual } from '../core/types';
 import type { Cell } from '../systems/PlacementSystem';
 import { TOWERS, towerById } from '../data/towers';
 const TOWER_BY_SPRITE = (k: string) => TOWERS.find((t) => t.sprite === k);
-import { IMG, HEAD_PIVOT, body, flashOf, head, type Img } from './sprites';
+import { IMG, HEAD_PIVOT, body, flashOf, head, tintOf, type Img } from './sprites';
+import { Faction } from '../core/types';
 import { Particles, PK, QUALITY_CAPS } from './Particles';
 import type { Barrier, EnvStructure, Obstacle } from '../entities/Garrison';
 import type { Pickup } from '../entities/Pickup';
 import type { Shortcut } from '../systems/Shortcuts';
 const hex = (s: string) => parseInt(s.replace('#', '').slice(0, 6), 16);
-const FLORA_TOWERS = new Set(['sunflower', 'solar_pea_fusion', 'gatling_cherry_bomber', 'frost_wallnut_bastion', 'flame_melon_mortar', 'repeater_gatling']);
+const FLORA_TOWERS = new Set(['sunflower', 'solar_pea_fusion', 'gatling_cherry_bomber', 'frost_wallnut_bastion', 'flame_melon_mortar', 'repeater_gatling', 'hypno_shroom', 'chomper']);
+/** Tower animation state handed to towerImg (wind-up, throw, plant sway). */
+export interface TowerAnim { charge: number; since: number; engaged: boolean; }
 
 export interface ViewState {
   placing: string | null;           // tower id being placed
@@ -137,6 +140,7 @@ export class Renderer {
     for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
     for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => this.unit(u, sel.has(u.squad) || v.selSquad === u.squad) });
     for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
+    for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
     objs.sort((a, b) => a.y - b.y).forEach((o) => o.f());
     this.drawn.objs = objs.length;
     for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.enemy(e);
@@ -232,7 +236,7 @@ export class Renderer {
     this.ctx.globalAlpha = 0.7; const im = body(d.sprite, 0); if (im) { const [w, h] = this.fitWH(im, 58); this.feet(im, p.x, p.y + 16, w, h); } this.ctx.globalAlpha = 1;
   }
   private env(e: EnvStructure, v: ViewState) {
-    const im = IMG[e.sprite] ?? body(e.sprite), sz = e.kind === 'watchtower' ? 150 : 130, footY = e.y + 36;
+    const im = IMG[e.sprite] ?? body(e.sprite), sz = e.kind === 'watchtower' ? 150 : e.kind === 'garita' ? 120 : 130, footY = e.y + 36;
     this.shadowAt(e.x + 8, footY - 6, sz * 0.46, sz * 0.15, 0.42);
     if (im) { const [w, h] = this.fitWH(im, sz); this.feet(im, e.x, footY, w, h); }
     const n = e.garrisoned.length, slots = e.gSlots();
@@ -494,7 +498,7 @@ export class Renderer {
   }
   /** Tower art: painted 3/4 body (flips to face the target), turret heads rotate on their base,
    *  idle breathing, fire recoil (squash + kick back), muzzle flash for gun-type towers. */
-  private towerImg(key: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, flash: boolean, recoil = 0, phase = 0) {
+  private towerImg(key: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, flash: boolean, recoil = 0, phase = 0, an?: TowerAnim) {
     const c = this.ctx, sz = TOWER_PX * (vis.scale ?? 1), footY = y + 20;
     const im = body(key, tier), hd = head(key, tier), time = this.g.time + phase;
     if (vis.glow) {
@@ -518,9 +522,26 @@ export class Renderer {
       if (recoil > 0.55 && td?.projectile === 'bullet') this.additive(IMG.fx_muzzle, x + Math.cos(aim) * hw * (1 - HEAD_PIVOT), py + Math.sin(aim) * hw * (1 - HEAD_PIVOT), 30 + tier * 6, aim, (recoil - 0.55) / 0.45);
       return;
     }
-    const flip = Math.cos(aim) < -0.2;
+    const flip = Math.cos(aim) < -0.2, dir = flip ? -1 : 1;
     const sq = recoil * 0.07; // squash on fire
-    this.feet(img, x - (flip ? -1 : 1) * recoil * 3, footY + hover, w, h, flip, breathe + sq * 0.6, breathe - sq);
+    const flora = td?.faction === Faction.Flora, monkey = td?.faction === Faction.Primates && td.id !== 'super_monkey' && td.kind === 'combat';
+    const ch = an ? an.charge : 0, wind = ch > 0 ? ch * ch : 0; // eased wind-up
+    const since = an ? an.since : 9, thr = since < 0.28 ? 1 - since / 0.28 : 0; // follow-through after a shot
+    if (flora) {
+      // plants: idle sway about the root, coil back during wind-up, snap forward on fire
+      const sway = Math.sin(time * 1.7) * 0.045 + Math.sin(time * 3.9) * 0.015;
+      const rot = sway - dir * wind * 0.16 + dir * thr * thr * 0.2;
+      this.feet(img, x, footY, w, h, flip, breathe + sq * 0.5 + wind * 0.04, breathe - sq - wind * 0.06, rot);
+    } else if (monkey && an) {
+      // part-based monkey: legs/base band static, torso + arms band pivots at the waist.
+      // Wind-up = arm drawn back, fire = overhand throw arc, then settle; idle = breathing + look.
+      const tilt = Math.max(-0.18, Math.min(0.18, Math.sin(aim) * 0.22)) * dir; // aim the weapon up/down
+      const idle = an.engaged ? 0 : Math.sin(time * 0.9) * 0.05;
+      const upRot = tilt - dir * wind * 0.26 + dir * thr * Math.sin(thr * Math.PI) * 0.42 + idle;
+      this.splitFeet(img, x - dir * recoil * 3, footY + hover, w, h, flip, upRot, breathe - sq);
+    } else this.feet(img, x - dir * recoil * 3, footY + hover, w, h, flip, breathe + sq * 0.6 + wind * 0.03, breathe - sq - wind * 0.04);
+    if (td?.id === 'hypno_shroom') this.additive(IMG.fx_magic, x, footY - h * 0.75, 22 + tier * 8 + Math.sin(time * 4) * 4, time * 1.5, 0.35 + wind * 0.5);
+    if (td?.id === 'tesla_coil' && (wind > 0.2 || thr > 0)) this.additive(IMG.fx_spark, x, footY - h * 0.92, 26 + tier * 8, time * 9, 0.4 + wind * 0.6);
     const pj = td?.projectile;
     if (recoil > 0.6 && (pj === 'pea' || pj === 'gpea' || pj === 'bullet')) {
       const dir = flip ? -1 : 1;
@@ -530,6 +551,16 @@ export class Renderer {
     if (td?.id === 'wizard_monkey' || td?.id === 'star_emperor') { // magical shimmer that grows per tier
       this.additive(td.id === 'wizard_monkey' ? IMG.fx_magic : IMG.fx_star, x + (flip ? -1 : 1) * w * 0.3, footY - h * 0.85, 12 + tier * 5, time, 0.35 + 0.25 * Math.sin(time * 3));
     }
+  }
+  /** Two-part body: bottom 46% (legs / base) drawn upright, top part rotated around the waist
+   *  so arms + weapon visibly swing, aim and throw. Slight overlap hides the seam. */
+  private splitFeet(im: Img, x: number, footY: number, w: number, h: number, flip: boolean, upRot: number, sy = 1) {
+    const c = this.ctx, iw = im.width, ih = im.height, cut = 0.54, ov = 0.04;
+    c.save(); c.translate(x, footY); c.scale(flip ? -1 : 1, sy);
+    c.drawImage(im, 0, ih * cut, iw, ih * (1 - cut), -w / 2, -h * (1 - cut), w, h * (1 - cut)); // legs
+    c.translate(0, -h * (1 - cut)); c.rotate(flip ? -upRot : upRot);
+    c.drawImage(im, 0, 0, iw, ih * (cut + ov), -w / 2, -h * cut, w, h * (cut + ov)); // torso + arms
+    c.restore();
   }
   private img(im: Img, x: number, y: number, sz: number, flip = false, rot = 0) {
     const c = this.ctx, [w, h] = this.fitWH(im, sz);
@@ -546,7 +577,8 @@ export class Renderer {
       for (let i = 0; i < 4; i++) { const k = i / 4; c.beginPath(); c.arc(t.slide.fx + (t.x - t.slide.fx) * k, t.slide.fy + (t.y - t.slide.fy) * k + 18, 4 + i * 2, 0, 7); c.fill(); }
     }
     if (t.disabled) c.globalAlpha = 0.55;
-    this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aim, false, t.recoil, (t.uid % 7) * 0.9);
+    this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aimVis, false, t.recoil, (t.uid % 7) * 0.9, { charge: t.charge, since: t.sinceFire, engaged: t.engaged });
+    if (t.hypno) { const n = t.hypno.mine.filter((e) => e.alive).length; if (n) this.label(t.x, t.y - 44, '🌀'.repeat(n), '#ff7ae6', 11); }
     c.globalAlpha = 1;
     this.pips(t.x, t.y + 26, t.tier, t.t.visual.glow);
     if (t.health.frac < 0.999) this.bar(t.x, t.y - 38, 40, t.health.frac, t.disabled ? '#888' : '#5fe06a', t.uid);
@@ -628,7 +660,8 @@ export class Renderer {
       const atk = u.attackAnim > 0 ? Math.min(1, u.attackAnim / 0.18) : 0;
       const ranged = t.stats.range >= 60, dir = u.facing < 0 ? -1 : 1;
       const lunge = ranged ? -atk * 2 : atk * 6, rot = sway + (ranged ? 0 : atk * 0.18 * dir);
-      this.feet(im, u.x + lunge * dir, footY - hop, w, h, u.facing < 0, 1, breathe, rot);
+      if (u.data.vehicle) this.feet(im, u.x + lunge * dir, footY - hop * 0.4 - Math.sin(st.walk * 3) * 0.8 * st.moving, w, h, u.facing < 0, 1, breathe, sway * 0.3);
+      else this.limbs(im, u.x + lunge * dir, footY - hop, w, h, u.facing < 0, breathe, rot, st.walk, st.moving, ranged ? -atk * 0.12 : atk * 0.3);
       if (ranged && atk > 0.35 && !u.isWorker) this.additive(IMG.fx_muzzle, u.x + dir * w * 0.5, footY - hop - h * 0.66, 16 + tier * 3, dir < 0 ? Math.PI : 0, atk);
     }
     if (u.health.frac < 0.999) this.bar(u.x, u.y - sz * 0.75, 24, u.health.frac, '#7fd3ff', u.uid);
@@ -637,11 +670,31 @@ export class Renderer {
       this.label(u.x, u.y - sz * 0.9, ({ 'organizing farms': '🧹', collecting: '¢', repairing: '🔧' } as Record<string, string>)[(u as Unit & { status: string }).status] ?? '', '#ffe14d', 12);
   }
 
+  /** Troop rig: legs band skews alternately with the walk phase (stride), torso bobs and
+   *  counter-rotates (arm swing), weapon arm kicks on recoil / swings on melee. */
+  private limbs(im: Img, x: number, footY: number, w: number, h: number, flip: boolean, breathe: number, rot: number, walk: number, moving: number, arm: number) {
+    const c = this.ctx, iw = im.width, ih = im.height, cut = 0.62;
+    const stride = Math.sin(walk) * 0.32 * moving, f = flip ? -1 : 1;
+    c.save(); c.translate(x, footY); if (rot) c.rotate(rot); c.scale(f, 1);
+    // legs: two half-width slices sheared in opposite directions = alternating steps
+    const lh = h * (1 - cut);
+    for (let side = 0; side < 2; side++) {
+      const sk = (side ? -stride : stride);
+      c.save(); c.transform(1, 0, sk, 1, 0, 0);
+      c.drawImage(im, side * iw / 2, ih * cut, iw / 2, ih * (1 - cut), -w / 2 + side * w / 2, -lh, w / 2, lh);
+      c.restore();
+    }
+    c.translate(0, -lh); c.scale(1, breathe); c.rotate(-stride * 0.18 + arm);
+    c.drawImage(im, 0, 0, iw, ih * (cut + 0.04), -w / 2, -h * cut, w, h * (cut + 0.04));
+    c.restore();
+  }
   // ---------------------------------------------------------------- enemies
   /** Bloons float (bob + sway, string wiggle via rotation); bugs scuttle (stride-synced
    *  bob + alternating squash that reads as leg motion) and flip to face their heading. */
   private enemy(e: Enemy) {
-    const c = this.ctx, d = e.data, im = body(d.sprite), time = this.g.time + (e.uid % 13) * 0.7;
+    const c = this.ctx, d = e.data, im0 = body(d.sprite), time = this.g.time + (e.uid % 13) * 0.7;
+    const im = im0 && e.ally ? tintOf(im0, '#ff3fd2') : im0;
+    if (d.bossKit && e.bossPhase >= 2) { const R = d.size * 0.55; c.globalAlpha = 0.35 + 0.2 * Math.sin(time * 8); this.additive(IMG.fx_spark, e.x, e.y, R * 2.2, time, e.bossPhase === 3 ? 0.9 : 0.5); c.globalAlpha = 1; }
     const bug = d.family === 'bug';
     if (!im) { c.fillStyle = d.color; c.beginPath(); c.arc(e.x, e.y, d.radius, 0, 7); c.fill(); return; }
     const flip = Math.cos(e.ang) < -0.05;
@@ -679,6 +732,13 @@ export class Renderer {
     else if (e.armor > 0.05) { c.globalAlpha = 0.85; this.label(e.x + w * 0.42, e.y - h * 0.5, '⛨', e.armor < (d.armored ?? 0) ? '#ff9a6a' : '#cfd6de', 12); c.globalAlpha = 1; }
     if (e.stunT > 0) for (let i = 0; i < 3; i++) { const a = time * 5 + i * 2.1; this.label(e.x + Math.cos(a) * 14, e.y - h * 0.6 + Math.sin(a) * 4, '✦', '#fff27a', 10); }
     if (d.air) { this.shadowAt(e.x, e.y + h + 26, w * 0.35, w * 0.1, 0.25); }
+    if (e.ally) { // hypnotized: swirl + magenta ring, fights for you
+      c.globalAlpha = 0.8; this.ringAt(e.x, e.y + h * 0.3, d.radius + 6, '#ff4dd8', 2); c.globalAlpha = 1;
+      this.label(e.x, e.y - h * 0.6 - 14, '🌀', '#ff7ae6', 13);
+      this.bar(e.x, e.y - h * 0.6 - 4, 28, e.hp / e.maxHp, '#ff7ae6', e.uid);
+      return;
+    }
+    if (e.empT > 0) { c.globalAlpha = 0.6; this.ringAt(e.x, e.y, d.radius + 8, '#7fe8ff', 2); c.globalAlpha = 1; }
     if (e.maxShield > 0 && e.shield > 0) this.bar(e.x, e.y - h * 0.6 - 10, d.boss ? 70 : 28, e.shield / e.maxShield, '#7fe8ff');
     if (d.boss || (e.maxHp > 1 && e.hp < e.maxHp)) this.bar(e.x, e.y - h * 0.6 - 4, d.boss ? 70 : 28, e.hp / e.maxHp, d.boss ? '#ff5a5a' : '#ffb347', e.uid);
     void footY;
@@ -710,6 +770,17 @@ export class Renderer {
         this.additive(IMG.fx_boom_fire, p.x, y - 4, 30, p.spin * 0.5, 0.75);
         if (IMG.fx_melon) this.img(IMG.fx_melon, p.x, y, 20, false, p.spin * 0.3); break;
       case 'bullet': if (IMG.fx_bullet) { c.strokeStyle = 'rgba(255,220,140,0.55)'; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x, y); c.lineTo(p.x - Math.cos(ang) * 14, y - Math.sin(ang) * 14); c.stroke(); this.img(IMG.fx_bullet, p.x, y, 9 * s, false, ang); } break;
+      case 'boomerang': { // spinning crescent
+        c.save(); c.translate(p.x, y); c.rotate(p.spin * 1.6);
+        c.fillStyle = '#d7a35a'; c.strokeStyle = '#6b4a22'; c.lineWidth = 1.5;
+        c.beginPath(); c.arc(0, 0, 11 * s, 0.2, Math.PI - 0.2); c.arc(0, 3 * s, 8 * s, Math.PI - 0.35, 0.35, true); c.closePath(); c.fill(); c.stroke(); c.restore(); break;
+      }
+      case 'arrow':
+        c.strokeStyle = '#6b4a22'; c.lineWidth = 2; c.beginPath(); c.moveTo(p.x, y); c.lineTo(p.x - Math.cos(ang) * 18, y - Math.sin(ang) * 18); c.stroke();
+        c.fillStyle = '#d9dde2'; c.beginPath(); c.moveTo(p.x + Math.cos(ang) * 5, y + Math.sin(ang) * 5); c.lineTo(p.x + Math.cos(ang + 2.4) * 5, y + Math.sin(ang + 2.4) * 5); c.lineTo(p.x + Math.cos(ang - 2.4) * 5, y + Math.sin(ang - 2.4) * 5); c.fill(); break;
+      case 'shell':
+        this.additive(IMG.fx_boom_fire, p.x - Math.cos(ang) * 8, y - Math.sin(ang) * 8, 18, p.spin, 0.6);
+        c.fillStyle = '#3a3f45'; c.beginPath(); c.ellipse(p.x, y, 6, 4, ang, 0, 7); c.fill(); break;
       default: c.fillStyle = '#ffe08a'; c.beginPath(); c.arc(p.x, y, 3 * s, 0, 7); c.fill();
     }
   }
@@ -766,6 +837,13 @@ export class Renderer {
       }
       case 'acid': c.globalAlpha = 1; this.additive(IMG.fx_acid, e.x, e.y, (e.r ?? 24) * 2 * (0.6 + k * 0.6), 0, 1 - k); break;
       case 'beam': {
+        if ((e as Effect & { jag?: number }).jag) { // lightning: re-jittered zig-zag each frame
+          c.strokeStyle = e.color ?? '#9fe7ff'; c.lineWidth = (e.width ?? 2) * (1 - k * 0.5); c.globalCompositeOperation = 'lighter';
+          c.beginPath(); c.moveTo(e.x, e.y); const n = 7;
+          for (let i = 1; i < n; i++) { const q = i / n; c.lineTo(e.x + (e.x2! - e.x) * q + (Math.random() - 0.5) * 16, e.y + (e.y2! - e.y) * q + (Math.random() - 0.5) * 16); }
+          c.lineTo(e.x2!, e.y2!); c.stroke(); c.strokeStyle = '#fff'; c.lineWidth = 1; c.stroke(); c.globalCompositeOperation = 'source-over';
+          this.additive(IMG.fx_spark, e.x2!, e.y2!, 22, k * 5, 0.9); break;
+        }
         c.strokeStyle = e.color ?? '#fff'; c.lineWidth = (e.width ?? 2) * (1 - k * 0.5); c.shadowColor = e.color ?? '#fff'; c.shadowBlur = 10;
         c.beginPath(); c.moveTo(e.x, e.y); c.lineTo(e.x2!, e.y2!); c.stroke(); c.shadowBlur = 0;
         c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = Math.max(1, (e.width ?? 2) * 0.35); c.beginPath(); c.moveTo(e.x, e.y); c.lineTo(e.x2!, e.y2!); c.stroke();

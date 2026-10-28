@@ -13,6 +13,10 @@ export interface MapDef {
   pads: [number, number][];
   /** Default rally point for trained squads. */
   rally: [number, number];
+  /** Fixed garrisonable structures [kind, x, y] (El Morro's garitas). */
+  envs?: [string, number, number][];
+  /** Theme tag ('morro' = coastal fortress). */
+  flavor?: string;
   grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[] };
 }
 export const MAPS: MapDef[] = raw as unknown as MapDef[];

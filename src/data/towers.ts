@@ -39,11 +39,11 @@ export const TOWERS: TowerData[] = [
     desc: 'Homing magic bolts that burst. Magic pops Lead.', damageType: 'magic', projectile: 'magic',
     tiers: [
       { name: 'Wizard Monkey', cost: 380, blurb: 'Homing bolt, small burst.', visual: { level: 0, scale: 1 }, maxHp: 120,
-        combat: { damage: 2, fireRate: 1.2, range: 160, pierce: 1, splash: 36, projectileSpeed: 380 } },
+        combat: { damage: 3, fireRate: 1.2, range: 160, pierce: 1, splash: 36, projectileSpeed: 380 } },
       { name: 'Arcane Burst', cost: 340, blurb: 'Bigger bursts, more damage.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 150,
-        combat: { damage: 3, fireRate: 1.4, range: 175, pierce: 1, splash: 46, projectileSpeed: 420 } },
+        combat: { damage: 4, fireRate: 1.5, range: 175, pierce: 1, splash: 46, projectileSpeed: 420 } },
       { name: 'Archmage', cost: 780, blurb: 'Twin bolts, huge bursts.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 180,
-        combat: { damage: 4, fireRate: 1.8, range: 190, pierce: 1, shots: 2, splash: 58, projectileSpeed: 460 } },
+        combat: { damage: 6, fireRate: 1.8, range: 190, pierce: 1, shots: 2, splash: 58, projectileSpeed: 460 } },
     ],
   },
   {
@@ -100,11 +100,11 @@ export const TOWERS: TowerData[] = [
     desc: 'Lobs flaming melons: huge splash, huge range. Fire pops Lead.', damageType: 'fire', projectile: 'melon',
     tiers: [
       { name: 'Flame Melon', cost: 550, blurb: 'Flaming melon lobs.', visual: { level: 0, scale: 1 }, maxHp: 140,
-        combat: { damage: 6, fireRate: 0.45, range: 250, pierce: 1, splash: 70 } },
+        combat: { damage: 8, fireRate: 0.45, range: 250, pierce: 1, splash: 70 } },
       { name: 'Hotter Melons', cost: 450, blurb: 'Bigger blast.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 170,
-        combat: { damage: 9, fireRate: 0.55, range: 270, pierce: 1, splash: 85 } },
+        combat: { damage: 12, fireRate: 0.55, range: 270, pierce: 1, splash: 85 } },
       { name: 'Inferno Melons', cost: 950, blurb: 'Inferno-grade splash.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
-        combat: { damage: 14, fireRate: 0.7, range: 290, pierce: 1, splash: 100 } },
+        combat: { damage: 19, fireRate: 0.7, range: 290, pierce: 1, splash: 100 } },
     ],
   },
   {
@@ -156,9 +156,9 @@ export const TOWERS: TowerData[] = [
       { name: 'Rail Lance', cost: 950, blurb: 'Heavy rail slug.', visual: { level: 0, scale: 1 }, maxHp: 200,
         combat: { damage: 8, fireRate: 0.5, range: 280, pierce: 4 } },
       { name: 'Capacitor Bank', cost: 800, blurb: 'Faster charge, pierce 6.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 250,
-        combat: { damage: 14, fireRate: 0.6, range: 300, pierce: 6 } },
+        combat: { damage: 17, fireRate: 0.6, range: 300, pierce: 6 } },
       { name: 'Magnetic Accelerator', cost: 1700, blurb: 'Devastating slugs.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 300,
-        combat: { damage: 22, fireRate: 0.75, range: 330, pierce: 9 } },
+        combat: { damage: 30, fireRate: 0.75, range: 330, pierce: 9 } },
     ],
   },
   {
@@ -241,11 +241,11 @@ export const TOWERS: TowerData[] = [
     desc: 'Locks to the nearest lane direction at placement and hoses it with seeds: very high damage density down that line.', damageType: 'sharp', projectile: 'seed', fixedLane: true,
     tiers: [
       { name: 'Repeater Gatling', cost: 520, blurb: 'Fixed-lane seed stream.', visual: { level: 0, scale: 1 }, maxHp: 140,
-        combat: { damage: 1, fireRate: 8, range: 240, pierce: 2, projectileSpeed: 700 } },
+        combat: { damage: 1, fireRate: 6.5, range: 240, pierce: 2, projectileSpeed: 700 } },
       { name: 'Twin Repeater', cost: 460, blurb: 'Twin streams.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 170,
-        combat: { damage: 2, fireRate: 9, range: 260, pierce: 2, shots: 2, projectileSpeed: 760 } },
+        combat: { damage: 2, fireRate: 7.5, range: 260, pierce: 2, shots: 2, projectileSpeed: 760 } },
       { name: 'Seed Minigun', cost: 980, blurb: 'Triple seed torrent.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
-        combat: { damage: 2, fireRate: 12, range: 280, pierce: 3, shots: 3, projectileSpeed: 820 } },
+        combat: { damage: 2, fireRate: 9, range: 280, pierce: 3, shots: 3, projectileSpeed: 820 } },
     ],
   },
   {
@@ -275,7 +275,7 @@ export const TOWERS: TowerData[] = [
       { name: 'Quad Flak', cost: 380, blurb: 'Faster, bigger bursts.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 210,
         combat: { damage: 3, fireRate: 2.8, range: 230, pierce: 1, splash: 42, shots: 2, projectileSpeed: 950 } },
       { name: 'Skyguard Array', cost: 820, blurb: 'Radar-guided flak storm.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 260,
-        combat: { damage: 4, fireRate: 3.6, range: 255, pierce: 2, splash: 50, shots: 3, projectileSpeed: 1000 } },
+        combat: { damage: 4, fireRate: 3.0, range: 255, pierce: 2, splash: 50, shots: 3, projectileSpeed: 1000 } },
     ],
   },
   // ------------------------------------------------------------ FRONTIER (t24/25)
@@ -292,7 +292,55 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'arcane_obelisk', name: 'Arcane Mystic Obelisk', faction: Faction.Frontier, kind: 'combat', sprite: 'arcane_obelisk',
+    id: 'boomerang_monkey', name: 'Boomerang Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'boomerang_monkey',
+    desc: 'Curving boomerangs slice through a crowd on the way out AND back. Sharp: cannot pop Lead.', damageType: 'sharp', projectile: 'boomerang',
+    tiers: [
+      { name: 'Boomerang Monkey', cost: 325, blurb: 'Out-and-back blade, pierce 5.', visual: { level: 0, scale: 1 }, maxHp: 130,
+        combat: { damage: 1, fireRate: 1.1, range: 165, pierce: 5, projectileSpeed: 480 } },
+      { name: 'Glaive Thrower', cost: 300, blurb: 'Razor glaives: +dmg, pierce 8.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 160,
+        combat: { damage: 2, fireRate: 1.4, range: 180, pierce: 8, projectileSpeed: 540 } },
+      { name: 'Glaive Lord', cost: 750, blurb: 'Two glaives per throw, shreds armor.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
+        combat: { damage: 3, fireRate: 1.7, range: 195, pierce: 12, shots: 2, projectileSpeed: 600, armorShred: 0.1 } },
+    ],
+  },
+  {
+    id: 'hypno_shroom', name: 'Hypno-Shroom', faction: Faction.Flora, kind: 'hypno', sprite: 'hypno_shroom',
+    desc: 'Puffs hypnotic spores: the strongest non-boss enemy in range switches sides at FULL health and marches back down the road fighting its old friends.',
+    tiers: [
+      { name: 'Hypno-Shroom', cost: 450, blurb: '1 convert at a time, up to 30 HP enemies.', visual: { level: 0, scale: 1 }, maxHp: 90,
+        hypno: { perMin: 4.3, maxConverted: 1, maxHp: 30, range: 150, power: 1 } },
+      { name: 'Mesmer-Shroom', cost: 550, blurb: '2 converts, up to 120 HP, faster spores.', visual: { level: 1, scale: 1.08, glow: G1 }, maxHp: 120,
+        hypno: { perMin: 6, maxConverted: 2, maxHp: 120, range: 170, power: 1.4 } },
+      { name: 'Grand Hypnotist', cost: 1200, blurb: '4 converts, up to 400 HP (Ironbacks, Chargers), x2 power.', visual: { level: 2, scale: 1.16, glow: G2 }, maxHp: 160,
+        hypno: { perMin: 8.5, maxConverted: 4, maxHp: 400, range: 190, power: 2 } },
+    ],
+  },
+  {
+    id: 'chomper', name: 'Chomper', faction: Faction.Flora, kind: 'combat', sprite: 'chomper', hitsAir: false, damageType: 'melee',
+    desc: 'Short-range snapping plant: swallows small enemies WHOLE (no bounty lost), bites big ones hard. Ground only.',
+    tiers: [
+      { name: 'Chomper', cost: 300, blurb: 'Devours enemies up to 20 HP.', visual: { level: 0, scale: 1 }, maxHp: 180,
+        combat: { damage: 8, fireRate: 0.4, range: 80, pierce: 1, devour: 20 } },
+      { name: 'Big Chomper', cost: 400, blurb: 'Devours up to 60 HP, faster chewing.', visual: { level: 1, scale: 1.08, glow: G1 }, maxHp: 240,
+        combat: { damage: 16, fireRate: 0.55, range: 90, pierce: 1, devour: 60 } },
+      { name: 'Royal Chomper', cost: 900, blurb: 'Devours up to 160 HP; armor-cracking bite.', visual: { level: 2, scale: 1.16, glow: G2 }, maxHp: 320,
+        combat: { damage: 34, fireRate: 0.75, range: 100, pierce: 1, devour: 160, armorShred: 0.15 } },
+    ],
+  },
+  {
+    id: 'tesla_coil', name: 'Tesla Coil', faction: Faction.Frontier, kind: 'combat', sprite: 'tesla_coil', damageType: 'energy', projectile: 'tesla', hitscan: true,
+    desc: 'Frontier storm-tech: lightning arcs to the target then CHAINS between nearby enemies (80% per jump). Shocks shields. Hits aircraft.', hitsAir: true, antiAir: true,
+    tiers: [
+      { name: 'Tesla Coil', cost: 550, blurb: 'Chains to 3 enemies.', visual: { level: 0, scale: 1 }, maxHp: 150,
+        combat: { damage: 4, fireRate: 0.9, range: 160, pierce: 1, chain: 3, shieldBreak: 2 } },
+      { name: 'Storm Spire', cost: 500, blurb: 'Chains to 5, more voltage.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 190,
+        combat: { damage: 7, fireRate: 1.05, range: 175, pierce: 1, chain: 5, shieldBreak: 2.5 } },
+      { name: 'Thunder Citadel', cost: 1150, blurb: 'Chains to 8; stuns briefly.', visual: { level: 2, scale: 1.14, glow: G2 }, maxHp: 240,
+        combat: { damage: 11, fireRate: 1.2, range: 190, pierce: 1, chain: 8, shieldBreak: 3, slow: 0.5 } },
+    ],
+  },
+  {
+    id: 'arcane_obelisk', name: 'Arcane Mystic Obelisk', faction: Faction.Frontier, kind: 'combat', sprite: 'arcane_obelisk', armorPiercing: true,
     desc: 'Slow, heavy arcane blasts: strip energy shields, destroy armor plating, splash. Magic pops Lead.', damageType: 'magic', projectile: 'magic',
     tiers: [
       { name: 'Mystic Obelisk', cost: 650, blurb: 'Shield-breaking blasts.', visual: { level: 0, scale: 1 }, maxHp: 160,

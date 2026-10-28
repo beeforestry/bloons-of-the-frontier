@@ -13,6 +13,11 @@ import { Sfx } from './audio/Sfx';
 import type { Squad } from './entities/Unit';
 import type { Garrisonable } from './entities/Garrison';
 import { towerById } from './data/towers';
+import { DIFFICULTIES, difficultyById, type DifficultyId } from './data/difficulty';
+import { Tutorial, TUTORIAL_KEY } from './ui/Tutorial';
+import { ENEMIES } from './data/enemies';
+
+const LS = { get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* */ } } };
 
 declare global { interface Window { __game?: ReturnType<typeof testHooks> } }
 
@@ -26,22 +31,50 @@ async function boot() {
     const b = document.createElement('button');
     b.className = 'map-pick'; b.dataset.map = m.id;
     b.innerHTML = `<img src="${assetUrl(m.image)}" alt=""><span>${m.name}</span>`;
-    b.onclick = () => start(m.id);
+    b.onclick = () => start(m.id, diff);
     menu.appendChild(b);
   }
-  const q = new URLSearchParams(location.search).get('map');
-  if (q && MAPS.some((m) => m.id === q)) start(q);
+  // Difficulty select (remembered). Medium is the default so a bare map click = Medium.
+  const qs = new URLSearchParams(location.search);
+  let diff = (qs.get('diff') ?? LS.get('bof.difficulty') ?? 'medium') as DifficultyId;
+  if (!DIFFICULTIES.some((d) => d.id === diff)) diff = 'medium';
+  const dEl = document.getElementById('diffs')!;
+  const paint = () => { for (const b of Array.from(dEl.children) as HTMLElement[]) b.classList.toggle('on', b.dataset.diff === diff); };
+  for (const d of DIFFICULTIES) {
+    const b = document.createElement('button'); b.className = 'diff-pick'; b.dataset.diff = d.id;
+    b.innerHTML = `${d.icon} <b>${d.name}</b><small>${d.waves} waves · ${d.blurb}</small>`;
+    b.onclick = () => { diff = d.id; LS.set('bof.difficulty', diff); paint(); };
+    dEl.appendChild(b);
+  }
+  paint();
+  document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start('garden', diff, true); };
+  const q = qs.get('map');
+  if (q && MAPS.some((m) => m.id === q)) start(q, diff);
 }
 
-function start(mapId: string) {
+function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false) {
   document.getElementById('menu')!.classList.remove('show');
-  const g = new Game(MAPS.find((m) => m.id === mapId)!);
+  const g = new Game(MAPS.find((m) => m.id === mapId)!, difficultyById(diffId));
   const canvas = document.getElementById('game') as HTMLCanvasElement;
   const view: ViewState = { placing: null, deploying: null, hoverCell: null, mouse: null, selTower: null, selSquad: null, selBuilding: null, selPad: null, power: null, rallyFor: null,
     selSquads: [], box: null, boxMode: false, queueMode: false, patrolMode: false, patrolPts: [], showFps: false };
   // WebAudio SFX (unlocked on first input); the counter lets the e2e verify cues fire headless.
   const sfx = new Sfx(), sfxCount: Record<string, number> = {};
   g.sfxHook = (n) => { sfxCount[n] = (sfxCount[n] ?? 0) + 1; sfx.play(n); };
+  // Voice lines ("Orders received!", "Moving out!", "Under attack!") via speechSynthesis; toggle 🗣.
+  let voiceOn = LS.get('bof.voice') !== '0', lastVoice = 0, lastLine = '';
+  const voiceLog: string[] = [];
+  const vBtn = document.getElementById('btn-voice');
+  const syncVoice = () => { if (vBtn) { vBtn.classList.toggle('on', voiceOn); vBtn.textContent = voiceOn ? '🗣' : '🔇'; vBtn.title = `Unit voice lines: ${voiceOn ? 'on' : 'off'}`; } };
+  vBtn?.addEventListener('click', () => { voiceOn = !voiceOn; LS.set('bof.voice', voiceOn ? '1' : '0'); syncVoice(); if (!voiceOn) try { speechSynthesis.cancel(); } catch { /* */ } });
+  syncVoice();
+  g.voiceHook = (line) => {
+    const now = performance.now();
+    if (now - lastVoice < 2500 || (line === lastLine && now - lastVoice < 8000)) return;
+    lastVoice = now; lastLine = line; voiceLog.push(line);
+    if (!voiceOn || sfx.muted) return;
+    try { const u = new SpeechSynthesisUtterance(line); u.rate = 1.15; u.pitch = 0.8; u.volume = 0.8; speechSynthesis.speak(u); } catch { /* no TTS */ }
+  };
   const unlock = () => sfx.unlock();
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
@@ -85,7 +118,12 @@ function start(mapId: string) {
   });
   canvas.addEventListener('pointermove', (ev) => {
     const l = local(ev), p = r.screenToWorld(l.x, l.y);
-    if (ev.pointerType === 'mouse') { view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p) : null; edge = l; }
+    if (ev.pointerType === 'mouse') {
+      view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p) : null; edge = l;
+      // energy orbs and credit crates collect on hover (scrap needs infantry to gather it)
+      const rr = 30 / Math.max(0.5, r.cam.zoom);
+      for (const pk of g.pickups) if (pk.alive && pk.kind !== 'scrap' && Math.abs(pk.x - p.x) < rr && Math.abs(pk.y - p.y) < rr && dist(pk, p) < rr) { pk.collect(g, 1, 'hover'); g.stats.hover++; }
+    }
     const pt = ptrs.get(ev.pointerId); if (!pt) return;
     if (ptrs.size >= 2 && pinch) {
       pt.x = l.x; pt.y = l.y; pt.moved = true;
@@ -205,6 +243,16 @@ function start(mapId: string) {
     hud.select(null, null);
   }
   const fpsEl = document.getElementById('fps');
+  // Collapsible build panel: ◧ button / H key, smooth slide, remembered.
+  const pBtn = document.getElementById('btn-panel');
+  const setPanel = (hidden: boolean) => {
+    document.body.classList.toggle('panel-hidden', hidden); LS.set('bof.panelHidden', hidden ? '1' : '0');
+    if (pBtn) { pBtn.textContent = hidden ? '▤ Build' : '◧ Hide'; pBtn.classList.toggle('on', hidden); pBtn.title = `${hidden ? 'Show' : 'Hide'} the build panel (H)`; }
+    setTimeout(() => r.resize(), 300);
+  };
+  const togglePanel = () => setPanel(!document.body.classList.contains('panel-hidden'));
+  pBtn?.addEventListener('click', togglePanel);
+  setPanel(LS.get('bof.panelHidden') === '1');
   document.getElementById('btn-box')?.addEventListener('click', () => { view.boxMode = !view.boxMode; hud.refresh(true); });
   const formBtn = document.getElementById('btn-form');
   const syncForm = () => { if (formBtn) formBtn.textContent = g.formation === 'line' ? '━ Line' : '┃ Column'; };
@@ -228,7 +276,8 @@ function start(mapId: string) {
     else if (/^[1-9]$/.test(k)) { hud.abilityUse[+k - 1]?.(); }
     else if (k === 'o') g.orderOrganizeFarms();
     else if (k === 'm') { view.power = 'mac'; hud.refresh(true); }
-    else if (k === 'h') { view.power = 'heal'; hud.refresh(true); }
+    else if (k === 'j') { view.power = 'heal'; hud.refresh(true); }
+    else if (k === 'h') togglePanel();
     else if (k === 'b') { r.focus(g.hq.x - 200, g.hq.y, Math.max(r.minZoom, 0.8)); }
     else if (k === 'z' || k === '0') { r.cam.zoom = r.minZoom; r.clamp(); }
     else if (k === '=' || k === '+') r.zoomAt(r.vw / 2, r.vh / 2, 1.2);
@@ -283,6 +332,7 @@ function start(mapId: string) {
     }
     g.update(dt);
     hud.update(dt);
+    tut?.update(dt);
     // keyboard + screen-edge panning (speed in screen px / s)
     const sp = 900 * dt;
     let px = 0, py = 0;
@@ -299,7 +349,30 @@ function start(mapId: string) {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  // First-play tutorial (auto on the first match; replay via 🎓 in the menu).
+  let tut: Tutorial | null = null;
+  if (forceTutorial || !Tutorial.done()) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
   window.__game = Object.assign(testHooks(g, view, hud, click, r), {
+    tutorial: () => ({ active: !!tut?.active, step: tut?.i ?? -1, steps: tut?.steps ?? 0, done: Tutorial.done(), visible: !(document.getElementById('tutorial')?.hidden ?? true) }),
+    tutNext: () => tut?.go(tut.i + 1), tutSkip: () => tut?.finish(),
+    panel: () => ({ hidden: document.body.classList.contains('panel-hidden'), sideW: document.getElementById('side')!.getBoundingClientRect().width, stored: LS.get('bof.panelHidden') }),
+    togglePanel,
+    voice: () => ({ on: voiceOn, log: [...voiceLog] }),
+    diff: () => ({ ...g.diff, total: g.waves.total, freeplay: g.waves.freeplay, dartCost: towerById('dart_monkey').tiers[0].cost }),
+    skipTo: (n: number) => g.waves.skipTo(n),
+    freeplay: () => g.startFreeplay(),
+    allies: () => g.allies.map((e) => ({ id: e.data.id, hp: Math.round(e.hp), x: Math.round(e.x), y: Math.round(e.y), d: Math.round(e.progress), power: e.allyPower })),
+    hypnoTest: (enemyId = 'red') => { const e = g.spawnEnemy(enemyId, 300); for (let i = 0; i < 3; i++) e.update(g, 1 / 30); const ok = g.hypnotize(e, null, 1); return { ok, ally: e.ally, hp: e.hp, max: e.maxHp }; },
+    bosses: () => g.enemies.filter((e) => e.alive && e.data.bossKit).map((e) => ({ id: e.data.id, phase: e.bossPhase, hp: Math.round(e.hp), max: Math.round(e.maxHp), shield: Math.round(e.shield), size: e.data.size })),
+    spawn: (id: string, lane?: number, frac?: number, hpMul = 1) => { if (lane === undefined) return g.spawnEnemy(id, 0).uid; const L = lane % g.paths.length; return g.spawnEnemy(id, g.paths[L].length * (frac ?? 0), 0, L, hpMul).uid; },
+    damageBoss: (frac: number) => { for (const e of g.enemies) if (e.alive && e.data.bossKit) { e.shield = 0; e.hp = Math.max(1, e.maxHp * frac); } },
+    stats: () => ({ ...g.stats }),
+    killAll: () => { let n = 0; for (const e of [...g.enemies]) if (e.alive) { e.shield = 0; (e as unknown as { die(g: Game, o: number): void }).die(g, 0); n++; } return n; },
+    powerMode: () => view.power,
+    focus: (x: number, y: number, z?: number) => r.focus(x, y, z),
+    towerCost: (id: string) => towerById(id).tiers[0].cost,
+    waveLabel: () => document.getElementById('wave')!.textContent,
+    enemyIds: () => Object.values(ENEMIES).map((d) => ({ id: d.id, hp: d.hp, flying: d.flying, boss: !!d.boss, kit: !!d.bossKit })),
     boxSelect, command, sfxCount: () => ({ ...sfxCount }),
     fpsStart: () => { fps.sample = []; },
     fpsStop: () => { const s = fps.sample ?? []; fps.sample = null; const f = s.map((x) => 1 / Math.max(1e-4, x)).sort((a, b) => a - b); return { frames: s.length, avg: s.length / Math.max(1e-6, s.reduce((a, b) => a + b, 0)), p5: f[Math.floor(f.length * 0.05)] ?? 0, min: f[0] ?? 0, quality: r.quality, parts: r.parts.n }; },

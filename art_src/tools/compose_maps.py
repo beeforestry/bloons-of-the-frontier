@@ -73,9 +73,20 @@ def deco_sheet(name, keys):
 deco_sheet('deco_garden', [['oak', 'pine', 'hedge', 'rose'], ['boulders', 'mossrock', 'fence', 'stump']])
 deco_sheet('deco_jungle', [['palm', 'rtree', 'fern', 'monstera'], ['vinerock', 'log', 'bamboo', 'redflower']])
 deco_sheet('deco_fortress', [['wtower', 'wall', 'brokenwall', 'rubble'], ['banner', 'cart', 'barrels', 'deadtree']])
-SIZE = dict(oak=200, pine=150, hedge=110, rose=100, boulders=120, mossrock=86, fence=120, stump=96,
+deco_sheet('deco_morro', [['garita', 'lighthouse', 'rampart', 'cannon'], ['palm2', 'searocks', 'prflag', 'cannonballs']])
+SIZE = dict(garita=150, lighthouse=330, rampart=250, cannon=110, palm2=200, searocks=140, prflag=150, cannonballs=96,
+            oak=200, pine=150, hedge=110, rose=100, boulders=120, mossrock=86, fence=120, stump=96,
             palm=190, rtree=210, fern=120, monstera=120, vinerock=116, log=130, bamboo=120, redflower=100,
             wtower=180, wall=220, brokenwall=160, rubble=110, banner=120, cart=130, barrels=116, deadtree=150)
+
+def poly_mask(polys, seed, blur=14, rough=0.55):
+    m = Image.new('L', (W, H), 0); d = ImageDraw.Draw(m)
+    for P in polys: d.polygon([tuple(p) for p in P], fill=255)
+    m = m.filter(ImageFilter.GaussianBlur(blur))
+    n = np.asarray(noise(seed, 40, 8)).astype(np.float32) / 255
+    a = np.asarray(m).astype(np.float32) / 255
+    a = np.clip((a - 0.5 + (n - 0.5) * rough) * 3.2 + 0.5, 0, 1)
+    return Image.fromarray((a * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2))
 
 def stamp(img, key, x, y, scale=1.0, flip=False):
     s = DECO[key]; k = SIZE[key] * scale / max(s.size)
@@ -109,11 +120,27 @@ def compose(M):
         bank = line_mask(water_polys, M['waterWidth'] + 44, M['seed'] + 4)
         g = Image.composite(ImageEnhance.Brightness(tex('dirt', 512)).enhance(0.62), g, bank)
         g = Image.composite(tex('water', 640), g, wm)
+    ocean = None
+    if M.get('ocean'):  # coastline: deep sea, foam line, sand beach
+        ocean = poly_mask(M['ocean'], M['seed'] + 8, 18)
+        beach = poly_mask(M['ocean'], M['seed'] + 9, 60, 0.35).filter(ImageFilter.MaxFilter(31)).filter(ImageFilter.GaussianBlur(16))
+        g = Image.composite(ImageEnhance.Brightness(tex('sand', 512)).enhance(0.98), g, beach)
+        sea = tex('ocean', 700)
+        deep = noise(M['seed'] + 10, 300, 90)
+        sea = Image.composite(ImageEnhance.Brightness(sea).enhance(0.78), sea, deep)
+        g = Image.composite(sea, g, ocean)
+        foam = ImageChops.subtract(poly_mask(M['ocean'], M['seed'] + 8, 30), ocean.filter(ImageFilter.MaxFilter(9)))
+        g = Image.composite(Image.new('RGB', g.size, (236, 246, 244)), g, foam.point(lambda v: min(255, v * 2.4)))
+    for i, P in enumerate(M.get('masonry', [])):  # fortress floor + wall tops
+        mm = poly_mask([P], M['seed'] + 20 + i, 6, 0.2)
+        rim = ImageChops.subtract(mm.filter(ImageFilter.MaxFilter(25)), mm)
+        g = Image.composite(ImageEnhance.Brightness(tex('sandstone', 520)).enhance(0.62), g, rim)
+        g = Image.composite(tex('sandstone', 520), g, mm)
     # ---- base plaza
     pm = Image.new('L', (W, H), 0); d = ImageDraw.Draw(pm)
     d.ellipse([hq[0] - 300, hq[1] - 290, hq[0] + 300, hq[1] + 290], fill=255)
     pm = pm.filter(ImageFilter.GaussianBlur(40))
-    g = Image.composite(ImageEnhance.Brightness(tex('stone', 420)).enhance(0.95), g, pm)
+    g = Image.composite(ImageEnhance.Brightness(tex(M.get('plaza', 'stone'), 420)).enhance(0.95), g, pm)
     # ---- lanes: dark rut edge, then road
     road = tex(M['road'], 512)
     edge = line_mask(lanes, pw + 22, M['seed'] + 5)
@@ -131,6 +158,7 @@ def compose(M):
         if not (r * 0.5 < x < W - r * 0.5 and r * 0.6 < y < H): return False
         if min(poly_dist((x, y), l) for l in lanes) < pw / 2 + r + 18: return False
         if water_polys and min(poly_dist((x, y), w) for w in water_polys) < M['waterWidth'] / 2 + r: return False
+        if ocean is not None and ocean.getpixel((int(min(W - 1, x)), int(min(H - 1, y)))) > 20: return False
         if math.hypot(x - hq[0], y - hq[1]) < 330 + r: return False
         for bx, by, br in blocked:
             if math.hypot(x - bx, y - by) < (r + br) * 0.85: return False
@@ -167,6 +195,7 @@ def compose(M):
             cx, cy = (col + 0.5) * CELL, (row + 0.5) * CELL
             ok = min(poly_dist((cx, cy), l) for l in lanes) > pw / 2 + CELL * 0.42
             if ok and water_polys: ok = min(poly_dist((cx, cy), w) for w in water_polys) > M['waterWidth'] / 2 + CELL * 0.35
+            if ok and ocean is not None and ocean.getpixel((int(cx), int(cy))) > 60: ok = False
             if ok and abs(cx - hq[0]) < HQ_R + 30 and abs(cy - hq[1]) < HQ_R + 30: ok = False
             if ok:
                 for px, py in pads:
@@ -187,7 +216,8 @@ def compose(M):
     dbg.alpha_composite(ov); dbg.convert('RGB').resize((W // 2, H // 2)).save(f'/tmp/chk/map_{M["id"]}.jpg', quality=80)
     return dict(id=M['id'], name=M['name'], image=f'assets/maps/{M["id"]}.jpg', width=W, height=H, pathWidth=pw,
                 waypoints=lanes[0], lanes=lanes, hq=hq, pads=pads, rally=M['rally'],
-                grid=dict(cell=CELL, originX=0, originY=0, cols=COLS, rows=ROWS, buildable=rows))
+                grid=dict(cell=CELL, originX=0, originY=0, cols=COLS, rows=ROWS, buildable=rows),
+                **({'envs': M['envs']} if M.get('envs') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}))
 
 HQ_G = [1980, 744]
 def ring(hq):  # 6 pads around HQ (left side kept open for lane entry)
@@ -217,6 +247,23 @@ MAPS = [
          lanes=[  # branching road: shared trunk, splits around the keep ruins, rejoins at the gate
              [[-80, 740], [300, 740], [520, 600], [700, 360], [980, 260], [1240, 380], [1340, 620], [1560, 720], [1840, 744]],
              [[-80, 740], [300, 740], [520, 900], [700, 1140], [980, 1240], [1240, 1110], [1340, 860], [1560, 770], [1840, 744]],
+         ]),
+    # Castillo San Felipe del Morro, San Juan, Puerto Rico: Atlantic along the north, the fort's
+    # sandstone bastions around the HQ, the green esplanade lawn, lanes from Old San Juan.
+    dict(id='morro', name='El Morro, San Juan', seed=53, ground='grass', tint=(40, 90, 30), road='stone', plaza='sandstone', pathWidth=58, decoCount=48,
+         deco=['palm2', 'palm2', 'palm', 'cannonballs', 'barrels', 'fern', 'boulders'],
+         hq=HQ_G, pads=ring(HQ_G), rally=[1640, 744],
+         ocean=[[[-20, -20], [2230, -20], [2230, 1500], [2196, 1500], [2196, 360], [2120, 300], [1900, 250], [1660, 230], [1420, 190], [1180, 210], [940, 170], [700, 200], [460, 160], [220, 190], [-20, 150]]],
+         masonry=[[[1640, 330], [1900, 300], [2160, 340], [2160, 1180], [1900, 1220], [1640, 1150], [1600, 980], [1650, 900], [1580, 760], [1640, 620], [1590, 470]]],
+         fixed=[['lighthouse', 1950, 330, 1.0], ['rampart', 1700, 470, 0.85], ['rampart', 1700, 1080, 0.85], ['cannon', 1810, 400, 0.9], ['cannon', 2120, 1120, 0.9],
+                ['prflag', 2150, 1250, 1.0], ['searocks', 430, 210, 1.0], ['searocks', 1120, 240, 1.1], ['searocks', 1560, 250, 0.9], ['cannonballs', 2120, 420, 1.0],
+                ['rampart', 2060, 1270, 0.8]],
+         envs=[['garita', 1660, 360], ['garita', 1650, 1180], ['garita', 1340, 260], ['garita', 2100, 1180]],
+         flavor='morro',
+         lanes=[
+             [[-80, 430], [260, 400], [560, 470], [880, 390], [1180, 440], [1420, 560], [1620, 690], [1840, 744]],
+             [[-80, 900], [260, 860], [520, 980], [820, 900], [1060, 760], [1340, 820], [1600, 770], [1840, 744]],
+             [[520, 1570], [560, 1330], [760, 1190], [1000, 1380], [1250, 1410], [1380, 1250], [1260, 1090], [1420, 980], [1600, 870], [1840, 744]],
          ]),
 ]
 os.makedirs('/tmp/chk', exist_ok=True)

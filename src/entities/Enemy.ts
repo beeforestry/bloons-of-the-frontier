@@ -33,6 +33,14 @@ export class Enemy {
   shield: number; readonly maxShield: number; shieldDown = false; private shieldIdle = 0;
   /** EMP / Hijack stun. */
   stunT = 0;
+  /** EMP disable: while > 0 armor plating / front armor are offline. */
+  empT = 0;
+  /** Hypnotized by a Hypno-Shroom: fights for the player, walking back up the lane. */
+  ally = false; allyPower = 1;
+  /** Blocker interface (allies hold enemies like troops do). */
+  readonly garrison = null;
+  /** Boss: 1 = plated + shielded, 2 = enraged (sub-waves + attacks on your turrets). */
+  bossPhase = 1; private bossSpawnT = 0; private bossAtkT = 0;
   /** Last unit that hit this enemy (veterancy XP on kill). */
   lastSrc: HitOpts['src'] = null;
   hitFlash = 0;
@@ -52,6 +60,8 @@ export class Enemy {
   /** Which lane (Game.paths index) this enemy follows. */
   lane: number;
   pathLen = 1;
+  /** Difficulty speed multiplier. */
+  speedK = 1;
 
   constructor(public data: EnemyData, progress: number, lateral = 0, lane = 0, hpMul = 1) {
     this.hpMul = hpMul;
@@ -65,13 +75,18 @@ export class Enemy {
     this.spawnT = data.spawns?.every ?? 0;
     this.acidT = data.acid ? data.acid.every * 0.6 : 0;
     this.strengthOfChildren = data.children ? data.children.count * totalStrength(data.children.id) : 0;
+    if (data.bossKit) { this.armor = data.bossKit.armor1; this.bossSpawnT = data.bossKit.spawnEvery * 0.5; this.bossAtkT = data.bossKit.attackEvery * 0.6; }
   }
+  get blockCap() { return 2; }
   get strength() { return this.hp + this.shield + this.strengthOfChildren; }
   /** EMP: strips the energy shield for good, stuns heavies. */
   emp(g: Game, stun: number) {
     if (!this.alive) return;
     if (this.maxShield > 0 && !this.shieldDown) { this.shield = 0; this.shieldDown = true; g.fx({ kind: 'ring', x: this.x, y: this.y, r: 34, color: '#7fe8ff', dur: 0.4 }); g.fx({ kind: 'text', x: this.x, y: this.y - 30, text: 'SHIELD DOWN', color: '#7fe8ff', dur: 0.8 }); }
-    if (this.data.heavy || this.data.armored || this.data.shield) this.stunT = Math.max(this.stunT, stun);
+    if (this.data.heavy || this.data.armored || this.data.shield) {
+      const s = this.data.boss ? stun * 0.4 : stun; // bosses shrug most of it off
+      this.stunT = Math.max(this.stunT, s); this.empT = Math.max(this.empT, stun);
+    }
   }
   /** Distance left to the HQ: comparable across lanes of different lengths (First/Last targeting). */
   get remaining() { return this.pathLen - this.progress; }
@@ -84,7 +99,9 @@ export class Enemy {
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.slowAmt = 0; }
     if (this.maxShield > 0 && !this.shieldDown && this.shield < this.maxShield) { this.shieldIdle += dt; if (this.shieldIdle > 4) this.shield = Math.min(this.maxShield, this.shield + 10 * dt); }
     const path = this.route ?? g.paths[this.lane] ?? g.path; this.pathLen = path.length;
+    if (this.empT > 0) this.empT -= dt;
     if (this.stunT > 0) { this.stunT -= dt; return; }
+    if (d.bossKit) this.updateBoss(g, dt);
     const speedMul = 1 - this.slowAmt;
 
     // --- blocking by troops (ground only; Bile Titans stomp through)
@@ -132,7 +149,7 @@ export class Enemy {
       g.damageHQ((d.meleeDps ?? 0) * 0.25 * dt, this);
       if (Math.random() < dt * 1.5) g.fx({ kind: 'text', x: this.x, y: this.y - 20, text: '⚔', color: '#ff8a7a', dur: 0.3 });
     } else {
-      this.progress += d.speed * speedMul * dt;
+      this.progress += d.speed * this.speedK * speedMul * dt;
       if (d.boss && d.family === 'bug' && d.meleeDps) g.stompUnits(this, d.meleeDps * dt);
     }
     // swarm free-roam: scavengers veer toward nearby troops, then rejoin the path
@@ -160,9 +177,14 @@ export class Enemy {
   }
 
   /** Apply damage; returns damage actually dealt. `from` is used for Charger front armor. */
-  takeDamage(g: Game, amount: number, type: DamageType, from?: Vec, hit?: HitOpts): number {
+  takeDamage(g: Game, amount: number, type: DamageType = 'melee', from?: Vec, hit?: HitOpts): number {
     if (!this.alive || amount <= 0) return 0;
     const d = this.data;
+    if (this.ally) { // hypnotized: hurt by the enemies it brawls
+      this.hp -= amount; this.hitFlash = 0.08;
+      if (this.hp <= 0) { this.alive = false; g.fx({ kind: 'pop', x: this.x, y: this.y, r: d.size * 0.5, color: '#d86bff', dur: 0.4 }); }
+      return amount;
+    }
     if (d.air && !hit?.antiAir) return 0;
     if (hit?.src) this.lastSrc = hit.src;
     // energy shield soaks everything first (arcane shieldBreak multiplies)
@@ -174,13 +196,14 @@ export class Enemy {
       if (this.shield <= 0) { this.shieldDown = true; g.fx({ kind: 'pop', x: this.x, y: this.y, r: d.size * 0.6, color: '#7fe8ff', dur: 0.35 }); g.sfx('pop'); }
       if (amount <= 0.001) return take;
     }
-    if (this.armor > 0) {
-      if (hit?.shred) this.armor = Math.max(0, this.armor - hit.shred);
+    if (this.armor > 0 && this.empT <= 0) {
+      if (hit?.shred) this.armor = Math.max(0, this.armor - hit.shred * (d.bossKit ? 0.25 : 1));
       const pierces = hit?.ap || type === 'explosive';
-      if (!pierces) { amount *= 1 - this.armor; if (Math.random() < 0.06) g.fx({ kind: 'text', x: this.x, y: this.y - 28, text: 'PLATED', color: '#c9d1dc', dur: 0.5 }); }
+      if (pierces && d.bossKit && this.bossPhase === 1) amount *= 1 - this.armor * 0.5; // boss plating resists even AP
+      else if (!pierces) { amount *= 1 - this.armor; if (Math.random() < 0.06) g.fx({ kind: 'text', x: this.x, y: this.y - 28, text: 'PLATED', color: '#c9d1dc', dur: 0.5 }); }
     }
     if (d.lead && type === 'sharp') { g.fx({ kind: 'text', x: this.x, y: this.y - 16, text: 'clink', color: '#c9d1dc', dur: 0.5 }); return 0; }
-    if (d.frontArmor && from && type !== 'explosive') {
+    if (d.frontArmor && from && type !== 'explosive' && this.empT <= 0) {
       const fx = from.x - this.x, fy = from.y - this.y, L = Math.hypot(fx, fy) || 1;
       const dot = (fx / L) * Math.cos(this.ang) + (fy / L) * Math.sin(this.ang);
       if (dot > 0.35) { amount *= 0.25; if (Math.random() < 0.15) g.fx({ kind: 'text', x: this.x, y: this.y - 24, text: 'armored!', color: '#ffb35a', dur: 0.5 }); }
@@ -235,6 +258,7 @@ export class Enemy {
   private reward(g: Game, d: EnemyData) {
     g.res.add(d.bounty);
     g.stats.kills++;
+    if (d.bossKit) { g.stats.bossKills++; g.toast(`💀 ${d.name} destroyed!`, '#ffd84a'); g.shake(18); g.fx({ kind: 'boom', x: this.x, y: this.y, r: d.size * 0.7, dur: 0.9 }); g.sfx('explosion', this.x, this.y); g.voice('Target down! Outstanding!'); }
     g.stats.layers = (g.stats.layers ?? 0) + 1;
     this.lastSrc?.addXp?.(d.boss ? 10 : d.heavy ? 3 : 1);
     if (d.scrap) g.spawnPickup(this.x + rand(-8, 8), this.y + rand(-8, 8), d.scrap, 'scrap');
@@ -255,5 +279,55 @@ export class Enemy {
         if (i === 0 && overflow > 0 && d.family === 'bloon') e.takeDamage(g, overflow, 'magic');
       }
     }
+  }
+
+  // ---------------------------------------------------------------- boss phases
+  private updateBoss(g: Game, dt: number) {
+    const k = this.data.bossKit!;
+    if (this.bossPhase === 1 && this.hp <= this.maxHp * 0.5) {
+      this.bossPhase = 2;
+      this.armor = Math.min(this.armor, k.armor2);
+      this.shield = 0; this.shieldDown = true;
+      g.bossPhaseChange(this);
+    }
+    if (this.bossPhase === 2 && k.frenzy && this.hp <= this.maxHp * 0.2) { this.bossPhase = 3; g.bossPhaseChange(this); }
+    if (this.bossPhase < 2) return;
+    const fz = this.bossPhase === 3 ? 0.5 : 1;
+    this.bossSpawnT -= dt; this.bossAtkT -= dt;
+    if (this.bossSpawnT <= 0) {
+      this.bossSpawnT = k.spawnEvery * fz;
+      for (let i = 0; i < k.spawnCount / fz; i++) { const e = g.spawnEnemy(k.spawn, Math.max(0, this.progress - 14 - i * 12), (i - (k.spawnCount / fz - 1) / 2) * 14, this.lane, this.hpMul); e.route = this.route; }
+      g.fx({ kind: 'ring', x: this.x, y: this.y, r: 70, color: '#ff6b6b', dur: 0.5 });
+    }
+    if (this.bossAtkT <= 0) this.bossAtkT = g.bossAttack(this) ? k.attackEvery * fz : 0.6;
+  }
+
+  // ---------------------------------------------------------------- hypnotized ally
+  /** Walks BACKWARD along its lane, stopping to brawl the nearest enemy. */
+  updateAlly(g: Game, dt: number) {
+    const d = this.data;
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    const path = this.route ?? g.paths[this.lane] ?? g.path; this.pathLen = path.length;
+    let foe: Enemy | null = null, bd = Infinity;
+    for (const e of g.enemies) {
+      if (!e.alive || e.data.air || (e.data.flying && !d.flying)) continue;
+      const d2 = (e.x - this.x) ** 2 + (e.y - this.y) ** 2, reach = d.radius + e.data.radius + 16;
+      if (d2 < reach * reach && d2 < bd) { bd = d2; foe = e; }
+    }
+    if (foe) {
+      const dps = Math.max(d.meleeDps ?? 0, 6, Math.sqrt(this.maxHp) * 1.6) * this.allyPower;
+      foe.takeDamage(g, dps * dt, 'magic', this, { ap: true });
+      // bloon foes don't block, so they "bump" the ally instead
+      if (foe.blockedBy !== this) this.takeDamage(g, Math.max(foe.data.meleeDps ?? 0, 2 + foe.maxHp * 0.06) * dt * 0.6);
+      if (Math.random() < dt * 3) g.fx({ kind: 'text', x: (this.x + foe.x) / 2, y: (this.y + foe.y) / 2 - 16, text: '💥', color: '#d86bff', dur: 0.3 });
+    } else {
+      this.progress -= d.speed * 0.75 * dt;
+      if (this.progress <= 0) { this.alive = false; g.fx({ kind: 'ring', x: this.x, y: this.y, r: 24, color: '#d86bff', dur: 0.4 }); return; }
+    }
+    this.phase += dt * 6;
+    const p = path.at(Math.max(0, this.progress));
+    this.x = p.x - Math.sin(p.ang) * this.lateral;
+    this.y = p.y + Math.cos(p.ang) * this.lateral;
+    this.ang = p.ang + Math.PI;
   }
 }

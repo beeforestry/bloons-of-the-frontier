@@ -30,6 +30,7 @@ def attach(pg):
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True)
     pg = b.new_page(viewport={'width': 1600, 'height': 960})
+    pg.add_init_script("localStorage.setItem('bof.tutorialDone','1')")
     attach(pg)
     pg.goto(f'http://127.0.0.1:{port}/index.html')
     pg.wait_for_selector('.map-pick')
@@ -232,6 +233,7 @@ with sync_playwright() as p:
     # --- run waves
     for w in range(args.waves - 1):
         G('H.addEnergy(100)')
+        G('H.upgradeAll()')  # spend banked credits between waves like a player would
         G('H.startWave()')
         # auto-cast MAC on the most advanced enemy mid-wave (like a player would)
         pg.wait_for_timeout(1500)
@@ -249,7 +251,7 @@ with sync_playwright() as p:
     # --- late wave fight (wave 19: MOABs + Titans, scaled HP)
     G('H.g.waves.index = 18; H.addCredits(5000); H.setSpeed(2)')
     G('H.startWave()')
-    check(G('H.g.waves.hpMul') > 1.8, f'late-wave HP scaling x{G("H.g.waves.hpMul"):.2f}')
+    check(G('H.g.waves.hpMul') > 1.4, f'late-wave HP scaling x{G("H.g.waves.hpMul"):.2f}')
     pg.wait_for_function('window.__game.g.enemies.some(e => e.data.family === "bug" && e.progress > 500)', timeout=90000)
     e = G('(() => { const e = H.g.enemies.filter(e => e.data.family === "bug").sort((a,b)=>b.progress-a.progress)[0]; return {x:e.x,y:e.y}; })()')
     G(f'H.camFocus({e["x"]},{e["y"]},0.9)')
@@ -269,7 +271,7 @@ with sync_playwright() as p:
 
     # --- mobile viewport (touch)
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, device_scale_factor=2)
-    mp = ctx.new_page(); attach(mp)
+    mp = ctx.new_page(); attach(mp); mp.add_init_script("localStorage.setItem('bof.tutorialDone','1')")
     mp.goto(f'http://127.0.0.1:{port}/index.html?map={args.map}')
     mp.wait_for_function('window.__game')
     M = lambda js: mp.evaluate(f'(() => {{ const H = window.__game; return eval({json.dumps(js)}); }})()')

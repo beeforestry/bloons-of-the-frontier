@@ -10,7 +10,9 @@ import { MAPS, toVec, type MapDef } from '../data/maps';
 import { TOWERS, towerById } from '../data/towers';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
-import { WAVES } from '../data/waves';
+import { buildWaves } from '../data/waves';
+import { DIFFICULTIES, applyCostMul, type Difficulty } from '../data/difficulty';
+import { setHQ } from '../systems/TargetingSystem';
 import { PathSystem } from '../systems/PathSystem';
 import { SHORTCUT, Shortcut, routeThrough, segDistance, type ShortcutDef } from '../systems/Shortcuts';
 import { PlacementSystem, type Cell } from '../systems/PlacementSystem';
@@ -30,15 +32,15 @@ import type { BuildingKind } from '../core/types';
 import { Barrier, EnvStructure, Obstacle, gEnter, gFree, gLeave, laneOffset, type EnvKind, type Garrisonable } from '../entities/Garrison';
 import type { PickupKind } from '../entities/Pickup';
 import type { Blocker } from '../entities/Enemy';
-import { ABILITIES, EMP, HIJACK, STIM } from '../data/abilities';
+import { ABILITIES, EMP, HIJACK, RALLY, STIM, VET_AURA } from '../data/abilities';
 
 /** Anything bugs / acid can hurt. */
 export type Damageable = (Tower | Unit | Building | Barrier) & { takeDamage(g: Game, n: number): void };
-export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp';
+export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap';
 export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number }
 export interface Decal { x: number; y: number; r: number; ang: number; t: number }
 
-export const START_CREDITS = 700;
+export const START_CREDITS = 750;
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
 export interface Effect {
@@ -59,7 +61,11 @@ export class Game {
   readonly paths: PathSystem[];
   /** Lane 0 (legacy accessor). */
   get path() { return this.paths[0]; }
-  readonly waves = new WaveManager(WAVES);
+  readonly waves: WaveManager;
+  /** Hypnotized enemies fighting for the player (never in `enemies`, so nothing targets them). */
+  allies: Enemy[] = [];
+  /** Voice-line hook (main.ts wires speechSynthesis). */
+  voiceHook: (line: string) => void = () => {};
   towers: Tower[] = [];
   units: Unit[] = [];
   squads: Squad[] = [];
@@ -86,6 +92,7 @@ export class Game {
   /** Deploy cooldown per troop type. */
   deployCd: Record<string, number> = {};
   stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0,
+    powers: 0, hover: 0, hypno: 0, allyKills: 0, bossPhase2: 0, bossAttacks: 0, bossKills: 0, chain: 0, devoured: 0, vetAura: 0, rally: 0,
     orbs: 0, scrap: 0, promotions: 0, abilities: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, scrapBy: {} as Record<string, number> };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
@@ -106,14 +113,18 @@ export class Game {
   formation: Formation = 'line';
   private blockLoad = new Map<Blocker, number>();
 
-  constructor(readonly map: MapDef = MAPS[0]) {
-    this.res = new ResourceManager(this.bus, START_CREDITS);
+  constructor(readonly map: MapDef = MAPS[0], readonly diff: Difficulty = DIFFICULTIES[1]) {
+    applyCostMul(diff.cost);
+    this.waves = new WaveManager(buildWaves(diff.waves), diff.hp);
+    this.res = new ResourceManager(this.bus, diff.cash ?? START_CREDITS);
     this.grid = new PlacementSystem<Tower>(map);
     const lanes = map.lanes?.length ? map.lanes : [map.waypoints];
     this.paths = lanes.map((l) => new PathSystem(l.map(toVec), map.pathWidth));
     const rally = toVec(map.rally ?? [map.hq[0] - 300, map.hq[1]]);
     this.hq = new Building(buildingById('hq'), map.hq[0], map.hq[1], null, rally);
     this.hq.tier = 0;
+    if (diff.hq !== 1) { const m = Math.round(this.hq.health.max * diff.hq); this.hq.health.setBase(m, this.hq.health.armor); this.hq.health.hp = m; }
+    setHQ(this.hq);
     this.buildings.push(this.hq);
     this.pads = (map.pads ?? []).map((p, i) => new BuildPad(i, p[0], p[1]));
     this.setupMapObjects();
@@ -138,7 +149,13 @@ export class Game {
   private setupMapObjects() {
     const L = this.paths.length;
     this.setupShortcuts();
-    const kinds: EnvKind[] = ['bunker', 'watchtower', 'ruins'];
+    // fixed structures authored into the map (El Morro's garitas)
+    for (const [k, x, y] of (this.map.envs ?? [])) {
+      const e = new EnvStructure(k as EnvKind, x, y), cc = this.grid.worldToCell(e);
+      for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++) if (this.grid.block(cc.c + dc, cc.r + dr)) e.cells.push({ c: cc.c + dc, r: cc.r + dr });
+      this.envs.push(e);
+    }
+    const kinds: EnvKind[] = this.map.envs?.length ? ['bunker', 'ruins'] : ['bunker', 'watchtower', 'ruins'];
     const fr = [0.34, 0.55, 0.74];
     kinds.forEach((k, i) => {
       for (const side of [110, -110, 140, -140, 85, -85, 175, -175]) {
@@ -307,7 +324,8 @@ export class Game {
     const p = POWERS.find((x) => x.id === id)!;
     if ((this.powerCd[id] ?? 0) > 0) { this.toast(`${p.name} recharging`); return false; }
     if (this.energy < p.energy) { this.toast(`Need ${p.energy} energy`, '#ff8a7a'); return false; }
-    this.energy -= p.energy; this.powerCd[id] = p.cooldown;
+    this.energy -= p.energy; this.powerCd[id] = p.cooldown; this.stats.powers++;
+    this.voice(id === 'mac' ? 'MAC round inbound!' : 'Medic drop away!');
     let ang = 0, x = at.x, y = at.y;
     if (id === 'mac') {
       const nl = this.nearestLane(at);
@@ -381,6 +399,11 @@ export class Game {
       const load = this.blockLoad.get(b) ?? 0;
       if (load < b.blockCap) { this.blockLoad.set(b, load + 1); return b; }
     }
+    for (const a of this.allies) {
+      if (!a.alive || a.data.flying || dist2(a, e) > (e.data.radius + a.data.radius + 6) ** 2) continue;
+      const load = this.blockLoad.get(a) ?? 0;
+      if (load < a.blockCap) { this.blockLoad.set(a, load + 1); return a; }
+    }
     for (const u of this.units) {
       if (!u.alive || u.garrison || u.dropT > 0) continue;
       if (dist2(u, e) > (e.data.radius + 14) ** 2) continue;
@@ -388,6 +411,84 @@ export class Game {
       if (load < u.blockCap) { this.blockLoad.set(u, load + 1); return u; }
     }
     return null;
+  }
+  // ------------------------------------------------------------------ t28: hypnosis, bosses, vet aura
+  /** Hypno-Shroom: the enemy switches sides at FULL health and marches back down the road. */
+  hypnotize(e: Enemy, tw: Tower | null, power: number): boolean {
+    if (!e.alive || e.ally || e.data.boss || e.data.bossKit) return false;
+    e.ally = true; e.allyPower = power;
+    e.hp = e.maxHp; e.shield = e.maxShield; e.shieldDown = false;
+    e.stunT = 0; e.slowT = 0; e.blockedBy = null; e.atBase = false;
+    this.enemies = this.enemies.filter((x) => x !== e);
+    this.allies.push(e);
+    this.stats.hypno++;
+    this.fx({ kind: 'ring', x: e.x, y: e.y, r: 40, color: '#ff4dd8', dur: 0.7 });
+    if (tw) this.fx({ kind: 'beam', x: tw.x, y: tw.y - 20, x2: e.x, y2: e.y, color: '#ff4dd8', width: 5, dur: 0.25 });
+    this.fx({ kind: 'text', x: e.x, y: e.y - e.data.radius - 16, text: 'HYPNOTIZED!', color: '#ff7ae6', dur: 1.2 });
+    this.sfx('hypno', e.x, e.y);
+    return true;
+  }
+  /** Boss crossed a phase threshold. */
+  bossPhaseChange(e: Enemy) {
+    this.stats.bossPhase2++;
+    const p3 = e.bossPhase === 3;
+    this.toast(p3 ? `${e.data.name}: PHASE 3 — FRENZY!` : `${e.data.name}: PHASE 2 — shield down, it's calling reinforcements!`, '#ff6b6b');
+    this.fx({ kind: 'ring', x: e.x, y: e.y, r: e.data.radius * 3, color: p3 ? '#ff3355' : '#ffb35a', dur: 0.9 });
+    this.fx({ kind: 'boom', x: e.x, y: e.y, r: e.data.radius * 1.4, dur: 0.6 });
+    this.shake(14); this.shock(e.x, e.y, 320, 0.7);
+    this.sfx('boss', e.x, e.y); this.voice(p3 ? 'It is enraged! Hold the line!' : 'Shield is down! Light it up!');
+  }
+  /** Damage every friendly (tower / troop / barrier / building) near a point. */
+  hurtFriendlies(x: number, y: number, r: number, dmg: number) {
+    const p = { x, y }, r2 = r * r;
+    for (const t of this.towers) if (t.alive && !t.disabled && dist2(t, p) <= r2) t.takeDamage(this, dmg);
+    for (const u of this.units) if (u.alive && u.dropT <= 0 && dist2(u, p) <= r2) u.takeDamage(this, dmg);
+    for (const b of this.barriers) if (b.alive && dist2(b, p) <= r2) b.takeDamage(this, dmg);
+    for (const b of this.buildings) if (b.alive && dist2(b, p) <= (r + 40) ** 2) b.takeDamage(this, dmg * 0.5);
+  }
+  /** Phase-2 boss attack on the player's defenses. Returns false if nothing in reach. */
+  bossAttack(e: Enemy): boolean {
+    const k = e.data.bossKit!, tgt = this.nearestFriendly(e, k.attackRadius);
+    if (!tgt) return false;
+    this.stats.bossAttacks++;
+    const style = e.bossPhase === 3 ? (['laser', 'bombs', 'smash'] as const)[this.stats.bossAttacks % 3] : k.attack;
+    if (style === 'laser') {
+      // sweeping laser: a beam from the boss through the target and beyond
+      const a = Math.atan2(tgt.y - e.y, tgt.x - e.x), L = Math.hypot(tgt.x - e.x, tgt.y - e.y) + 120;
+      const x2 = e.x + Math.cos(a) * L, y2 = e.y + Math.sin(a) * L;
+      for (let i = 0; i <= 8; i++) { const f = i / 8; this.hurtFriendlies(e.x + (x2 - e.x) * f, e.y + (y2 - e.y) * f, 26, k.attackDamage / 4); }
+      this.fx({ kind: 'beam', x: e.x, y: e.y - e.data.radius * 0.4, x2, y2, color: '#ff3355', width: 14, dur: 0.35 });
+      this.fx({ kind: 'boom_fire', x: tgt.x, y: tgt.y, r: 40, dur: 0.4 });
+      this.sfx('laser', e.x, e.y);
+    } else if (style === 'bombs') {
+      for (let i = 0; i < 3; i++) {
+        const bx = tgt.x + rand(-50, 50), by = tgt.y + rand(-50, 50);
+        this.hurtFriendlies(bx, by, 60, k.attackDamage);
+        this.fx({ kind: 'boom', x: bx, y: by, r: 60, dur: 0.5 });
+      }
+      this.shake(8); this.sfx('explosion', tgt.x, tgt.y);
+    } else {
+      const r = Math.min(k.attackRadius, 160 + e.data.radius);
+      this.hurtFriendlies(e.x, e.y, r, k.attackDamage);
+      this.fx({ kind: 'ring', x: e.x, y: e.y, r, color: '#c9b48a', dur: 0.6 });
+      this.fx({ kind: 'dust', x: e.x, y: e.y + 10, r: r * 0.8, color: '#a8926a', dur: 0.7 });
+      this.shake(12); this.shock(e.x, e.y, r * 1.5, 0.6); this.sfx('smash', e.x, e.y);
+    }
+    if (this.stats.bossAttacks % 3 === 1) this.voice('Under attack!');
+    return true;
+  }
+  /** 3-star veterans inspire nearby troops (+10% fire rate). */
+  private vetAuraTick() {
+    const vets = this.units.filter((u) => u.alive && u.stars >= 3);
+    if (!vets.length) return;
+    const r2 = VET_AURA.radius ** 2;
+    for (const u of this.units) if (u.alive && vets.some((v) => v !== u && dist2(v, u) <= r2)) u.vetAuraT = 0.25;
+  }
+  /** Abilities a squad can use now: its kit + Rally once it has a 3-star veteran. */
+  squadAbilities(sq: Squad): AbilityId[] {
+    const a = [...(sq.data.abilities ?? [])];
+    if (sq.units.some((u) => u.alive && u.stars >= 3)) a.push('rally');
+    return a;
   }
   nearestFriendly(p: Vec, r: number): Damageable | null {
     let best: Damageable | null = null, bd = r;
@@ -458,6 +559,18 @@ export class Game {
     const crit = Math.random() < 0.08; if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
     const dmg0 = c.damage * (crit ? 2 : 1);
+    if (c.chain) { this.teslaChain(tw, targets[0], dmg0, c, hit); return; }
+    if (c.devour != null) {
+      const tgt = targets[0];
+      if (!tgt.data.boss && tgt.maxHp <= c.devour && !tgt.data.children) {
+        this.stats.devoured++;
+        tgt.takeDamage(this, tgt.hp + tgt.shield + 9999, 'magic', tw, { ...hit, ap: true, shieldBreak: 99 });
+        this.fx({ kind: 'text', x: tgt.x, y: tgt.y - 26, text: 'CHOMP!', color: '#c6ff6a', dur: 0.8 });
+      } else tgt.takeDamage(this, dmg0, 'melee', tw, hit);
+      this.fx({ kind: 'splat', x: tgt.x, y: tgt.y, r: 20, color: '#8fdc5a', dur: 0.3 });
+      this.sfx('splat', tw.x, tw.y);
+      return;
+    }
     if (tw.data.hitscan) {
       const sniper = tw.data.id === 'sniper_monkey';
       for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, sniper ? '#fff6d0' : kind === 'rail' ? '#8fd0ff' : '#ff4040', sniper ? 2 : kind === 'rail' ? 5 : 2.5, hit);
@@ -473,9 +586,9 @@ export class Game {
       return;
     }
     const shots = c.shots ?? 1;
-    const base = tw.fixedAim ?? Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x);
+    const base = (tw.fixedAim ?? Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x)) + (kind === 'boomerang' ? -0.8 : 0);
     for (let i = 0; i < shots; i++) {
-      const spread = shots > 1 ? (i - (shots - 1) / 2) * (kind === 'shuriken' ? 0.22 : 0.16) : 0;
+      const spread = shots > 1 ? (i - (shots - 1) / 2) * (kind === 'shuriken' ? 0.22 : kind === 'boomerang' ? 0.5 : 0.16) : 0;
       this.projectiles.push(new Projectile({
         kind: special ? 'gpea' : kind, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: c.projectileSpeed ?? 600,
         damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? 2 : 1), type: special ? 'explosive' : type, pierce: c.pierce,
@@ -484,6 +597,23 @@ export class Game {
         hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround,
       }));
     }
+  }
+  /** Tesla Coil: lightning jumps target -> nearest unhit enemy (80% damage per jump). */
+  teslaChain(tw: Tower, first: Enemy, dmg: number, c: CombatStats, hit: HitOpts) {
+    let from: Vec = { x: tw.x, y: tw.y - 40 }, cur: Enemy | null = first;
+    const done = new Set<Enemy>();
+    for (let j = 0; j <= (c.chain ?? 0) && cur; j++) {
+      done.add(cur);
+      cur.takeDamage(this, dmg, 'energy', tw, hit);
+      if (c.slow) { cur.slowAmt = Math.max(cur.slowAmt, c.slow); cur.slowT = 0.5; }
+      this.fx({ kind: 'beam', x: from.x, y: from.y, x2: cur.x, y2: cur.y, color: '#9fe7ff', width: j ? 2.5 : 4, dur: 0.12, jag: 1 } as Effect);
+      if (j) this.stats.chain++;
+      from = cur; dmg *= 0.8;
+      let best: Enemy | null = null, bd = 120 * 120;
+      for (const e of this.enemies) if (e.alive && !done.has(e) && (!e.data.air || hit.antiAir)) { const d = dist2(e, from); if (d < bd) { bd = d; best = e; } }
+      cur = best;
+    }
+    this.sfx('zap', tw.x, tw.y);
   }
   beam(from: Vec, tgt: Enemy, dmg: number, type: DamageType, pierce: number, color: string, width: number, hit?: HitOpts) {
     // hitscan: hit target + up to (pierce-1) enemies along the line behind it
@@ -537,7 +667,11 @@ export class Game {
   // ------------------------------------------------------------------ spawning
   spawnEnemy(id: string, progress: number, lateral = 0, lane = 0, hpMul = 1): Enemy {
     lane = Math.min(lane, this.paths.length - 1);
+    // bosses scale at ~half the wave HP curve so late bosses stay beatable (final boss ~70k on Hard)
+    if (ENEMIES[id].bossKit && hpMul > 1) hpMul = 1 + (hpMul - 1) * 0.45;
     const e = new Enemy(ENEMIES[id], progress, lateral, lane, hpMul);
+    e.speedK = this.diff.speed;
+    if (e.data.bossKit) { this.toast(`⚠ ${e.data.name} approaches! Phase 1: plated + shielded`, '#ff6b6b'); this.sfx('boss'); this.voice('Under attack! Boss inbound!'); }
     const ps = this.paths[lane]; e.pathLen = ps.length;
     const p = ps.at(progress);
     e.x = p.x; e.y = p.y;
@@ -558,6 +692,14 @@ export class Game {
     this.damageHQ(lives, e);
   }
   win() { if (this.state === 'playing') { this.state = 'won'; this.bus.emit('gameover', { won: true }); } }
+  /** BTD6-style Freeplay: keep going after victory with endless procedural waves. */
+  startFreeplay() {
+    if (this.state !== 'won') return false;
+    this.state = 'playing'; this.waves.freeplay = true;
+    this.toast('FREEPLAY — waves keep scaling forever. How long can the frontier hold?', '#ffd84a');
+    return true;
+  }
+  voice(line: string) { this.voiceHook(line); }
   onWaveEnd() {
     for (const t of this.towers) if (t.alive && t.farm && !t.disabled) t.farm.onWaveEnd(t, this);
     for (const b of this.buildings) if (b.built && b.t.stats.waveBonus) { this.res.add(b.t.stats.waveBonus); this.stats.supplyIncome += b.t.stats.waveBonus; this.fx({ kind: 'text', x: b.x, y: b.y - 60, text: `+${b.t.stats.waveBonus}`, color: '#ffe14d', dur: 1.4 }); }
@@ -699,6 +841,7 @@ export class Game {
   }
   /** Multi-select move: squads spread into a line or column across the move direction. */
   moveGroup(sqs: Squad[], to: Vec, queue = false, formation: Formation = this.formation) {
+    if (sqs.length) this.voice(queue ? 'Orders received!' : 'Moving out!');
     sqs = sqs.filter((s) => s.alive);
     if (sqs.length <= 1) { if (sqs[0]) this.moveSquad(sqs[0], to, queue); return; }
     const cx = sqs.reduce((s, q) => s + q.center.x, 0) / sqs.length, cy = sqs.reduce((s, q) => s + q.center.y, 0) / sqs.length;
@@ -762,10 +905,16 @@ export class Game {
   }
   /** Squad abilities: ODST Stim / EMP, Spartan EMP Drop (Hijack). */
   useAbility(sq: Squad, id: AbilityId): boolean {
-    if (!sq.alive || !(sq.data.abilities ?? []).includes(id) || (sq.abilityCd[id] ?? 0) > 0) return false;
+    if (!sq.alive || !this.squadAbilities(sq).includes(id) || (sq.abilityCd[id] ?? 0) > 0) return false;
     const a = ABILITIES[id], c = sq.center;
     sq.abilityCd[id] = a.cooldown; sq.pulse = 1; this.stats.abilities++;
-    if (id === 'stim') {
+    if (id === 'rally') {
+      for (const u of this.units) if (u.alive && dist(u, c) <= RALLY.radius) { u.rallyT = RALLY.dur; u.health.heal(u.health.max * RALLY.heal); u.hitPulse = 1; this.healNumber(u.x, u.y - 20, u.health.max * RALLY.heal); }
+      this.stats.rally++;
+      this.fx({ kind: 'ring', x: c.x, y: c.y, r: RALLY.radius, color: '#ffd84a', dur: 0.8 });
+      this.fx({ kind: 'text', x: c.x, y: c.y - 40, text: 'RALLY!', color: '#ffd84a', dur: 1 });
+      this.sfx('ability', c.x, c.y); this.voice('Rally on me!');
+    } else if (id === 'stim') {
       for (const u of sq.units) { u.stimT = STIM.dur; u.health.damage(u.health.hp * STIM.hpCost); u.hitPulse = 1; }
       this.fx({ kind: 'text', x: c.x, y: c.y - 34, text: 'STIM!', color: '#ff7ad1', dur: 0.9 });
       this.sfx('ability', c.x, c.y);
@@ -854,6 +1003,7 @@ export class Game {
     this.waves.update(this, dt);
     for (const t of this.towers) t.update(this, dt);
     for (const u of this.units) u.update(this, dt);
+    this.vetAuraTick();
     this.updateGarrisons();
     this.updateSquads();
     for (const b of this.barriers) b.update(this, dt);
@@ -862,6 +1012,7 @@ export class Game {
     this.blockLoad.clear();
     for (const e of this.enemies) if (e.alive && e.blockedBy) this.blockLoad.set(e.blockedBy, (this.blockLoad.get(e.blockedBy) ?? 0) + 1);
     for (const e of this.enemies) if (e.alive) e.update(this, dt);
+    for (const a of this.allies) if (a.alive) a.updateAlly(this, dt);
     for (const p of this.projectiles) p.update(this, dt);
     for (const p of this.pickups) p.update(this, dt);
     for (const a of this.acids) {
@@ -872,7 +1023,8 @@ export class Game {
       }
     }
     this.acids = this.acids.filter((a) => a.t < 1);
-    this.enemies = this.enemies.filter((e) => e.alive);
+    this.enemies = this.enemies.filter((e) => e.alive && !e.ally);
+    this.allies = this.allies.filter((a) => a.alive);
     this.projectiles = this.projectiles.filter((p) => p.alive);
     this.pickups = this.pickups.filter((p) => p.alive);
     this.units = this.units.filter((u) => u.alive);

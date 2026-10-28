@@ -12,6 +12,7 @@ import { TOWERS, towerById } from '../data/towers';
 import { UNITS, unitById } from '../data/units';
 import { Faction, TARGETING_ORDER, TARGETING_LABEL, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
 import { ABILITIES } from '../data/abilities';
+import { ENEMIES } from '../data/enemies';
 import { gEject } from '../entities/Garrison';
 import { IMG, sprite } from '../render/sprites';
 import type { Building, BuildPad } from '../entities/Building';
@@ -38,6 +39,9 @@ function statLine(t: TowerTier): string {
   if (t.farm) s.push(`¢ ${t.farm.income}×${t.farm.payoutsPerMin}/min`, `+${t.farm.waveBonus}/wave`);
   if (t.aura) s.push(`🌿 ${t.aura.radius}: +${Math.round(t.aura.ratePct * 100)}% rate${t.aura.incomePct ? ` +${Math.round(t.aura.incomePct * 100)}% income` : ''}`);
   if (t.orbs) s.push(`🔆 ${t.orbs.energy}⚡×${t.orbs.perMin}/min`);
+  if (t.hypno) s.push(`🌀 ${t.hypno.maxConverted} max`, `⏱ ${t.hypno.perMin}/min`, `≤${t.hypno.maxHp}HP foes`, `◎ ${t.hypno.range}`);
+  if (t.combat?.chain) s.push(`⚡ chains ${t.combat.chain}`);
+  if (t.combat?.devour) s.push(`🍽 devours ≤${t.combat.devour}HP`);
   if (t.barrier) s.push(t.barrier.blast ? `💥 ${t.barrier.blast} r${t.barrier.blastRadius}` : `🧱 blocks ${t.barrier.blockCap}`);
   s.push(`❤ ${t.maxHp}`);
   return s.join(' · ');
@@ -131,7 +135,7 @@ export class Hud {
     const bar = $('#powers'); if (!bar) return; bar.innerHTML = '';
     for (const p of POWERS) {
       const b = h('button', 'power', `<span class="pi">${p.icon}</span><span class="pn">${p.name}</span><span class="pc">⚡${p.energy}</span><i class="pcd"></i>`);
-      b.dataset.power = p.id; b.title = p.desc;
+      b.dataset.power = p.id; b.title = `${p.desc} (${p.id === 'mac' ? 'M' : 'J'})`;
       b.onclick = () => { this.view.power = this.view.power === p.id ? null : p.id; this.view.placing = this.view.deploying = null; this.view.rallyFor = null; this.refresh(true); };
       bar.appendChild(b);
     }
@@ -330,8 +334,8 @@ export class Hud {
     const g = this.g, items: { key: string; icon: string; name: string; cd: number; max: number; use: () => void; hot: number }[] = [];
     const sel = this.view.selSquads.filter((q) => q.alive);
     const pool = sel.length ? sel : g.squads.filter((q) => q.alive && q.data.abilities?.length);
-    for (const id of ['stim', 'emp', 'hijack'] as AbilityId[]) {
-      const sqs = pool.filter((q) => q.data.abilities?.includes(id)); if (!sqs.length) continue;
+    for (const id of ['stim', 'emp', 'hijack', 'rally'] as AbilityId[]) {
+      const sqs = pool.filter((q) => g.squadAbilities(q).includes(id)); if (!sqs.length) continue;
       const ready = sqs.find((q) => (q.abilityCd[id] ?? 0) <= 0), cd = Math.min(...sqs.map((q) => q.abilityCd[id] ?? 0));
       items.push({ key: id, icon: ABILITIES[id].icon, name: ABILITIES[id].name, cd, max: ABILITIES[id].cooldown, use: () => { const q = ready ?? sqs[0]; g.useAbility(q, id); }, hot: items.length + 1 });
     }
@@ -385,9 +389,12 @@ export class Hud {
       pb.classList.toggle('poor', !g.canCast(id));
       $('.pcd', pb).style.height = `${(cd / pw.cooldown) * 100}%`;
     }
-    $('#wave').textContent = `${g.waves.current}/${g.waves.total}`;
-    const next = g.waves.waves[g.waves.index];
-    $('#wave-info').textContent = g.waves.active ? `${g.waves.remainingToSpawn} incoming · ${g.enemies.length} on field` : next ? `Next: ${describeWave(next)}` : 'All waves cleared';
+    $('#wave').textContent = g.waves.freeplay ? `Freeplay ${g.waves.current}` : `${g.waves.current}/${g.waves.total}`;
+    $('#wave').parentElement!.classList.toggle('freeplay', g.waves.freeplay);
+    const next = g.waves.next;
+    $('#wave-info').textContent = g.waves.active ? `${g.waves.remainingToSpawn} incoming · ${g.enemies.length} on field${g.allies.length ? ` · 🌀${g.allies.length} hypnotized` : ''}` : next ? `Next: ${describeWave(next)}` : 'All waves cleared';
+    this.wavePreview();
+    this.bossBar();
     const sb = $<HTMLButtonElement>('#btn-start'); sb.disabled = g.waves.active || g.state !== 'playing';
     $('#btn-auto').classList.toggle('on', g.waves.auto);
     $('#btn-pause').textContent = g.paused ? '▶' : '⏸';
@@ -438,14 +445,55 @@ export class Hud {
     setTimeout(() => t.classList.add('out'), 2600); setTimeout(() => t.remove(), 3200);
   }
   private gameOver(won: boolean) {
-    const o = $('#gameover');
+    const o = $('#gameover'), g = this.g;
     o.innerHTML = `<div class="panel"><h1>${won ? '🏆 Frontier Holds!' : '💥 The line broke'}</h1>
-      <p>Waves cleared: ${this.g.waves.index}/${this.g.waves.total} · Kills: ${this.g.stats.kills} · HQ: ${this.g.lives}</p>
-      <button class="btn big" onclick="location.reload()">Play again</button></div>`;
+      <p class="go-diff">${g.diff.icon} ${g.diff.name} · ${g.map.name}</p>
+      <p>Waves cleared: ${g.waves.freeplay ? `Freeplay ${g.waves.index}` : `${g.waves.index}/${g.waves.total}`} · Kills: ${g.stats.kills} · HQ: ${g.lives} · Hypnotized: ${g.stats.hypno} · Bosses felled: ${g.stats.bossKills}</p>
+      <div class="row go-btns">${won ? '<button class="btn big go" id="btn-freeplay" title="Keep playing with endlessly scaling waves">♾ Freeplay</button>' : ''}<button class="btn big" id="btn-again">Play again</button></div>
+      ${won ? '<p class="hint">Freeplay keeps your base and towers and sends endless, ever-tougher waves (bosses every 10).</p>' : ''}</div>`;
     o.classList.add('show');
+    $('#btn-again', o).onclick = () => location.reload();
+    const fp = o.querySelector<HTMLElement>('#btn-freeplay');
+    if (fp) fp.onclick = () => { if (g.startFreeplay()) { o.classList.remove('show'); this.refresh(true); } };
+  }
+  /** Dynamic wave preview: icon chips for the next (or still-spawning) wave. */
+  private wavePreview() {
+    const el = document.getElementById('wave-preview'); if (!el) return;
+    const g = this.g, w = g.waves.active ? null : g.waves.next;
+    const ids = g.waves.active ? g.waves.pending() : w ? w.groups.flatMap((gr) => Array(gr.count).fill(gr.enemy) as string[]) : [];
+    const m = new Map<string, number>(); for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
+    const sig = `${g.waves.active}|${g.waves.index}|${[...m].map(([k, v]) => k + v).join()}`;
+    if (el.dataset.sig === sig) return; el.dataset.sig = sig;
+    const chips = [...m].sort((a, b) => (ENEMIES[b[0]].boss ? 1 : 0) - (ENEMIES[a[0]].boss ? 1 : 0)).map(([id, n]) => {
+      const d = ENEMIES[id], tags = enemyTags(id);
+      const img = IMG[d.sprite] ? `<img src="${(IMG[d.sprite] as HTMLImageElement).src}" alt="">` : `<i style="background:${d.color}"></i>`;
+      return `<span class="wp-chip${d.boss ? ' boss' : ''}" title="${d.name}: ${tags.map((t) => TAG_NAMES[t]).join(', ') || 'basic'}">${img}<b>${n}</b>${tags.map((t) => `<em>${t}</em>`).join('')}</span>`;
+    });
+    const head = g.waves.active ? `Wave ${g.waves.current} · still coming` : w ? `${g.waves.freeplay ? 'Freeplay' : 'Next'} wave ${g.waves.index + 1}${w.boss ? ' · <span class="bad">⚠ BOSS</span>' : ''}` : 'All waves cleared';
+    el.innerHTML = `<span class="wp-head">${head}</span>${chips.join('')}`;
+    el.hidden = !chips.length && g.waves.active;
+  }
+  /** Big boss HP bar (top of the battlefield) with phase pips. */
+  private bossBar() {
+    const el = document.getElementById('boss-bar'); if (!el) return;
+    const b = this.g.enemies.filter((e) => e.alive && e.data.bossKit).sort((x, y) => y.maxHp - x.maxHp)[0];
+    el.hidden = !b; if (!b) return;
+    const k = b.data.bossKit!, phases = k.frenzy ? 3 : 2;
+    el.innerHTML = `<div class="bb-name">💀 ${b.data.name} <span>PHASE ${b.bossPhase}/${phases}${b.bossPhase === 1 ? ' · plated + shielded' : b.bossPhase === 2 ? ' · reinforcements + attacks' : ' · FRENZY'}</span></div>
+      <div class="bb-bar"><i class="bb-hp" style="width:${(b.hp / b.maxHp) * 100}%"></i>${b.maxShield ? `<i class="bb-sh" style="width:${(b.shield / b.maxShield) * 100}%"></i>` : ''}<s style="left:50%"></s>${k.frenzy ? '<s style="left:20%"></s>' : ''}</div>`;
   }
 }
 
+const TAG_NAMES: Record<string, string> = { '⚡': 'fast', '⛨': 'armored', '🪽': 'flying', '🛡': 'shielded', '💀': 'boss', '🐘': 'heavy' };
+function enemyTags(id: string): string[] {
+  const d = ENEMIES[id], t: string[] = [];
+  if (d.boss) t.push('💀');
+  if (d.speed >= 70) t.push('⚡');
+  if ((d.armored ?? 0) > 0 || d.bossKit) t.push('⛨');
+  if (d.flying || d.air) t.push('🪽');
+  if (d.shield) t.push('🛡');
+  return t;
+}
 function describeWave(w: { groups: { enemy: string; count: number }[] }) {
   const m = new Map<string, number>();
   for (const g of w.groups) m.set(g.enemy, (m.get(g.enemy) ?? 0) + g.count);

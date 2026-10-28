@@ -29,8 +29,8 @@ export class Sfx {
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(this.master!); o.start(t); o.stop(t + dur + 0.02);
   }
-  private burst(dur: number, vol: number, freq: number, q = 0.8) {
-    const c = this.ctx!, t = c.currentTime, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+  private burst(dur: number, vol: number, freq: number, q = 0.8, delay = 0) {
+    const c = this.ctx!, t = c.currentTime + delay, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
     s.buffer = this.noise; f.type = 'lowpass'; f.frequency.setValueAtTime(freq, t); f.frequency.exponentialRampToValueAtTime(Math.max(60, freq * 0.15), t + dur); f.Q.value = q;
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f); f.connect(g); g.connect(this.master!); s.start(t); s.stop(t + dur);
@@ -48,7 +48,12 @@ export class Sfx {
       case 'rail': this.tone('square', 2400, 200, 0.18, 0.08); this.burst(0.12, 0.1, 6000); break;
       case 'pop': this.tone('sine', 900 + Math.random() * 500, 200, 0.06, 0.14); break;
       case 'splat': this.burst(0.09, 0.14, 900); break;
-      case 'explosion': this.burst(0.45, 0.5, 1400); this.tone('sine', 120, 40, 0.4, 0.35); break;
+      // heavier boom: sharp crack, sub-bass thump, rolling debris tail
+      case 'explosion': this.burst(0.08, 0.55, 7000, 1.2); this.burst(0.7, 0.6, 1100); this.tone('sine', 95, 28, 0.6, 0.55); this.tone('triangle', 60, 24, 0.8, 0.3, 0.03); this.burst(0.5, 0.18, 500, 0.6, 0.18); break;
+      case 'smash': this.tone('sine', 70, 22, 0.7, 0.65); this.burst(0.6, 0.5, 700); this.burst(0.3, 0.2, 2400, 1, 0.1); break;
+      case 'boss': this.tone('sawtooth', 110, 55, 0.9, 0.2); this.tone('sawtooth', 116, 58, 0.9, 0.16); this.tone('sine', 55, 30, 1.1, 0.4); break;
+      case 'hypno': for (let i = 0; i < 4; i++) this.tone('sine', 400 + i * 180, 900 - i * 120, 0.22, 0.1, i * 0.07); break;
+      case 'zap': this.tone('square', 3200, 600, 0.06, 0.06); this.burst(0.08, 0.12, 8000, 4); break;
       case 'mac': this.tone('sawtooth', 3000, 60, 0.35, 0.18); this.burst(0.9, 0.7, 2200); this.tone('sine', 80, 30, 0.9, 0.5); break;
       case 'ability': this.tone('triangle', 400, 1200, 0.25, 0.2); this.tone('sine', 1200, 1600, 0.15, 0.12, 0.12); break;
       case 'emp': this.tone('square', 200, 1800, 0.12, 0.12); this.tone('sine', 1800, 90, 0.5, 0.18, 0.1); break;

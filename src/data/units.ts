@@ -146,6 +146,38 @@ export const UNITS: UnitData[] = [
         weapon: NO_WEAPON },
     ],
   },
+  {
+    id: 'scorpion', name: 'M808 Scorpion', faction: Faction.UNSC, role: 'troop', sprite: 'scorpion', vehicle: true, scrapCost: 80, blockCap: 6,
+    desc: 'Main battle tank. 90mm shells splash crowds and crack armor; holds 6 bugs at the treads. Slow and pricey (scrap).',
+    squadSize: 1, maxSquads: 2, cooldown: 20, population: 5, tech: 2, trainTime: 18,
+    tiers: [
+      { name: 'Scorpion', cost: 1100, blurb: '90mm HE shells.', visual: { level: 0, scale: 1 },
+        stats: { maxHp: 600, damage: 22, attackRate: 0.55, range: 210, speed: 60, armor: 8 },
+        weapon: { name: '90mm Cannon', type: 'explosive', hitsAir: false, projectile: 'shell', splash: 55, armorPiercing: true } },
+      { name: 'Scorpion Mk II', cost: 900, blurb: 'Heavier shells, coax MG.', visual: { level: 1, scale: 1.06, glow: G1 },
+        stats: { maxHp: 780, damage: 34, attackRate: 0.65, range: 225, speed: 64, armor: 10 },
+        weapon: { name: '105mm Cannon', type: 'explosive', hitsAir: false, projectile: 'shell', splash: 65, armorPiercing: true } },
+      { name: 'Grizzly', cost: 1800, blurb: 'Twin cannons: huge splash.', visual: { level: 2, scale: 1.12, glow: G2 },
+        stats: { maxHp: 1000, damage: 50, attackRate: 0.8, range: 240, speed: 66, armor: 12 },
+        weapon: { name: 'Twin 120mm', type: 'explosive', hitsAir: false, projectile: 'shell', splash: 80, armorPiercing: true } },
+    ],
+  },
+  {
+    id: 'ranger', name: 'Frontier Rangers', faction: Faction.Frontier, role: 'troop', sprite: 'ranger', blockCap: 2,
+    desc: 'Kingdom Rush-style archers: long-range volleys that hit aircraft. Fragile up close.',
+    squadSize: 3, maxSquads: 4, cooldown: 8, population: 2, tech: 0, trainTime: 8,
+    tiers: [
+      { name: 'Rangers', cost: 260, blurb: 'Longbows.', visual: { level: 0, scale: 1 },
+        stats: { maxHp: 45, damage: 2, attackRate: 1.6, range: 200, speed: 86, armor: 0 },
+        weapon: { name: 'Longbow', type: 'sharp', projectile: 'arrow', hitsAir: true, antiAir: true } },
+      { name: 'Wardens of the Wild', cost: 320, blurb: 'Bodkin arrows pierce armor.', visual: { level: 1, scale: 1.06, glow: G1 },
+        stats: { maxHp: 60, damage: 3, attackRate: 1.9, range: 220, speed: 90, armor: 1 },
+        weapon: { name: 'Bodkin Bow', type: 'sharp', projectile: 'arrow', hitsAir: true, antiAir: true, armorPiercing: true } },
+      { name: 'Elven Marksmen', cost: 650, blurb: 'Rapid volleys, longest reach.', visual: { level: 2, scale: 1.12, glow: G2 },
+        stats: { maxHp: 80, damage: 4.5, attackRate: 2.3, range: 245, speed: 94, armor: 2 },
+        weapon: { name: 'Elven Longbow', type: 'magic', projectile: 'arrow', hitsAir: true, antiAir: true, armorPiercing: true } },
+    ],
+  },
 ];
 
 export const unitById = (id: string) => {

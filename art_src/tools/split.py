@@ -119,6 +119,18 @@ sheet('bugs2', ['bug_brood', 'bug_titan'], [224, 384])
 sheet('bloons1', ['bloon_red', 'bloon_blue', 'bloon_green', 'bloon_yellow', 'bloon_pink'], 128)
 sheet('bloons2', ['bloon_lead', 'bloon_ceramic', 'bloon_moab'], [128, 128, 384])
 sheet('items', ['fx_dart', 'fx_shuriken', 'fx_ice', 'fx_melon', 'fx_cherry', 'fx_bullet', 'fx_crate', 'fx_coin'], [96, 64, 64, 64, 48, 48, 96, 48])
+# ---- t28 roster + bosses
+sheet('hypno', ['hypno_shroom_0', 'hypno_shroom_1', 'hypno_shroom_2'], T)
+sheet('boomerang', ['boomerang_monkey_0', 'boomerang_monkey_1', 'boomerang_monkey_2'], T, [1, 1, 1])
+sheet('tesla', ['tesla_coil_0', 'tesla_coil_1', 'tesla_coil_2'], T)
+sheet('chomper', ['chomper_0', 'chomper_1', 'chomper_2'], T, [1, 1, 1])
+sheet('scorpion', ['scorpion_0', 'scorpion_1', 'scorpion_2'], 224)
+sheet('ranger', ['ranger_0', 'ranger_1', 'ranger_2'], U)
+sheet('bosses', ['boss_scarab', 'boss_zeppelin', 'boss_dreadnought'], 384, [1, 0, 1])
+sheet('boss_final', ['boss_leviathan'], 480)
+# El Morro garita (garrisonable sentry box) from the deco sheet's first cell
+dm = Image.open(f'{ROOT}/cut/deco_morro.png').convert('RGBA')
+save(dm.crop((0, 0, dm.width // 4, dm.height // 2)), 'env_garita', 220)
 # fx grid 4x2 on black
 fx = Image.open(f'{ROOT}/cut/fx.png').convert('RGBA'); W, H = fx.size
 names = [['fx_boom', 'fx_muzzle', 'fx_magic', 'fx_spark'], ['fx_acid', 'fx_pop', 'fx_pea', 'fx_star']]

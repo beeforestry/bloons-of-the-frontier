@@ -30,11 +30,20 @@ export class Tower implements Buffable, Garrisonable {
   disabledT = 0;
   slide: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number } | null = null;
   aim = -Math.PI / 2;
+  /** Rendered aim: eases toward `aim` (smooth turret / arm tracking). */
+  aimVis = -Math.PI / 2;
   recoil = 0;
+  /** 0..1 wind-up toward the next shot (draw-back / plant crouch before firing). */
+  charge = 0;
+  /** Seconds since the last shot (throw / reload motion). */
+  sinceFire = 9;
+  /** Has a live target (aiming pose vs idle). */
+  engaged = false;
   combat?: CombatTower;
   cover?: CoverTower;
   farm?: FarmTower;
   flora?: FloraTower;
+  hypno?: HypnoTower;
   /** Troops inside (cover towers: many slots; combat towers: 1). */
   garrisoned: Unit[] = [];
   /** Repeater: fixed firing direction. */
@@ -55,8 +64,8 @@ export class Tower implements Buffable, Garrisonable {
   }
   gName() { return this.t.name; }
   gSlots() { return this.t.cover?.garrisonSlots ?? (this.t.combat ? 1 : 0); }
-  gProtect() { return this.t.cover?.garrisonProtect ?? 0.35; }
-  gRange() { return this.t.cover?.garrisonRangePct ?? 0.15; }
+  gProtect() { return this.t.cover?.garrisonProtect ?? 0.5; }
+  gRange() { return this.t.cover?.garrisonRangePct ?? 0.35; }
   gOpen() { return this.alive && !this.disabled; }
   get t(): TowerTier { return this.data.tiers[this.tier]; }
   get nextTier(): TowerTier | undefined { return this.data.tiers[this.tier + 1]; }
@@ -71,6 +80,7 @@ export class Tower implements Buffable, Garrisonable {
     if (this.t.cover && !this.cover) this.cover = new CoverTower(this);
     if (this.t.farm && !this.farm) this.farm = new FarmTower();
     if ((this.t.aura || this.t.orbs) && !this.flora) this.flora = new FloraTower(this);
+    if (this.t.hypno && !this.hypno) this.hypno = new HypnoTower();
   }
 
   upgrade(g: Game): boolean {
@@ -133,6 +143,11 @@ export class Tower implements Buffable, Garrisonable {
 
   update(g: Game, dt: number) {
     this.recoil = Math.max(0, this.recoil - dt * 6);
+    this.sinceFire += dt;
+    { // eased aim tracking (critically damped toward the logical aim)
+      let d = this.aim - this.aimVis; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      this.aimVis += d * Math.min(1, dt * (this.sweep ? 30 : 11));
+    }
     this.pulse = Math.max(0, this.pulse - dt * 2);
     if (this.abilityCd > 0) this.abilityCd -= dt;
     this.garrisoned = this.garrisoned.filter((u) => u.alive);
@@ -155,6 +170,7 @@ export class Tower implements Buffable, Garrisonable {
     this.cover?.update(this, g, dt);
     this.farm?.update(this, g, dt);
     this.flora?.update(this, g, dt);
+    this.hypno?.update(this, g, dt);
   }
   private updateSweep(g: Game, dt: number) {
     const s = this.sweep!, c = this.t.combat!;
@@ -173,11 +189,26 @@ export class Tower implements Buffable, Garrisonable {
 /** Combat module: BTD-style targeting + projectile or hitscan attacks. */
 export class CombatTower {
   cooldown = 0.2;
+  period = 1;
+  trackT = 0;
   shotCount = 0;
   update(tw: Tower, g: Game, dt: number) {
     const c = tw.t.combat!;
     this.cooldown -= dt;
-    if (this.cooldown > 0) return;
+    // wind-up: ramps 0->1 over the last 35% of the reload while engaged
+    tw.charge = tw.engaged ? Math.max(0, Math.min(1, 1 - this.cooldown / Math.max(0.05, this.period * 0.35))) : Math.max(0, tw.charge - dt * 3);
+    if (this.cooldown > 0) {
+      // keep tracking the current priority target between shots (eased in Tower.update)
+      this.trackT -= dt;
+      if (this.trackT <= 0 && tw.fixedAim === null && !tw.sweep) {
+        this.trackT = 0.12;
+        const f = { hitsAir: tw.data.hitsAir ?? true, hitsGround: tw.data.hitsGround ?? true, antiAir: !!tw.data.antiAir };
+        const t0 = pickTargets(g.enemies, tw, tw.range(c.range), tw.targeting, f, 1)[0];
+        tw.engaged = !!t0;
+        if (t0) tw.aim = Math.atan2(t0.y - tw.y, t0.x - tw.x);
+      }
+      return;
+    }
     if (tw.sweep) return;
     const range = tw.range(c.range);
     const shots = c.shots ?? 1;
@@ -192,8 +223,11 @@ export class CombatTower {
         return along > 0 && along < range && perp < 30 + e.data.radius;
       }).slice(0, 1);
     } else targets = pickTargets(g.enemies, tw, range, tw.targeting, filter, tw.data.hitscan ? shots : 1);
-    if (!targets.length) { this.cooldown = 0.05; return; }
+    if (!targets.length) { this.cooldown = 0.05; tw.engaged = false; tw.charge = Math.max(0, tw.charge - dt * 3); return; }
+    tw.engaged = true;
+    if (tw.fixedAim === null) tw.aim = Math.atan2(targets[0].y - tw.y, targets[0].x - tw.x);
     this.cooldown = 1 / (c.fireRate * (1 + tw.buffs.totals.ratePct));
+    this.period = this.cooldown; tw.sinceFire = 0;
     this.shotCount++;
     tw.aim = tw.fixedAim ?? Math.atan2(targets[0].y - tw.y, targets[0].x - tw.x);
     tw.recoil = 1;
@@ -260,5 +294,38 @@ export class FloraTower {
       this.orbT -= dt;
       if (this.orbT <= 0) { this.orbT = 60 / o.perMin; const a = Math.random() * 6.28; g.spawnPickup(tw.x + Math.cos(a) * 26, tw.y + 14 + Math.sin(a) * 14, o.energy, 'orb'); }
     }
+  }
+}
+
+/** Hypno-Shroom: puffs hypnotic spores at a non-boss enemy, converting it to fight
+ *  for you at FULL health (walks back up the lane brawling enemies). Tiers raise
+ *  conversions/min, how many allies it can hold and the max enemy size. */
+export class HypnoTower {
+  timer = 2.5;
+  mine: Enemy[] = [];
+  update(tw: Tower, g: Game, dt: number) {
+    const h = tw.t.hypno!;
+    this.mine = this.mine.filter((e) => e.alive);
+    const full = this.mine.length >= h.maxConverted;
+    this.timer -= dt;
+    const period = 60 / h.perMin;
+    tw.charge = full ? 0 : Math.max(0, Math.min(1, 1 - this.timer / Math.max(0.3, period * 0.35)));
+    if (full || this.timer > 0) return;
+    const r = tw.range(h.range);
+    let best: Enemy | null = null, bs = -1;
+    for (const e of g.enemies) {
+      if (!e.alive || e.data.boss || e.data.air || e.maxHp > h.maxHp || e.ally) continue;
+      const d2 = (e.x - tw.x) ** 2 + (e.y - tw.y) ** 2;
+      if (d2 > (r + e.data.radius) ** 2) continue;
+      const s = e.maxHp * 1e4 - e.remaining; // strongest it can hold
+      if (s > bs) { bs = s; best = e; }
+    }
+    if (!best) { this.timer = 0.25; tw.engaged = false; return; }
+    tw.engaged = true;
+    tw.aim = Math.atan2(best.y - tw.y, best.x - tw.x);
+    this.timer = period / (1 + tw.buffs.totals.ratePct);
+    tw.recoil = 1; tw.sinceFire = 0;
+    g.hypnotize(best, tw, h.power);
+    this.mine.push(best);
   }
 }

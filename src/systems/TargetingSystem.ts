@@ -3,6 +3,10 @@ import { TargetingMode, type Vec } from '../core/types';
 import { dist2 } from '../core/math';
 import type { Enemy } from '../entities/Enemy';
 
+/** HQ position for 'Closest to HQ' targeting (set by Game on construction). */
+let HQ_POS: Vec = { x: 0, y: 0 };
+export function setHQ(p: Vec) { HQ_POS = { x: p.x, y: p.y }; }
+
 export interface TargetFilter { hitsAir: boolean; hitsGround: boolean; antiAir?: boolean; exclude?: Set<Enemy> }
 /** Can this source hit e at all? Aircraft (air) need anti-air; other flyers need hitsAir. */
 export function canHit(e: Enemy, f: { hitsAir?: boolean; hitsGround?: boolean; antiAir?: boolean }): boolean {
@@ -26,6 +30,7 @@ export function pickTarget(enemies: Enemy[], origin: Vec, range: number, mode: T
       case TargetingMode.Strong: s = e.strength * 1e4 - e.remaining; break;
       case TargetingMode.Weak: s = -(e.hp + e.shield) * 1e4 - e.remaining; break;
       case TargetingMode.Close: s = -dist2(e, origin); break;
+      case TargetingMode.HQ: s = -dist2(e, HQ_POS); break;
       default: s = -e.remaining;
     }
     if (s > score) { score = s; best = e; }

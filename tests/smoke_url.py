@@ -7,6 +7,7 @@ errors, failed = [], []
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True)
     pg = b.new_page(viewport={'width': 1600, 'height': 960})
+    pg.add_init_script("localStorage.setItem('bof.tutorialDone','1')")
     pg.on('console', lambda m: m.type == 'error' and errors.append(m.text))
     pg.on('console', lambda m: m.type == 'warning' and 'missing asset' in m.text and errors.append(m.text))
     pg.on('pageerror', lambda e: errors.append(str(e)))

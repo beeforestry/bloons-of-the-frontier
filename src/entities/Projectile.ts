@@ -26,8 +26,18 @@ export class Projectile {
   }
   /** Height above ground for lobbed shots (render offset). */
   height = 0;
+  /** Boomerang: arcs out and curves back to the thrower; enemies can be hit again on the return. */
+  private boomT = 0; private returned = false;
   update(g: Game, dt: number) {
     this.life -= dt;
+    if (this.o.kind === 'boomerang') {
+      this.boomT += dt;
+      const turn = 3.1; // rad/s curve -> ~1s loop
+      this.angle += turn * dt;
+      this.vx = Math.cos(this.angle) * this.o.speed; this.vy = Math.sin(this.angle) * this.o.speed;
+      if (!this.returned && this.boomT > 0.5) { this.returned = true; this.hit.clear(); }
+      if (this.boomT > 1.05) { this.alive = false; return; }
+    }
     this.spin += dt * 14;
     if (this.life <= 0) { this.alive = false; return; }
     const o = this.o;

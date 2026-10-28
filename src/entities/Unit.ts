@@ -13,7 +13,7 @@ import { TargetingMode, type AbilityId, type Formation, type Stance, type UnitDa
 import { nextId, dist, rand } from '../core/math';
 import { BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
 import { pickTarget } from '../systems/TargetingSystem';
-import { STIM, VET } from '../data/abilities';
+import { RALLY, STIM, VET, VET_AURA } from '../data/abilities';
 import type { Game } from '../game/Game';
 import type { Tower } from './Tower';
 import type { Pickup } from './Pickup';
@@ -76,6 +76,8 @@ export class Unit implements Buffable {
   /** Veterancy. */
   xp = 0; stars = 0;
   stimT = 0;
+  /** Rank-3 veteran aura (+10% rate) refresh timer, and Rally buff timer. */
+  vetAuraT = 0; rallyT = 0;
   /** Selection-ring pulse when hit / on ability use. */
   hitPulse = 0;
   moving = false;
@@ -97,8 +99,8 @@ export class Unit implements Buffable {
   range(g: Game) { return this.t(g).stats.range * (1 + this.buffs.totals.bonusRangePct) * (this.garrison ? 1 + this.garrison.gRange() : 1); }
   get isWorker() { return this.data.role === 'worker'; }
   get blockCap() { return this.data.blockCap ?? 2; }
-  get dmgMul() { return 1 + VET.dmg * this.stars; }
-  get rateMul() { return (1 + VET.rate * this.stars) * (1 + this.buffs.totals.ratePct) * (this.stimT > 0 ? STIM.rate : 1); }
+  get dmgMul() { return (1 + VET.dmg * this.stars) * (this.rallyT > 0 ? 1 + RALLY.dmg : 1); }
+  get rateMul() { return (1 + VET.rate * this.stars) * (1 + this.buffs.totals.ratePct) * (this.stimT > 0 ? STIM.rate : 1) * (this.vetAuraT > 0 ? 1 + VET_AURA.rate : 1); }
   addXp = (n: number) => {
     if (!this.alive) return;
     this.xp += n;
@@ -155,6 +157,8 @@ export class Unit implements Buffable {
     const t = this.t(g), sq = this.squad;
     if (this.buffs.totals.regen > 0) this.health.heal(this.buffs.totals.regen * dt);
     if (this.stimT > 0) this.stimT -= dt;
+    if (this.vetAuraT > 0) this.vetAuraT -= dt;
+    if (this.rallyT > 0) this.rallyT -= dt;
     if (this.garrison) {
       this.x = this.garrison.x; this.y = this.garrison.y;
       this.health.heal(4 * dt);

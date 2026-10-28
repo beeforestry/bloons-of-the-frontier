@@ -1,0 +1,50 @@
+[
+ {
+  "map": "garden",
+  "diff": "easy",
+  "total": 40,
+  "reached": 40,
+  "won": true,
+  "hq": 239,
+  "hqMax": 280,
+  "towers": 30,
+  "leaked": 35,
+  "secs": 10
+ },
+ {
+  "map": "garden",
+  "diff": "medium",
+  "total": 60,
+  "reached": 19,
+  "won": false,
+  "hq": 0,
+  "hqMax": 200,
+  "towers": 17,
+  "leaked": 380,
+  "secs": 4
+ },
+ {
+  "map": "morro",
+  "diff": "easy",
+  "total": 40,
+  "reached": 19,
+  "won": false,
+  "hq": 0,
+  "hqMax": 280,
+  "towers": 17,
+  "leaked": 205,
+  "secs": 4
+ },
+ {
+  "map": "morro",
+  "diff": "medium",
+  "total": 60,
+  "reached": 11,
+  "won": false,
+  "hq": 0,
+  "hqMax": 200,
+  "towers": 4,
+  "leaked": 132,
+  "secs": 1
+ }
+]

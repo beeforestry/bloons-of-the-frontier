@@ -45,6 +45,8 @@ export function towerPower(t: TowerTier): number {
   if (t.farm) p += (t.farm.income * t.farm.payoutsPerMin) / 10 + t.farm.waveBonus / 20;
   if (t.aura) p += (t.aura.radius / 100) * (t.aura.ratePct * 20 + t.aura.incomePct * 20);
   if (t.orbs) p += (t.orbs.energy * t.orbs.perMin) / 10;
+  if (t.hypno) p += t.hypno.perMin * t.hypno.maxConverted * Math.sqrt(t.hypno.maxHp) * t.hypno.power / 10 + t.hypno.range / 100;
+  if (t.combat) p += (t.combat.chain ?? 0) * t.combat.damage * t.combat.fireRate * 0.8 + (t.combat.devour ?? 0) * t.combat.fireRate / 10;
   if (t.barrier) p += t.barrier.hp / 50 + t.barrier.blockCap + (t.barrier.blast ?? 0) * (t.barrier.blastRadius ?? 0) / 1000;
   if (t.combat) p += (t.combat.armorShred ?? 0) * 5 + (t.combat.shieldBreak ?? 0);
   if (t.cover) p += (t.cover.garrisonProtect ?? 0) * 5 + (t.cover.garrisonRangePct ?? 0) * 5;
@@ -70,6 +72,7 @@ export function validateTower(t: TowerData): Issue[] {
     if (t.kind === 'cover' && !tier.cover) out.push({ owner: t.id, tier: i, msg: 'cover tower tier without cover stats' });
     if (t.kind === 'farm' && !tier.farm) out.push({ owner: t.id, tier: i, msg: 'farm tower tier without farm stats' });
     if (t.kind === 'support' && !tier.aura) out.push({ owner: t.id, tier: i, msg: 'support tower tier without an aura' });
+    if (t.kind === 'hypno' && !tier.hypno) out.push({ owner: t.id, tier: i, msg: 'hypno tower tier without hypno stats' });
     if (t.kind === 'path' && !tier.barrier) out.push({ owner: t.id, tier: i, msg: 'path object without barrier stats' });
     if (i === 0) return;
     const a = t.tiers[i - 1];
@@ -79,6 +82,7 @@ export function validateTower(t: TowerData): Issue[] {
     compareNumbers(t.id, i, 'farm', a.farm, tier.farm, out);
     compareNumbers(t.id, i, 'aura', a.aura, tier.aura, out);
     compareNumbers(t.id, i, 'orbs', a.orbs, tier.orbs, out);
+    compareNumbers(t.id, i, 'hypno', a.hypno, tier.hypno, out);
     if (!(towerPower(tier) > towerPower(a))) out.push({ owner: t.id, tier: i, msg: 'overall power did not increase' });
     checkVisual(t.id, i, a.visual, tier.visual, out);
   });

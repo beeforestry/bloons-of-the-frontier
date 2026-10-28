@@ -36,11 +36,12 @@ export function gLeave(s: Garrisonable, u: Unit) {
 }
 export function gEject(s: Garrisonable) { for (const u of [...s.garrisoned]) gLeave(s, u); }
 
-export type EnvKind = 'bunker' | 'watchtower' | 'ruins';
+export type EnvKind = 'bunker' | 'watchtower' | 'ruins' | 'garita';
 const ENV_INFO: Record<EnvKind, { name: string; slots: number; sprite: string }> = {
   bunker: { name: 'Old Bunker', slots: 4, sprite: 'env_bunker' },
   watchtower: { name: 'Stone Watchtower', slots: 2, sprite: 'env_watchtower' },
   ruins: { name: 'Ruins', slots: 3, sprite: 'env_ruins' },
+  garita: { name: 'Garita (El Morro Sentry Box)', slots: 2, sprite: 'env_garita' },
 };
 /** Neutral map structure: +35% range, -50% projectile damage for troops inside. */
 export class EnvStructure implements Garrisonable {

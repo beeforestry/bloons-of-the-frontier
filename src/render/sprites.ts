@@ -52,6 +52,18 @@ function turretIcon(k: string, t: number) {
 /** Turret heads are painted with the rotating housing at ~28% of their width. */
 export const HEAD_PIVOT = 0.28;
 
+/** Colour-tinted copy (hypnotized allies): multiply-ish wash that keeps the painted detail. */
+const tintCache = new Map<string, HTMLCanvasElement>();
+export function tintOf(im: Img, col: string, k = 0.55): HTMLCanvasElement {
+  const key = (im as HTMLImageElement).src ?? String(im.width) + col;
+  let c = tintCache.get(key + col);
+  if (!c) {
+    const [cc, g] = canvas(im.width, im.height);
+    g.drawImage(im, 0, 0); g.globalCompositeOperation = 'source-atop'; g.globalAlpha = k; g.fillStyle = col; g.fillRect(0, 0, cc.width, cc.height);
+    tintCache.set(key + col, (c = cc));
+  }
+  return c;
+}
 /** White silhouette for hit flashes. */
 const flashCache = new Map<Img, HTMLCanvasElement>();
 export function flashOf(im: Img): HTMLCanvasElement {
