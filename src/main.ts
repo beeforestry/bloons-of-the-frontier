@@ -270,6 +270,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   pBtn?.addEventListener('click', togglePanel);
   setPanel(LS.get('bof.panelHidden') === '1');
   document.getElementById('btn-box')?.addEventListener('click', () => { view.boxMode = !view.boxMode; hud.refresh(true); });
+  document.getElementById('btn-autoarmy')?.addEventListener('click', () => { g.setAutoArmy(!g.autoArmy[g.localPid]); hud.refresh(true); });
   const formBtn = document.getElementById('btn-form');
   const syncForm = () => { if (formBtn) formBtn.textContent = g.formation === 'line' ? '━ Line' : '┃ Column'; };
   formBtn?.addEventListener('click', () => { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); hud.refresh(true); });
@@ -287,6 +288,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     else if (k === 'f') { view.showFps = !view.showFps; if (fpsEl) fpsEl.hidden = !view.showFps; }
     else if (k === 'q') { view.boxMode = !view.boxMode; hud.refresh(true); }
     else if (k === 'g') { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); g.toast(`Formation: ${g.formation}`); hud.refresh(true); }
+    else if (k === 'y') { if (sq.length) { const on = !sq.every((q) => q.auto); for (const q of sq) g.setSquadAuto(q, on); g.toast(`Auto ${on ? 'ON' : 'OFF'} for ${sq.length} squad(s)`, on ? '#8ff7b0' : '#ffd84a'); } else g.setAutoArmy(!g.autoArmy[g.localPid]); hud.refresh(true); }
     else if (k === 'p' && sq.length) hud.togglePatrol();
     else if (k === 'r' && sq.length) { for (const q of sq) g.setStance(q, 'retreat'); hud.refresh(true); }
     else if (/^[1-9]$/.test(k)) { hud.abilityUse[+k - 1]?.(); }
@@ -458,7 +460,7 @@ function testHooks(g: Game, view: ViewState, hud: Hud, click: (p: Vec) => void, 
     moveGroup: (idx: number[], x: number, y: number, queue = false, formation: Formation = 'line') => g.moveGroup(idx.map((i) => g.squads[i]), { x, y }, queue, formation),
     move: (i: number, x: number, y: number, queue = false) => g.moveSquad(g.squads[i], { x, y }, queue),
     patrol: (i: number, pts: [number, number][]) => g.patrolSquad(g.squads[i], pts.map(([x, y]) => ({ x, y }))),
-    squad: (i: number) => { const q = g.squads[i]; if (!q) return null; return { id: q.data.id, rally: q.rally, waypoints: q.waypoints.length, patrol: q.patrol?.length ?? 0, patrolIdx: q.patrolIdx, stance: q.stance, targeting: q.targeting, formation: q.formation, face: q.face, center: q.center, n: q.units.length,
+    squad: (i: number) => { const q = g.squads[i]; if (!q) return null; return { id: q.data.id, rally: q.rally, auto: q.auto, manual: q.manual, task: q.autoTask, autoHeal: q.autoHeal, lane: q.autoLane, owner: q.owner, waypoints: q.waypoints.length, patrol: q.patrol?.length ?? 0, patrolIdx: q.patrolIdx, stance: q.stance, targeting: q.targeting, formation: q.formation, face: q.face, center: q.center, n: q.units.length,
       units: q.units.map((u) => ({ x: u.x, y: u.y, hp: u.health.hp, max: u.health.max, stars: u.stars, xp: u.xp, garrison: u.garrison?.gName() ?? null, range: u.range(g), base: u.data.tiers[g.unitTier(u.data.id)].stats.range, dmgMul: u.dmgMul, rateMul: u.rateMul, stim: u.stimT })), cd: { ...q.abilityCd } }; },
     squadIndex: (id: string) => g.squads.findIndex((q) => q.data.id === id && q.alive),
     setStance: (i: number, st: Stance) => g.setStance(g.squads[i], st),

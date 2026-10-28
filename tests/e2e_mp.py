@@ -144,6 +144,16 @@ def coop(b):
     H('__game.mpAllow(true)'); until(cli, '__game.mp().allow.some(([p, v]) => p === 0 && v)', 5000)
     C('(() => { const s = __game.g.squads[0]; __game.g.setStance(s, "hold"); })()')
     check(bool(until(host, '__game.g.squads[0].stance === "hold"', 5000)), 'with Allow Ally Control on, the client commands P1 troops')
+    # Auto Army is per player in co-op
+    C('__game.g.deployCd = {}; __game.deploy("marine", __game.g.hq.x - 260, __game.g.hq.y + 80)')
+    until(host, '__game.g.squads.some(s => s.owner === 1)', 8000)
+    cli.click('#btn-autoarmy')
+    check(bool(until(host, '__game.g.squads.filter(s => s.owner === 1).every(s => s.auto) && __game.g.autoArmy[1]', 5000)) and not H('__game.g.squads.filter(s => s.owner === 0).some(s => s.auto) || __game.g.autoArmy[0]'),
+          'client Auto Army toggles only P2 squads on the host (P1 stays manual)')
+    check(bool(until(cli, '__game.g.squads.filter(s => s.owner === 1).every(s => s.auto) && document.getElementById("btn-autoarmy").textContent.includes("ON")', 5000)), 'auto state + HUD mirrored to the client')
+    check(bool(until(host, '__game.g.squads.filter(s => s.owner === 1).every(s => s.autoTask !== "")', 5000)), f'host runs the P2 role AI ({H("__game.g.squads.map(s => s.owner + \':\' + s.autoTask)")})')
+    cli.click('#btn-autoarmy')
+    check(bool(until(host, '!__game.g.autoArmy[1] && !__game.g.squads.some(s => s.auto)', 5000)), 'client turns its Auto Army back off')
     # ping
     hx, hy = H('[__game.g.hq.x - 400, __game.g.hq.y]')
     C(f'__game.mpPing("defend", {hx}, {hy})')

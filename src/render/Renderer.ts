@@ -145,6 +145,15 @@ export class Renderer {
     for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
     objs.sort((a, b) => a.y - b.y).forEach((o) => o.f());
     this.drawn.objs = objs.length;
+    // Auto Army badge: green ⟳ when the squad runs its role AI, amber ⏸ while a manual order overrides it
+    for (const q of g.squads) if (q.auto && q.alive) {
+      const u = q.units.find((x) => x.alive); if (!u || !this.inView(u.x, u.y)) continue;
+      const bx = u.x + 13, by = u.y - 30, c = this.ctx;
+      c.beginPath(); c.arc(bx, by, 7.5, 0, Math.PI * 2); c.fillStyle = q.manual ? 'rgba(80,50,0,0.85)' : 'rgba(10,60,30,0.85)'; c.fill();
+      c.lineWidth = 2; c.strokeStyle = q.manual ? '#ffc04a' : '#6cf59a'; c.stroke();
+      c.fillStyle = q.manual ? '#ffc04a' : '#bfffd5'; c.font = 'bold 10px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(q.manual ? 'II' : 'A', bx, by + 0.5); c.textBaseline = 'alphabetic';
+    }
     for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.enemy(e);
     this.emitAmbient(gdt);
     for (const p of g.projectiles) if (this.inView(p.x, p.y, 40)) this.projectile(p, gdt);

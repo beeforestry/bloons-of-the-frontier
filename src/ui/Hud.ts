@@ -255,7 +255,7 @@ export class Hud {
     if (!t && !s && this.basePanel(p)) return;
     if (!t && grp.length > 1) return this.groupPanel(p, grp);
     const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}`
-      : s ? `s${s.uid}:${s.units.length}:${g.unitTier(s.data.id)}:${s.units.filter((u) => u.garrison).length}:${s.stance}:${s.targeting}:${s.units.map((u) => u.stars).join('')}:${this.view.queueMode}:${this.view.patrolMode}` : '';
+      : s ? `s${s.uid}:${s.units.length}:${g.unitTier(s.data.id)}:${s.units.filter((u) => u.garrison).length}:${s.stance}:${s.targeting}:${s.units.map((u) => u.stars).join('')}:${this.view.queueMode}:${this.view.patrolMode}:${s.auto}:${s.manual}:${s.autoTask}` : '';
     if (key === this.lastSel) { if (t) this.liveTower(t); return; }
     this.lastSel = key;
     if (t && !t.alive) { this.select(null, null); return; }
@@ -287,6 +287,7 @@ export class Hud {
       p.innerHTML = `<div class="sp-head">${th(td.visual.sprite ?? s.data.sprite, tier, 56)}<div><div class="sp-name">${td.name} <span class="stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</span></div>
         <div class="sp-sub">${s.data.name} · ${s.units.length} unit(s) · XP ${s.units.reduce((n, u) => n + u.xp, 0)}${s.data.hero ? ' · HERO' : ''}${s.data.vehicle ? ' · fires on the move' : ''}</div></div></div>
         <div class="sp-stats">${unitLine(td)}</div>
+        <div class="row auto-row"><button class="btn${s.auto ? ' on' : ''}" id="sp-auto" title="Auto (Y): this squad runs its role AI; manual orders pause it until done">🤖 Auto ${s.auto ? 'ON' : 'OFF'}</button><span class="sp-sub" id="sp-autotask">${s.auto ? (s.manual ? '⏸ manual order — resumes after' : '▶ ' + (s.autoTask || 'thinking')) : 'waiting for orders'}</span></div>
         ${worker ? '<div class="sp-sub">Workers collect credits, orbs & scrap, repair towers, and spawn energy orbs during waves.</div>' : `
         <div class="seg stance">${STANCES.map(([k, l]) => `<button class="${s.stance === k ? 'on' : ''}" data-stance="${k}">${l}</button>`).join('')}</div>
         <div class="sp-sub">🎯 Targeting</div>${tgtButtons(s.targeting)}`}
@@ -300,6 +301,7 @@ export class Hud {
       const ga = $('#sp-gar', p); if (ga) ga.onclick = () => { g.garrisonSquad(s); this.lastSel = ''; };
       const ug = $('#sp-ungar', p); if (ug) ug.onclick = () => { g.ungarrisonSquad(s); this.lastSel = ''; };
       const og = $('#sp-org', p); if (og) og.onclick = () => g.orderOrganizeFarms();
+      $('#sp-auto', p).onclick = () => { g.setSquadAuto(s, !s.auto); this.lastSel = ''; };
       $('#sp-desel', p).onclick = () => this.select(null, null);
     } else p.innerHTML = '';
   }
@@ -311,7 +313,7 @@ export class Hud {
     this.lastSel = ''; this.refresh(true);
   }
   private groupPanel(p: HTMLElement, grp: Squad[]) {
-    const g = this.g, key = `g${grp.map((q) => q.uid).join(',')}:${g.formation}:${grp.map((q) => q.stance).join('')}:${this.view.queueMode}:${this.view.patrolMode}`;
+    const g = this.g, key = `g${grp.map((q) => q.uid).join(',')}:${g.formation}:${grp.map((q) => q.stance + (q.auto ? 'A' : '')).join('')}:${this.view.queueMode}:${this.view.patrolMode}`;
     if (key === this.lastSel) return;
     this.lastSel = key;
     p.classList.add('show'); p.style.setProperty('--fc', '#7fd3ff');
@@ -320,12 +322,14 @@ export class Hud {
       <div class="sp-sub">Formation (G)</div><div class="seg form"><button data-form="line" class="${g.formation === 'line' ? 'on' : ''}">━ Line</button><button data-form="column" class="${g.formation === 'column' ? 'on' : ''}">┃ Column</button></div>
       <div class="seg stance">${STANCES.map(([k, l]) => `<button class="${grp.every((q) => q.stance === k) ? 'on' : ''}" data-stance="${k}">${l}</button>`).join('')}</div>
       <div class="row"><button class="btn${this.view.queueMode ? ' on' : ''}" id="sp-queue-m">➕ Queue</button><button class="btn${this.view.patrolMode ? ' on' : ''}" id="sp-patrol">🔁 Patrol</button></div>
+      <div class="row"><button class="btn${grp.every((q) => q.auto) ? ' on' : ''}" id="sp-auto" title="Auto (Y) for the selection">🤖 Auto ${grp.every((q) => q.auto) ? 'ON' : grp.some((q) => q.auto) ? 'MIXED' : 'OFF'}</button></div>
       <div class="row"><button class="btn" id="sp-gar">🏰 Garrison all</button><button class="btn" id="sp-desel">Done</button></div>`;
     for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-form]'))) el.onclick = () => { g.formation = el.dataset.form as 'line'; this.lastSel = ''; };
     for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-stance]'))) el.onclick = () => { for (const q of grp) g.setStance(q, el.dataset.stance as Stance); this.lastSel = ''; };
     $('#sp-queue-m', p).onclick = () => { this.view.queueMode = !this.view.queueMode; this.view.patrolMode = false; this.lastSel = ''; };
     $('#sp-patrol', p).onclick = () => this.togglePatrol();
     $('#sp-gar', p).onclick = () => { for (const q of grp) g.garrisonSquad(q); this.lastSel = ''; };
+    $('#sp-auto', p).onclick = () => { const on = !grp.every((q) => q.auto); for (const q of grp) g.setSquadAuto(q, on); this.lastSel = ''; };
     $('#sp-desel', p).onclick = () => this.select(null, null);
   }
   /** Ability bar with cooldown sweeps: selected squads' abilities + every Super Monkey's Laser Sweep. */
@@ -434,6 +438,7 @@ export class Hud {
       : this.view.boxMode ? 'Box-select: drag a box around troops' : '';
     const orbs = $('#orbs'); if (orbs) orbs.textContent = `${g.stats.orbs}`;
     const bm = $('#btn-box'); if (bm) bm.classList.toggle('on', this.view.boxMode);
+    const au = $('#btn-autoarmy'); if (au) { const on = !!g.autoArmy[g.localPid]; au.classList.toggle('on', on); const t = on ? '🤖 Auto: ON' : '🤖 Auto: OFF'; if (au.textContent !== t) au.textContent = t; }
     this.abilityBar();
     this.selPanel();
   }

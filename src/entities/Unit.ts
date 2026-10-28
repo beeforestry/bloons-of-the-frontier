@@ -40,6 +40,14 @@ export class Squad {
   abilityCd: Partial<Record<AbilityId, number>> = {};
   /** Ability flash for the selection ring pulse. */
   pulse = 0;
+  /** Auto Army: this squad runs its role AI (see systems/AutoArmy). */
+  auto = false;
+  /** A manual order is in progress: auto pauses until it is finished. */
+  manual = false;
+  /** What the role AI is doing right now (HUD + tests). */
+  autoTask = '';
+  /** Auto AI: lane on duty, retreat-to-heal flag, next think time, no-enemy timer while garrisoned. */
+  autoLane = -1; autoHeal = false; autoT = 0; autoIdle = 0; autoOrgN = 0;
   constructor(readonly data: UnitData, public rally: Vec) {}
   get alive() { return this.units.some((u) => u.alive); }
   get center(): Vec {
@@ -195,7 +203,9 @@ export class Unit implements Buffable {
       } else this.moveTo(home, speed, dt);
     } else {
       const f = { hitsAir: t.weapon.hitsAir, hitsGround: true, antiAir: !!t.weapon.antiAir };
-      target = pickTarget(g.enemies, this, this.range(g), sq.targeting, f);
+      // Auto Army: anti-air capable troops shoot flyers first
+      target = (sq.auto && (f.antiAir || f.hitsAir) ? pickTarget(g.enemies, this, this.range(g), TargetingMode.First, { ...f, hitsGround: false }) : null)
+        ?? pickTarget(g.enemies, this, this.range(g), sq.targeting, f);
       if (this.garrison) { /* fire from cover */ }
       else if (this.data.vehicle) this.moveTo(home, speed, dt); // vehicles fire on the move
       else if (!target) {

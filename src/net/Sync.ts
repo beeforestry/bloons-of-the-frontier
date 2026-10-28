@@ -39,7 +39,7 @@ type Ref = { $: string; u?: number; i?: number; p?: number; x?: number; y?: numb
 
 /** Game methods that become network commands on a client (and permission-checked on the host). */
 const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
-  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay'] as const;
+  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto'] as const;
 /** Applied optimistically on the client too (instant response; the snapshot corrects). */
 const OPTIMISTIC = new Set(['moveSquad', 'moveGroup', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
 /** Proto methods (Tower / Building instances). */
@@ -133,6 +133,7 @@ export class Sync {
   // ------------------------------------------------------------------ actions
   /** Entry point for every local action. */
   local(name: string, args: unknown[]): unknown {
+    if (this.g.aiDepth > 0 && this.gOrig[name]) return this.gOrig[name](...args); // Auto Army (host sim) orders
     if (this.isHost) return this.exec(this.localPid, name, args);
     // client: optimistic visuals for orders, then ship the command
     let ret: unknown = null;
@@ -167,7 +168,7 @@ export class Sync {
     if (name === 'setTargeting' && a0 instanceof Tower && !ownTower(a0)) return `That's P${a0.owner + 1}'s tower`;
     if (['demolish', 'setRally', 'bd.upgrade', 'bd.enqueue', 'bd.cancel'].includes(name) && a0 instanceof Building && !a0.isHQ && a0.owner !== pid) return `That's P${a0.owner + 1}'s building`;
     const canSq = (s: unknown) => !(s instanceof Squad) || s.owner === pid || !!this.allowAlly.get(s.owner);
-    if (['moveSquad', 'patrolSquad', 'setStance', 'garrisonSquad', 'ungarrisonSquad', 'useAbility'].includes(name) && !canSq(a0)) return `P${(a0 as Squad).owner + 1} hasn't allowed ally control`;
+    if (['moveSquad', 'patrolSquad', 'setStance', 'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'setSquadAuto'].includes(name) && !canSq(a0)) return `P${(a0 as Squad).owner + 1} hasn't allowed ally control`;
     if (name === 'setTargeting' && !canSq(a0)) return 'Not your squad';
     if (name === 'moveGroup' && Array.isArray(a0) && !a0.some(canSq)) return 'Not your squads';
     void g;
@@ -390,13 +391,14 @@ export class Sync {
       all: this.players.map((p) => [p.pid, Math.floor(this.creditsOf(p.pid))]),
       E: [...g.enemies.filter((e) => e.alive).map(en), ...g.allies.filter((e) => e.alive).map(en)],
       T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0]),
-      S: g.squads.filter((s) => s.alive).map((s) => [s.uid, s.data.id, s.owner, s.stance, s.targeting, Math.round(s.rally.x), Math.round(s.rally.y), s.units.filter((u) => u.alive).map((u) => [u.uid, u.index, Math.round(u.x), Math.round(u.y), r1(u.health.hp), u.stars, garCode(u), u.dropT > 0 ? 1 : 0])]),
+      S: g.squads.filter((s) => s.alive).map((s) => [s.uid, s.data.id, s.owner, s.stance, s.targeting, Math.round(s.rally.x), Math.round(s.rally.y), s.units.filter((u) => u.alive).map((u) => [u.uid, u.index, Math.round(u.x), Math.round(u.y), r1(u.health.hp), u.stars, garCode(u), u.dropT > 0 ? 1 : 0]), (s.auto ? 1 : 0) | (s.manual ? 2 : 0), s.autoTask]),
       B: g.buildings.filter((b) => b.alive).map((b) => [b.isHQ ? -1 : b.pad!.index, b.data.id, b.tier, r1(b.health.hp), b.build ? [r1(b.build.t), b.build.dur, b.build.to] : 0, b.queue.map((q) => [q.unitId, r1(q.t), q.dur, q.held]), Math.round(b.rally.x), Math.round(b.rally.y), b.owner]),
       X: g.barriers.filter((b) => b.alive).map((b) => [b.uid, b.data.id, Math.round(b.x), Math.round(b.y), b.lane, r1(b.hp), b.owner]),
       P: g.pickups.filter((p) => p.alive).map((p) => [p.uid, Math.round(p.x), Math.round(p.y), p.value, p.kind]),
       O: g.obstacles.map((o) => (o.alive ? r1(o.hp) : -1)),
       U: (g as unknown as { unitTiers: Record<string, number> }).unitTiers,
       A: [...g.armory],
+      AA: g.autoArmy,
       V: this.versus ? this.versus.s : null,
       AL: [...this.allowAlly].filter(([, v]) => v).map(([k]) => k),
     };
@@ -427,6 +429,7 @@ export class Sync {
       for (const [pid, c] of s.all as number[][]) this.allCredits[pid] = c;
       (g as unknown as { unitTiers: Record<string, number> }).unitTiers = s.U as Record<string, number>;
       g.armory.clear(); for (const a of s.A as string[]) g.armory.add(a as never);
+      if (Array.isArray(s.AA)) g.autoArmy = (s.AA as boolean[]).map(Boolean);
       this.allowAlly.clear(); for (const p of s.AL as number[]) this.allowAlly.set(p, true);
       if (s.V) this.vs = s.V as Versus['s'];
       this.syncEnemies(s.E as unknown[][]);
@@ -503,7 +506,7 @@ export class Sync {
   private syncSquads(S: unknown[][]) {
     const g = this.g, seen = new Set<number>();
     for (const row of S) {
-      const [uid, id, owner, stance, targeting, rx, ry, units] = row as [number, string, number, Squad['stance'], Squad['targeting'], number, number, unknown[][]];
+      const [uid, id, owner, stance, targeting, rx, ry, units, af, atask] = row as [number, string, number, Squad['stance'], Squad['targeting'], number, number, unknown[][], number, string];
       seen.add(uid);
       let sq = this.h2l.get(uid) as Squad | undefined;
       const d = unitById(id);
@@ -512,9 +515,10 @@ export class Sync {
         sq.units.length = 0; g.units = g.units.filter((u) => u.squad !== sq);
       }
       sq.owner = owner; sq.targeting = targeting;
+      sq.auto = !!(af & 1); sq.manual = !!(af & 2); sq.autoTask = atask ?? '';
       if (sq.stance !== stance) sq.stance = stance;
       const moved = Math.hypot(sq.rally.x - rx, sq.rally.y - ry) > 4;
-      if (moved && sq.owner !== this.localPid) { sq.rally = { x: rx, y: ry }; sq.waypoints = []; }
+      if (moved && (sq.owner !== this.localPid || (sq.auto && !sq.manual))) { sq.rally = { x: rx, y: ry }; sq.waypoints = []; }
       const useen = new Set<number>();
       for (const ur of units) {
         const [uuid, index, x, y, hp, stars, gar, drop] = ur as [number, number, number, number, number, number, string | 0, number];

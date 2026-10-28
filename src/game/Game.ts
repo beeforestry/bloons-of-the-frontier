@@ -19,6 +19,7 @@ import { PlacementSystem, type Cell } from '../systems/PlacementSystem';
 import { ResourceManager, type Cost } from '../systems/ResourceManager';
 import { ARMORY, ARMORY_FX, SALVAGE, type ArmoryId } from '../data/armory';
 import { WaveManager } from '../systems/WaveManager';
+import { autoArmyUpdate } from '../systems/AutoArmy';
 import { planOrganize } from '../systems/FarmOrganizer';
 import type { Buffable } from '../systems/BuffSystem';
 import { Tower } from '../entities/Tower';
@@ -124,6 +125,23 @@ export class Game {
   mode: 'solo' | 'coop' | 'versus' = 'solo';
   /** Player whose wallet / ownership applies to the action being executed (host swaps wallets per command). */
   actingPid = 0;
+  /** Auto Army toggle per player (new squads inherit it). */
+  autoArmy: boolean[] = [false, false];
+  /** >0 while the Auto Army AI is issuing orders (host-internal: bypasses MP command routing). */
+  aiDepth = 0;
+  /** Run a squad order on behalf of the Auto Army AI (doesn't count as a manual override). */
+  aiOrder<T>(f: () => T): T { this.aiDepth++; try { return f(); } finally { this.aiDepth--; } }
+  private manualOrder(sq: Squad) { if (!this.aiDepth && sq.auto) { sq.manual = true; sq.autoIdle = 0; sq.autoHeal = false; } }
+  /** HUD toggle: Auto Army on/off for the acting player's squads. */
+  setAutoArmy(on: boolean) {
+    const pid = this.actingPid; this.autoArmy[pid] = on;
+    for (const sq of this.ownedSquads(pid)) this.applySquadAuto(sq, on);
+    this.toast(on ? '🤖 Auto Army ON — squads act on their own' : 'Auto Army OFF — squads wait for orders', on ? '#8ff7b0' : '#ffd84a');
+    this.sfx('command');
+  }
+  /** Unit panel toggle for one squad. */
+  setSquadAuto(sq: Squad, on: boolean) { this.applySquadAuto(sq, on); }
+  private applySquadAuto(sq: Squad, on: boolean) { sq.auto = on; sq.manual = false; sq.autoHeal = false; sq.autoLane = -1; sq.autoT = 0; sq.autoTask = on ? 'thinking' : ''; }
   /** This tab's player id (0 = host). */
   localPid = 0;
   /** Client mirror: true only while applying a host snapshot (allows entity creation). */
@@ -880,6 +898,7 @@ export class Game {
     at = { x: Math.max(20, Math.min(this.map.width - 20, at.x)), y: Math.max(20, Math.min(this.map.height - 20, at.y)) };
     const sq = new Squad(d, at);
     sq.owner = this.actingPid;
+    sq.auto = !!this.autoArmy[sq.owner];
     if (this.isClient && !this.syncing) return sq; // host fields squads; the snapshot brings them
     for (let i = 0; i < d.squadSize; i++) {
       const U = d.role === 'worker' ? WorkerUnit : Unit;
@@ -896,6 +915,7 @@ export class Game {
   /** Move order. queue=true (Shift-click / Queue mode) appends a waypoint instead. */
   moveSquad(sq: Squad, to: Vec, queue = false) {
     to = this.clampMap(to);
+    this.manualOrder(sq);
     if (sq.stance === 'retreat') sq.stance = 'aggressive';
     if (queue && (sq.waypoints.length || !sq.arrived())) { sq.waypoints.push(to); this.fx({ kind: 'ring', x: to.x, y: to.y, r: 12, color: '#ffd84a', dur: 0.5 }); return; }
     sq.garrisonTarget = null; sq.waypoints = []; sq.patrol = null;
@@ -906,6 +926,7 @@ export class Game {
   /** Patrol between the squad's post and the given points (loops). */
   patrolSquad(sq: Squad, pts: Vec[]) {
     if (!pts.length) return;
+    this.manualOrder(sq);
     sq.garrisonTarget = null; sq.waypoints = [];
     for (const u of sq.units) if (u.garrison) gLeave(u.garrison, u);
     sq.patrol = [{ ...sq.rally }, ...pts.map((p) => this.clampMap(p))]; sq.patrolIdx = 1;
@@ -931,6 +952,7 @@ export class Game {
     });
   }
   setStance(sq: Squad, st: Stance) {
+    if (st === 'retreat') this.manualOrder(sq);
     if (st === 'retreat') {
       const c = sq.center, home = this.hq.door, dh = dist(c, home);
       const cover = sq.data.role === 'worker' || sq.data.vehicle ? undefined : this.garrisonables().filter((x) => gFree(x) >= 1 && dist(x, c) < Math.min(700, dh))
@@ -947,6 +969,7 @@ export class Game {
     const c = target ?? this.garrisonables().filter((t) => gFree(t) > 0)
       .sort((a, b) => dist(a, sq.center) - dist(b, sq.center))[0];
     if (!c || sq.data.role === 'worker' || sq.data.vehicle) { this.toast(sq.data.vehicle ? 'Vehicles cannot garrison' : 'No structure with free slots'); return 0; }
+    this.manualOrder(sq);
     sq.garrisonTarget = c; sq.waypoints = []; sq.patrol = null;
     if (sq.stance !== 'retreat') sq.stance = 'aggressive';
     sq.rally = { x: c.x, y: c.y + 30 };
@@ -963,7 +986,7 @@ export class Game {
       if (sq.units.every((u) => u.garrison) || gFree(c) <= 0) sq.garrisonTarget = null;
     }
   }
-  ungarrisonSquad(sq: Squad) { sq.garrisonTarget = null; for (const u of sq.units) if (u.garrison) gLeave(u.garrison, u); }
+  ungarrisonSquad(sq: Squad) { this.manualOrder(sq); sq.garrisonTarget = null; for (const u of sq.units) if (u.garrison) gLeave(u.garrison, u); }
   /** Waypoints, patrol loops, retreat completion. */
   private updateSquads() {
     for (const sq of this.squads) {
@@ -1081,6 +1104,7 @@ export class Game {
     this.vetAuraTick();
     this.updateGarrisons();
     this.updateSquads();
+    autoArmyUpdate(this, dt);
     for (const b of this.barriers) b.update(this, dt);
     for (const e of this.envs) e.update();
     for (const o of this.obstacles) o.hitFlash = Math.max(0, o.hitFlash - dt);

@@ -262,8 +262,8 @@ MAPS = [
     # Castillo San Felipe del Morro v2 (t33u/t34u, repainted from aerial references): the
     # triangular fort points east into the Atlantic; harbor bay to the south; esplanade lawn
     # west; Old San Juan along the land edge. Lanes: diagonal lawn footpath through the west
-    # gate + south ramp from the city, and a sea landing from the harbor along the seawall
-    # promenade, up the breakwater stairs at the point.
+    # gate (two city roads that merge at the bridge), and a sea landing from the harbor bay up
+    # the south glacis and ramp. The breakwater jetty off the point is scenery.
     dict(id='morro', name='El Morro, San Juan', seed=53, ground='grass', road='stone', pathWidth=58, decoCount=9, noPlaza=True,
          painter=morro_v2.paint, post=morro_v2.post, streets=[600, 1250], gate=[1150, 825],
          deco=['palm2', 'palm2', 'palm', 'palm', 'fern', 'fern', 'boulders'],
@@ -274,8 +274,8 @@ MAPS = [
          flavor='morro',
          lanes=[
              [[-80, 600], [260, 590], [480, 470], [720, 400], [930, 450], [1010, 600], [960, 740], [1040, 815], [1100, 825], [1230, 822], [1330, 765], [1450, 735], [1530, 800], [1590, 830]],
-             [[-80, 1250], [300, 1240], [620, 1320], [920, 1300], [1180, 1345], [1380, 1268], [1480, 1150], [1560, 1040], [1630, 960]],
-             [[700, 1570], [820, 1470], [1080, 1455], [1360, 1420], [1640, 1320], [1880, 1180], [2040, 1050], [2075, 960], [1985, 900], [1870, 850]],
+             [[-80, 1250], [300, 1240], [560, 1170], [760, 1060], [900, 950], [1010, 870], [1100, 825], [1230, 822], [1330, 765], [1450, 735], [1530, 800], [1590, 830]],
+             [[640, 1570], [700, 1450], [900, 1380], [1180, 1345], [1380, 1268], [1480, 1150], [1480, 1010], [1500, 890], [1530, 800], [1590, 830]],
          ]),
 ]
 os.makedirs('/tmp/chk', exist_ok=True)

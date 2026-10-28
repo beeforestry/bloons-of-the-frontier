@@ -216,8 +216,8 @@ with sync_playwright() as p:
     if u0:
         check(u0['range'] >= u0['base'] * 1.34, f'garrison range bonus {u0["base"]} -> {u0["range"]:.0f} (+35%)')
         ui = G(f'H.g.squads[{mi}].units.findIndex(u => u.garrison)')
-        h0 = G(f'H.g.squads[{mi}].units[{ui}].health.hp'); G(f'H.g.squads[{mi}].units[{ui}].takeDamage(H.g, 10)')
-        h1 = G(f'H.g.squads[{mi}].units[{ui}].health.hp')
+        # measure in one synchronous call so no sim tick (e.g. a Paladin heal aura) lands in between
+        h0, h1 = G(f'(() => {{ const u = H.g.squads[{mi}].units[{ui}]; const a = u.health.hp; u.takeDamage(H.g, 10); return [a, u.health.hp]; }})()')
         check(abs((h0 - h1) - 5) < 0.01, f'garrison halves damage taken (10 -> {h0 - h1:.1f})')
         ev = G('H.envs()[0]'); G(f'H.camFocus({ev["x"]},{ev["y"]},1.1)'); wait(200); shot(pg, JUICE, 'garrison')
     # tower garrison: stone wall
