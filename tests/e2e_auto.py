@@ -116,7 +116,9 @@ with sync_playwright() as p:
     check(until('(g.squads.find((q) => q.data.id === "odst").abilityCd.emp ?? 0) > 0', 5000), 'ODST auto-casts EMP on a cluster')
     G('H.killAllEnemies()')
     # ---- anti-air shoots flyers first
-    G('const q = g.squads[1]; q.autoT = 1e9; q.manual = false; window.__aaq = q; const c = q.center; const gr = g.spawnEnemy("ironback", 0, 0, 0, 50); const fl = g.spawnEnemy("gargoyle", 0, 0, 0, 50); for (const e of [gr, fl]) { e.speedK = 0; } window.__gr = gr; window.__fl = fl;')
+    G(f'g.deployCd = {{}}; H.deploy("marine", {pt["x"]} + 50, {pt["y"]} + 50)')  # a fresh squad (earlier steps leave others healing / garrisoned)
+    until('g.squads[g.squads.length - 1].data.id === "marine" && g.units.every((u) => u.dropT <= 0)', 4000); pg.wait_for_timeout(600)
+    G('const q = g.squads[g.squads.length - 1]; q.autoT = 1e9; q.manual = false; q.autoHeal = false; window.__aaq = q; const c = q.center; const gr = g.spawnEnemy("ironback", 0, 0, 0, 50); const fl = g.spawnEnemy("gargoyle", 0, 0, 0, 50); for (const e of [gr, fl]) { e.speedK = 0; } window.__gr = gr; window.__fl = fl;')
     G('const q = window.__aaq; const L = g.paths[q.autoLane >= 0 ? q.autoLane : 0]; const c = q.center; let bf = 0, bd = 1e9; for (let f = 0; f < L.length; f += 6) { const a = L.at(f); const d = Math.hypot(a.x - c.x, a.y - c.y); if (d < bd) { bd = d; bf = f; } } for (const e of [window.__gr, window.__fl]) { e.lane = q.autoLane >= 0 ? q.autoLane : 0; e.progress = bf; } window.__gr.progress = bf + 4; window.__h0 = [window.__gr.hp, window.__fl.hp]')
     pg.wait_for_timeout(1500)
     h = G('[window.__h0, [window.__gr.hp, window.__fl.hp], window.__fl.alive]')
