@@ -1,4 +1,4 @@
-"""t35 Auto Army e2e: HUD toggle + hotkey Y + unit-panel toggle, A/II badges, lane defence spread by threat,
+"""t35 Auto Army e2e: HUD toggle + hotkey G + unit-panel toggle, A/II badges, lane defence spread by threat,
 leak interception near the HQ, take cover in garrisons when enemies approach, retreat to heal at low HP and return,
 manual orders override then auto resumes, ODST auto-EMP, anti-air shoots flyers first, Farmhand auto-organizes farms,
 Paladin medics follow the wounded, auto OFF leaves squads alone, tutorial step, FPS. Screenshots -> screenshots/t35/.
@@ -136,18 +136,18 @@ with sync_playwright() as p:
     G('H.setSpeed(4)')
     check(until('g.squads[1].units.some((u, i) => u.health.hp > window.__hw[i] + 5)', 20000), 'wounded squad gets mended')
     G('H.setSpeed(1); g.squads[1].autoT = 0')
-    # ---- unit-panel toggle + hotkey Y
+    # ---- unit-panel toggle + hotkey G
     G('H.selectSquad(0)'); pg.wait_for_timeout(300)
     check(pg.locator('#sp-auto').count() == 1 and 'ON' in pg.locator('#sp-auto').inner_text(), 'unit panel shows 🤖 Auto ON for the squad')
     shot('auto_unit_panel')
     pg.click('#sp-auto'); pg.wait_for_timeout(200)
     check(not G('g.squads[0].auto') and G('g.squads[1].auto'), 'unit-panel toggle switches only that squad off')
-    pg.keyboard.press('y'); pg.wait_for_timeout(200)
+    pg.keyboard.press('g'); pg.wait_for_timeout(200)
     check(G('g.squads[0].auto'), 'Y with a selection toggles the selected squad back on')
     G('H.selectSquad(-1)'); pg.keyboard.press('Escape'); pg.wait_for_timeout(200)
-    pg.keyboard.press('y'); pg.wait_for_timeout(200)
-    check(not G('g.autoArmy[0]') and not any(G('g.squads.map((q) => q.auto)')), 'Y with nothing selected toggles the global Auto Army off')
-    pg.keyboard.press('y'); pg.wait_for_timeout(200)
+    pg.keyboard.press('g'); pg.wait_for_timeout(200)
+    check(not G('g.autoArmy[0]') and not any(G('g.squads.map((q) => q.auto)')), 'G with nothing selected toggles the global Auto Army off')
+    pg.keyboard.press('g'); pg.wait_for_timeout(200)
     # ---- FPS with a busy auto army
     G('g.deployCd = {}; for (const id of ["marine", "ranger", "line_watch", "monkey_soldier"]) { const p = H.lanePoint(0, 0.5); H.deploy(id, p.x + 30, p.y + 30); g.deployCd = {}; }')
     G('H.startWave(); H.setSpeed(2)'); G('H.fpsStart()'); pg.wait_for_timeout(4000); f = G('H.fpsStop()')

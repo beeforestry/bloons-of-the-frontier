@@ -287,8 +287,8 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     else if (k === 't' && view.selTower) { g.cycleTargeting(view.selTower); hud.refresh(true); }
     else if (k === 'f') { view.showFps = !view.showFps; if (fpsEl) fpsEl.hidden = !view.showFps; }
     else if (k === 'q') { view.boxMode = !view.boxMode; hud.refresh(true); }
-    else if (k === 'g') { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); g.toast(`Formation: ${g.formation}`); hud.refresh(true); }
-    else if (k === 'y') { if (sq.length) { const on = !sq.every((q) => q.auto); for (const q of sq) g.setSquadAuto(q, on); g.toast(`Auto ${on ? 'ON' : 'OFF'} for ${sq.length} squad(s)`, on ? '#8ff7b0' : '#ffd84a'); } else g.setAutoArmy(!g.autoArmy[g.localPid]); hud.refresh(true); }
+    else if (k === 'v') { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); g.toast(`Formation: ${g.formation}`); hud.refresh(true); }
+    else if (k === 'g') { if (sq.length) { const on = !sq.every((q) => q.auto); for (const q of sq) g.setSquadAuto(q, on); g.toast(`Auto ${on ? 'ON' : 'OFF'} for ${sq.length} squad(s)`, on ? '#8ff7b0' : '#ffd84a'); } else g.setAutoArmy(!g.autoArmy[g.localPid]); hud.refresh(true); }
     else if (k === 'p' && sq.length) hud.togglePatrol();
     else if (k === 'r' && sq.length) { for (const q of sq) g.setStance(q, 'retreat'); hud.refresh(true); }
     else if (/^[1-9]$/.test(k)) { hud.abilityUse[+k - 1]?.(); }

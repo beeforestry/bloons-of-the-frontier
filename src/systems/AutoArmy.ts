@@ -1,6 +1,6 @@
 // =============================================================================
 // AUTO ARMY: optional role AI for troop squads (global HUD toggle per player,
-// per-squad toggle in the unit panel, hotkey Y). Host-authoritative: runs on
+// per-squad toggle in the unit panel, hotkey G). Host-authoritative: runs on
 // the host / solo sim only, the snapshot mirrors the result to clients.
 //  * Infantry / vehicles / heroes: hold the most threatened lane (threat =
 //    enemy strength weighted by how close it is to the HQ, spread across

@@ -287,7 +287,7 @@ export class Hud {
       p.innerHTML = `<div class="sp-head">${th(td.visual.sprite ?? s.data.sprite, tier, 56)}<div><div class="sp-name">${td.name} <span class="stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</span></div>
         <div class="sp-sub">${s.data.name} · ${s.units.length} unit(s) · XP ${s.units.reduce((n, u) => n + u.xp, 0)}${s.data.hero ? ' · HERO' : ''}${s.data.vehicle ? ' · fires on the move' : ''}</div></div></div>
         <div class="sp-stats">${unitLine(td)}</div>
-        <div class="row auto-row"><button class="btn${s.auto ? ' on' : ''}" id="sp-auto" title="Auto (Y): this squad runs its role AI; manual orders pause it until done">🤖 Auto ${s.auto ? 'ON' : 'OFF'}</button><span class="sp-sub" id="sp-autotask">${s.auto ? (s.manual ? '⏸ manual order — resumes after' : '▶ ' + (s.autoTask || 'thinking')) : 'waiting for orders'}</span></div>
+        <div class="row auto-row"><button class="btn${s.auto ? ' on' : ''}" id="sp-auto" title="Auto (G): this squad runs its role AI; manual orders pause it until done">🤖 Auto ${s.auto ? 'ON' : 'OFF'}</button><span class="sp-sub" id="sp-autotask">${s.auto ? (s.manual ? '⏸ manual order — resumes after' : '▶ ' + (s.autoTask || 'thinking')) : 'waiting for orders'}</span></div>
         ${worker ? '<div class="sp-sub">Workers collect credits, orbs & scrap, repair towers, and spawn energy orbs during waves.</div>' : `
         <div class="seg stance">${STANCES.map(([k, l]) => `<button class="${s.stance === k ? 'on' : ''}" data-stance="${k}">${l}</button>`).join('')}</div>
         <div class="sp-sub">🎯 Targeting</div>${tgtButtons(s.targeting)}`}
@@ -319,10 +319,10 @@ export class Hud {
     p.classList.add('show'); p.style.setProperty('--fc', '#7fd3ff');
     const n = grp.reduce((a, q) => a + q.units.length, 0);
     p.innerHTML = `<div class="sp-head"><div class="sp-icon">⬚</div><div><div class="sp-name">${grp.length} squads selected</div><div class="sp-sub">${n} troops · ${[...new Set(grp.map((q) => q.data.name))].join(', ')}</div></div></div>
-      <div class="sp-sub">Formation (G)</div><div class="seg form"><button data-form="line" class="${g.formation === 'line' ? 'on' : ''}">━ Line</button><button data-form="column" class="${g.formation === 'column' ? 'on' : ''}">┃ Column</button></div>
+      <div class="sp-sub">Formation (V)</div><div class="seg form"><button data-form="line" class="${g.formation === 'line' ? 'on' : ''}">━ Line</button><button data-form="column" class="${g.formation === 'column' ? 'on' : ''}">┃ Column</button></div>
       <div class="seg stance">${STANCES.map(([k, l]) => `<button class="${grp.every((q) => q.stance === k) ? 'on' : ''}" data-stance="${k}">${l}</button>`).join('')}</div>
       <div class="row"><button class="btn${this.view.queueMode ? ' on' : ''}" id="sp-queue-m">➕ Queue</button><button class="btn${this.view.patrolMode ? ' on' : ''}" id="sp-patrol">🔁 Patrol</button></div>
-      <div class="row"><button class="btn${grp.every((q) => q.auto) ? ' on' : ''}" id="sp-auto" title="Auto (Y) for the selection">🤖 Auto ${grp.every((q) => q.auto) ? 'ON' : grp.some((q) => q.auto) ? 'MIXED' : 'OFF'}</button></div>
+      <div class="row"><button class="btn${grp.every((q) => q.auto) ? ' on' : ''}" id="sp-auto" title="Auto (G) for the selection">🤖 Auto ${grp.every((q) => q.auto) ? 'ON' : grp.some((q) => q.auto) ? 'MIXED' : 'OFF'}</button></div>
       <div class="row"><button class="btn" id="sp-gar">🏰 Garrison all</button><button class="btn" id="sp-desel">Done</button></div>`;
     for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-form]'))) el.onclick = () => { g.formation = el.dataset.form as 'line'; this.lastSel = ''; };
     for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-stance]'))) el.onclick = () => { for (const q of grp) g.setStance(q, el.dataset.stance as Stance); this.lastSel = ''; };

@@ -175,7 +175,7 @@ with sync_playwright() as p:
         return along, across, (abs(cx - tgt['x']) + abs(cy - tgt['y'])) if f == 'line' else head
     a, c, off = form_check('line'); check(c > 30 and a < 10 and off < 20, f'line formation: spread across {c:.0f}px, along {a:.0f}px')
     a, c, off = form_check('column'); check(a > 30 and c < 10 and off < 20, f'column formation: spread along {a:.0f}px, across {c:.0f}px')
-    pg.keyboard.press('g'); check(G('H.g.formation') in ('line', 'column'), f'G toggles formation ({G("H.g.formation")})')
+    pg.keyboard.press('v'); check(G('H.g.formation') in ('line', 'column'), f'V toggles formation ({G("H.g.formation")})')
 
     # ---------------- waypoint queue (shift-click) + patrol
     mi = sq['marine']
