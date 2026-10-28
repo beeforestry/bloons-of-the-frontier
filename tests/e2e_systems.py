@@ -265,10 +265,14 @@ with sync_playwright() as p:
     # ---------------- armor shred (glue) + armor destroy (obelisk)
     gl = G(f'H.towerInfo({roster_t["glue_slinger"]})'); ob = G(f'H.towerInfo({roster_t["arcane_obelisk"]})')
     for tw, nm in [(gl, 'Glue/Corrosive'), (ob, 'Arcane Obelisk')]:
-        e = G('H.spawn("ironback", 1, 0.1, 30)'); freeze(e)
-        G(f'(() => {{ const x = H.g.enemies.find(x => x.uid === {e}); x.x = {tw["x"]} + 70; x.y = {tw["y"]}; }})()')
-        a0 = E(e)['armor']; ok = until(f'(() => {{ const x = H.enemy({e}); return !x || x.armor < {a0} - 1e-6; }})()', 8000)
-        ee = E(e)
+        # try a few sides of the tower so a neighbouring Obelisk/Glue doesn't hit the probe first
+        for dx, dy in ((70, 0), (-70, 0), (0, 70), (0, -70)):
+            e = G('H.spawn("ironback", 1, 0.1, 30)'); freeze(e)
+            G(f'(() => {{ const x = H.g.enemies.find(x => x.uid === {e}); x.x = {tw["x"]} + {dx}; x.y = {tw["y"]} + {dy}; }})()')
+            a0 = E(e)['armor']; ok = until(f'(() => {{ const x = H.enemy({e}); return !x || x.armor < {a0} - 1e-6; }})()', 8000)
+            ee = E(e)
+            if not (nm.startswith('Glue') and ee and ee['slow'] < 0.01): break
+            G(f'(() => {{ const x = H.g.enemies.find(x => x.uid === {e}); if (x) x.alive = false; H.g.enemies = H.g.enemies.filter(y => y !== x); }})()')
         check(ok, f'{nm} reduces armor {a0} -> {ee and round(ee["armor"], 2)}' + (f' (slow {ee["slow"]:.2f})' if ee and nm.startswith('Glue') else ''))
         if nm.startswith('Glue'): check(ee is None or ee['slow'] >= 0.39, 'Glue slows 40%')
         G('H.killAllEnemies()')

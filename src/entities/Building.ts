@@ -30,6 +30,7 @@ export class Building {
   alive = true;
   /** -1 while the first construction is running. */
   tier = -1;
+  owner = 0;
   readonly health: Health;
   /** Construction / upgrade in progress. */
   build: { t: number; dur: number; to: number } | null = null;
@@ -65,7 +66,7 @@ export class Building {
     return true;
   }
   takeDamage(g: Game, n: number) {
-    if (!this.alive) return;
+    if (!this.alive || g.isClient) return;
     this.health.damage(n);
     this.hitFlash = 0.1;
     if (!this.health.alive) g.destroyBuilding(this);
@@ -134,7 +135,7 @@ export class Building {
       if (o.t >= o.dur) {
         // Hold at the door while pop / tech / squad cap is short.
         o.held = g.tech < d.tech ? `needs Tech ${d.tech}` : g.pop + d.population > g.popCap ? 'pop cap full' : d.maxSquads && g.squadCount(d.id) >= d.maxSquads ? `max ${d.maxSquads} squads` : null;
-        if (!o.held) {
+        if (!o.held && !g.isClient) {
           this.queue.shift();
           const sq = g.spawnSquad(d, this.door, false);
           sq.rally = { ...this.rally };

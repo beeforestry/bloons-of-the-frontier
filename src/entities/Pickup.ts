@@ -21,15 +21,29 @@ export class Pickup {
   age = 0;
   alive = true;
   claimedBy: Unit | null = null;
+  /** Being pulled toward the collector (renderer can draw a trail). */
+  vacuum = false;
   constructor(public x: number, public y: number, readonly value: number, readonly kind: PickupKind = 'credit') {}
   get autoAt() { return this.kind === 'orb' ? 7 : this.kind === 'scrap' ? 22 : PICKUP_AUTO_SECONDS; }
   update(g: Game, dt: number) {
     this.age += dt;
+    if (g.isClient) return; // the host collects; the mirror shows synced positions
     if (this.claimedBy && !this.claimedBy.alive) this.claimedBy = null;
+    // Collector vacuum: with a Farmhand on the field NOTHING is missed. Pickups the collector
+    // isn't already walking to drift toward it (map-wide) and bank at the full rate.
+    const ws = g.workers();
+    if (ws.length && this.age > 1.2) {
+      const w = this.claimedBy && this.claimedBy.alive ? this.claimedBy : ws.reduce((a, b) => ((a.x - this.x) ** 2 + (a.y - this.y) ** 2 <= (b.x - this.x) ** 2 + (b.y - this.y) ** 2 ? a : b));
+      const dx = w.x - this.x, dy = w.y - this.y, L = Math.hypot(dx, dy) || 1, v = Math.min(L, (260 + this.age * 60) * dt);
+      this.x += (dx / L) * v; this.y += (dy / L) * v; this.vacuum = true;
+      if (L < 18 || this.age > this.autoAt + 6) { this.collect(g, 1, 'Farmhand'); return; }
+      return;
+    }
     if (this.age > this.autoAt) this.collect(g, this.kind === 'orb' ? 1 : this.kind === 'scrap' ? 0.4 : PICKUP_AUTO_RATE, 'auto');
   }
   collect(g: Game, rate: number, by: string) {
     if (!this.alive) return;
+    if (g.isClient) { g.netCollect?.(this, rate, by); return; }
     this.alive = false;
     const v = Math.round(this.value * rate);
     if (this.kind === 'orb') {

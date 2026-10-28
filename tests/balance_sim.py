@@ -21,11 +21,11 @@ with sync_playwright() as p:
             while True:
                 r = pg.evaluate('window.__bot.runWave()')
                 if not r.get('started'): break
-                last = r; curve.append(r['hq'])
+                last = r; curve.append((r['wave'], r['hq'], r['credits'], r['towers']))
                 if r['state'] != 'playing' or r['wave'] >= total or time.time() - t0 > 420: break
             row = {'map': m, 'diff': d, 'total': total, 'reached': last['wave'] if last else 0, 'won': bool(last and last['state'] == 'won'),
-                   'hq': last['hq'] if last else 0, 'hqMax': last['hqMax'] if last else 0, 'towers': last['towers'] if last else 0, 'leaked': last['leaked'] if last else 0, 'secs': round(time.time() - t0)}
-            print(row, flush=True); res.append(row); pg.close()
+                   'hq': last['hq'] if last else 0, 'hqMax': last['hqMax'] if last else 0, 'towers': last['towers'] if last else 0, 'leaked': last['leaked'] if last else 0, 'secs': round(time.time() - t0), 'curve': curve}
+            print({k: v for k, v in row.items() if k != 'curve'}, curve[-6:], flush=True); res.append(row); pg.close()
     b.close()
 os.makedirs(os.path.join(ROOT, 'balance'), exist_ok=True)
 json.dump(res, open(os.path.join(ROOT, 'balance', args.out + '.json'), 'w'), indent=1)

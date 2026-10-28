@@ -55,7 +55,7 @@ for m in M:
                 p1 = at(Pa, d1)
                 for d2 in range(int(Lq * .08), int(Lq * .95), 20):
                     p2 = at(Q, d2); C = math.dist(p1, p2)
-                    if C < 180 or C > 1100:
+                    if C < 360 or C > 1100:
                         continue
                     S = (L - d1) - C - (Lq - d2)
                     if S < 150 or (best and S <= best['saved']):

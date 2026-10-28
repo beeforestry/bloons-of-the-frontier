@@ -37,10 +37,16 @@ import { ABILITIES, EMP, HIJACK, RALLY, STIM, VET_AURA } from '../data/abilities
 /** Anything bugs / acid can hurt. */
 export type Damageable = (Tower | Unit | Building | Barrier) & { takeDamage(g: Game, n: number): void };
 export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap';
-export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number }
+export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number; owner?: number; /** MAC: the exact aimed point (clears terrain there even when the sweep snaps to a lane). */ aim?: Vec }
 export interface Decal { x: number; y: number; r: number; ang: number; t: number }
 
 export const START_CREDITS = 750;
+export { PCOLORS } from '../core/players';
+export type PingKind = 'defend' | 'attack' | 'spawn';
+export interface Ping { x: number; y: number; kind: PingKind; pid: number; t: number }
+export interface Telegraph { x: number; y: number; lane: number; t: number; dur: number; label: string }
+/** Balance pass (sim): enemy HP ease per map. */
+export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.8 };
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
 export interface Effect {
@@ -92,7 +98,7 @@ export class Game {
   /** Deploy cooldown per troop type. */
   deployCd: Record<string, number> = {};
   stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0,
-    powers: 0, hover: 0, hypno: 0, allyKills: 0, bossPhase2: 0, bossAttacks: 0, bossKills: 0, chain: 0, devoured: 0, vetAura: 0, rally: 0,
+    combos: 0, powers: 0, hover: 0, hypno: 0, allyKills: 0, bossPhase2: 0, bossAttacks: 0, bossKills: 0, chain: 0, devoured: 0, vetAura: 0, rally: 0,
     orbs: 0, scrap: 0, promotions: 0, abilities: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, scrapBy: {} as Record<string, number> };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
@@ -112,10 +118,32 @@ export class Game {
   /** Group-move formation for multi-select. */
   formation: Formation = 'line';
   private blockLoad = new Map<Blocker, number>();
+  // ------------------------------------------------------------------ multiplayer (phase 2)
+  /** 'solo' = single player (untouched), 'host' = authoritative sim, 'client' = mirror that only renders/interpolates. */
+  net: 'solo' | 'host' | 'client' = 'solo';
+  mode: 'solo' | 'coop' | 'versus' = 'solo';
+  /** Player whose wallet / ownership applies to the action being executed (host swaps wallets per command). */
+  actingPid = 0;
+  /** This tab's player id (0 = host). */
+  localPid = 0;
+  /** Client mirror: true only while applying a host snapshot (allows entity creation). */
+  syncing = false;
+  /** Network hooks: client actions become commands, the host reports events (pings, combos, telegraphs). */
+  netHook: { onSpawnEnemy?: (e: Enemy) => void; onCombo?: (x: number, y: number) => void } = {};
+  get isClient() { return this.net === 'client'; }
+  /** Map pings (Defend Here / Attack Here / Enemy Spawning) and versus spawn telegraphs; rendered for everyone. */
+  pings: Ping[] = [];
+  telegraphs: Telegraph[] = [];
+  addPing(p: Omit<Ping, 't'>) { this.pings.push({ ...p, t: 0 }); if (this.pings.length > 12) this.pings.shift(); this.sfx('select'); }
+  /** Client: clicking / hovering a pickup asks the host to bank it. */
+  netCollect: ((p: Pickup, rate: number, by: string) => void) | null = null;
+  /** Per-player collector cap etc.: squads owned by the acting player (solo: all). */
+  ownedSquads(pid = this.actingPid) { return this.squads.filter((s) => s.alive && (this.net === 'solo' || s.owner === pid)); }
 
   constructor(readonly map: MapDef = MAPS[0], readonly diff: Difficulty = DIFFICULTIES[1]) {
     applyCostMul(diff.cost);
     this.waves = new WaveManager(buildWaves(diff.waves), diff.hp);
+    this.waves.mapEase = MAP_EASE[map.id] ?? 1;
     this.res = new ResourceManager(this.bus, diff.cash ?? START_CREDITS);
     this.grid = new PlacementSystem<Tower>(map);
     const lanes = map.lanes?.length ? map.lanes : [map.waypoints];
@@ -239,7 +267,7 @@ export class Game {
     return 1;
   }
   clearObstacle(o: Obstacle) {
-    if (!o.alive) return;
+    if (!o.alive || (this.isClient && !this.syncing)) return;
     o.alive = false;
     for (const c of o.cells) this.grid.unblock(c.c, c.r);
     this.obstacles = this.obstacles.filter((x) => x !== o);
@@ -275,6 +303,7 @@ export class Game {
     if (!this.res.spend({ credits: d.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
     const b = new Building(d, pad.x, pad.y, pad, toVec(this.map.rally ?? [pad.x - 200, pad.y]));
     b.startConstruction(0);
+    b.owner = this.actingPid;
     pad.building = b;
     this.buildings.push(b);
     this.stats.built++;
@@ -306,8 +335,19 @@ export class Game {
     this.toast(`${b.t.name} destroyed!`, '#ff6b6b');
     this.removeBuilding(b);
   }
+  /** Leaky bucket: bugs mauling the HQ gate deal at most ~3.5% of max HQ per second combined,
+   *  so a single swarm can't wipe a full base in one wave (sim: one-wave 190 -> 0 deaths). */
+  private hqMelee = 0; private hqMeleeT = 0;
+  /** Hard/Impoppable early-game catch-up: +25% pop bounty through wave 20 (sim: bots that
+   *  spent every credit still went broke by wave 10-11 vs the first Bile Titan). */
+  get bountyMul() { return this.diff.hp > 1 && this.waves.index <= 20 ? 1.25 : 1; }
   damageHQ(n: number, _src?: Enemy) {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' || this.isClient) return;
+    if (_src?.atBase) {
+      const cap = this.hq.health.max * 0.035;
+      this.hqMelee = Math.min(cap, this.hqMelee + cap * (this.time - this.hqMeleeT)); this.hqMeleeT = this.time;
+      n = Math.min(n, this.hqMelee); this.hqMelee -= n; if (n <= 0) return;
+    }
     this.hq.takeDamage(this, n);
     this.bus.emit('lives', { lives: this.lives });
   }
@@ -332,7 +372,7 @@ export class Game {
       if (nl.dist < 160) { const pp = this.paths[nl.lane].at(nl.d); ang = pp.ang; x = pp.x; y = pp.y; }
       else { const prev = this.paths[nl.lane].at(nl.d); ang = prev.ang; }
     }
-    this.strikes.push({ kind: id, x, y, ang, t: 0, hit: new Set(), segs: 0 });
+    this.strikes.push({ kind: id, x, y, ang, t: 0, hit: new Set(), segs: 0, owner: this.actingPid, aim: { x: at.x, y: at.y } });
     this.toast(id === 'mac' ? 'MAC round inbound!' : 'Medical canister away!', id === 'mac' ? '#ffd84a' : '#9ff7b0');
     return true;
   }
@@ -344,10 +384,14 @@ export class Game {
         const N = 7, k = Math.min(N, Math.floor(((s.t - MAC.delay) / MAC.sweep) * N) + 1);
         const c = Math.cos(s.ang), sn = Math.sin(s.ang);
         while (s.segs < k) {
-          const along = (s.segs / (N - 1) - 0.5) * MAC.length, px = s.x + c * along, py = s.y + sn * along, r = MAC.length / N * 0.9;
+          this.curOwner = s.owner ?? 0;
+          const along = (s.segs / (N - 1) - 0.5) * MAC.length, px = s.x + c * along, py = s.y + sn * along, r = MAC.length / N * 0.9 * this.comboMul(s.x + c * along, s.y + sn * along, MAC.width);
           this.fx({ kind: 'boom_fire', x: px, y: py, r: MAC.width, dur: 0.55 });
           this.blastTerrain(px, py, MAC.width, 999);
-          if (s.segs === 0) { this.shake(16); this.sfx('mac', px, py); }
+          if (s.segs === 0) {
+            this.shake(16); this.sfx('mac', px, py);
+            if (s.aim && dist(s.aim, { x: px, y: py }) > MAC.width) { this.blastTerrain(s.aim.x, s.aim.y, MAC.width * 0.8, 999); this.fx({ kind: 'boom_fire', x: s.aim.x, y: s.aim.y, r: MAC.width * 0.8, dur: 0.55 }); }
+          }
           if (s.segs % 2 === 0) this.shock(px, py, MAC.width * 2.2, 0.6);
           this.decals.push({ x: px, y: py, r: MAC.width * 0.9, ang: Math.random() * 6, t: 0 });
           for (const e of this.enemies) {
@@ -405,7 +449,7 @@ export class Game {
       if (load < a.blockCap) { this.blockLoad.set(a, load + 1); return a; }
     }
     for (const u of this.units) {
-      if (!u.alive || u.garrison || u.dropT > 0) continue;
+      if (!u.alive || u.garrison || u.dropT > 0 || u.isWorker) continue;
       if (dist2(u, e) > (e.data.radius + 14) ** 2) continue;
       const load = this.blockLoad.get(u) ?? 0;
       if (load < u.blockCap) { this.blockLoad.set(u, load + 1); return u; }
@@ -415,8 +459,10 @@ export class Game {
   // ------------------------------------------------------------------ t28: hypnosis, bosses, vet aura
   /** Hypno-Shroom: the enemy switches sides at FULL health and marches back down the road. */
   hypnotize(e: Enemy, tw: Tower | null, power: number): boolean {
-    if (!e.alive || e.ally || e.data.boss || e.data.bossKit) return false;
+    if (!e.alive || e.ally || e.data.boss || e.data.bossKit || this.isClient) return false;
     e.ally = true; e.allyPower = power;
+    // sturdier converts: tiny bloons get a hypno HP floor, still converted at FULL health
+    e.maxHp = Math.max(e.maxHp, Math.round(30 + 40 * power));
     e.hp = e.maxHp; e.shield = e.maxShield; e.shieldDown = false;
     e.stunT = 0; e.slowT = 0; e.blockedBy = null; e.atBase = false;
     this.enemies = this.enemies.filter((x) => x !== e);
@@ -442,7 +488,7 @@ export class Game {
   hurtFriendlies(x: number, y: number, r: number, dmg: number) {
     const p = { x, y }, r2 = r * r;
     for (const t of this.towers) if (t.alive && !t.disabled && dist2(t, p) <= r2) t.takeDamage(this, dmg);
-    for (const u of this.units) if (u.alive && u.dropT <= 0 && dist2(u, p) <= r2) u.takeDamage(this, dmg);
+    for (const u of this.units) if (u.alive && u.dropT <= 0 && !u.isWorker && dist2(u, p) <= r2) u.takeDamage(this, dmg);
     for (const b of this.barriers) if (b.alive && dist2(b, p) <= r2) b.takeDamage(this, dmg);
     for (const b of this.buildings) if (b.alive && dist2(b, p) <= (r + 40) ** 2) b.takeDamage(this, dmg * 0.5);
   }
@@ -494,7 +540,7 @@ export class Game {
     let best: Damageable | null = null, bd = r;
     for (const b of this.buildings) if (b.alive) { const d = dist(b, p) - 40; if (d < bd) { bd = d; best = b; } }
     for (const t of this.towers) if (t.alive && !t.disabled) { const d = dist(t, p); if (d < bd) { bd = d; best = t; } }
-    for (const u of this.units) if (u.alive && u.dropT <= 0) { const d = dist(u, p); if (d < bd) { bd = d; best = u; } }
+    for (const u of this.units) if (u.alive && u.dropT <= 0 && !u.isWorker) { const d = dist(u, p); if (d < bd) { bd = d; best = u; } }
     for (const b of this.barriers) if (b.alive) { const d = dist(b, p); if (d < bd) { bd = d; best = b; } }
     return best;
   }
@@ -605,7 +651,7 @@ export class Game {
     for (let j = 0; j <= (c.chain ?? 0) && cur; j++) {
       done.add(cur);
       cur.takeDamage(this, dmg, 'energy', tw, hit);
-      if (c.slow) { cur.slowAmt = Math.max(cur.slowAmt, c.slow); cur.slowT = 0.5; }
+      if (c.slow) { cur.slowAmt = Math.max(cur.slowAmt, c.slow); cur.slowT = 0.5; cur.markSlow(this); }
       this.fx({ kind: 'beam', x: from.x, y: from.y, x2: cur.x, y2: cur.y, color: '#9fe7ff', width: j ? 2.5 : 4, dur: 0.12, jag: 1 } as Effect);
       if (j) this.stats.chain++;
       from = cur; dmg *= 0.8;
@@ -625,10 +671,26 @@ export class Game {
     for (const e of hits) e.takeDamage(this, dmg, type, from, hit);
     this.fx({ kind: 'beam', x: from.x, y: from.y, x2: ex, y2: ey, color, width, dur: 0.08 });
   }
+  /** Versus host controller (cards, threat energy, spells, telegraphs, Boss Push); null otherwise. */
+  versus: { update(g: Game, dt: number): void } | null = null;
+  /** Owner (player id) of whatever is currently firing (towers / units / projectiles / MAC). */
+  curOwner = -1;
+  private comboT = 0;
+  /** Co-op synergy: an explosion on enemies an ALLY slowed/glued in the last 2.5 s gets +20% AoE. */
+  comboMul(x: number, y: number, r: number): number {
+    if (this.mode !== 'coop') return 1;
+    for (const e of this.enemies) if (e.alive && e.slowBy >= 0 && e.slowBy !== this.curOwner && this.time - e.slowAt < 2.5 && dist2(e, { x, y }) <= (r + e.data.radius) ** 2) {
+      this.stats.combos++;
+      if (this.time - this.comboT > 0.4) { this.comboT = this.time; this.fx({ kind: 'text', x, y: y - 40, text: 'COMBO! +20% AoE', color: '#ffd84a', dur: 1.1 }); this.netHook.onCombo?.(x, y); }
+      return 1.2;
+    }
+    return 1;
+  }
   splash(x: number, y: number, r: number, dmg: number, type: DamageType, from?: Vec, look: 'boom' | 'boom_fire' = 'boom', hit?: HitOpts, slow?: number) {
+    if (type === 'explosive' || type === 'fire') r *= this.comboMul(x, y, r);
     for (const e of this.enemies) if (e.alive && dist2(e, { x, y }) <= (r + e.data.radius) ** 2) {
       e.takeDamage(this, dmg, type, from, hit);
-      if (slow && !e.data.boss) { e.slowAmt = Math.max(e.slowAmt, slow); e.slowT = 1.6; }
+      if (slow && !e.data.boss) { e.slowAmt = Math.max(e.slowAmt, slow); e.slowT = 1.6; e.markSlow(this); }
     }
     if (type === 'explosive' || type === 'fire') {
       this.blastTerrain(x, y, r, dmg);
@@ -660,7 +722,7 @@ export class Game {
     this.acids.push({ x: from.x, y: from.y - 30, tx: target.x, ty: target.y, t: 0, target, dmg });
   }
   stompUnits(e: Enemy, dmg: number) {
-    for (const u of this.units) if (u.alive && !u.garrison && dist2(u, e) < (e.data.radius + 18) ** 2) u.takeDamage(this, dmg);
+    for (const u of this.units) if (u.alive && !u.garrison && !u.isWorker && dist2(u, e) < (e.data.radius + 18) ** 2) u.takeDamage(this, dmg);
     for (const b of this.barriers) if (b.alive && dist2(b, e) < (e.data.radius + 24) ** 2) b.takeDamage(this, dmg * 3);
   }
 
@@ -670,22 +732,29 @@ export class Game {
     // bosses scale at ~half the wave HP curve so late bosses stay beatable (final boss ~70k on Hard)
     if (ENEMIES[id].bossKit && hpMul > 1) hpMul = 1 + (hpMul - 1) * 0.45;
     const e = new Enemy(ENEMIES[id], progress, lateral, lane, hpMul);
-    e.speedK = this.diff.speed;
+    if (this.isClient && !this.syncing) { e.alive = false; return e; } // host owns spawning
+    e.speedK = this.diff.speed > 1 ? 1 + (this.diff.speed - 1) * Math.min(1, 0.35 + this.waves.index / 25) : this.diff.speed;
     if (e.data.bossKit) { this.toast(`⚠ ${e.data.name} approaches! Phase 1: plated + shielded`, '#ff6b6b'); this.sfx('boss'); this.voice('Under attack! Boss inbound!'); }
     const ps = this.paths[lane]; e.pathLen = ps.length;
     const p = ps.at(progress);
     e.x = p.x; e.y = p.y;
     this.enemies.push(e);
+    this.netHook.onSpawnEnemy?.(e);
     return e;
   }
   spawnPickup(x: number, y: number, value: number, kind: PickupKind = 'credit') {
     x = Math.max(16, Math.min(this.map.width - 16, x)); y = Math.max(16, Math.min(this.map.height - 16, y));
     const p = new Pickup(x, y, value, kind);
+    if (this.isClient && !this.syncing) { p.alive = false; return p; }
     this.pickups.push(p);
     return p;
   }
   /** A bloon reached the HQ: it slams into the base for its total layer value. */
   leak(e: Enemy, lives: number) {
+    if (this.isClient) return;
+    // Non-boss leaks are capped at 20% of max HQ so one MOAB/Titan slipping through hurts
+    // badly but can't end a healthy run on its own (sim showed all-or-nothing wave walls).
+    if (!e.data.boss) lives = Math.min(lives, Math.max(1, Math.round(this.hq.health.max * 0.2)));
     this.stats.leaked += lives;
     this.fx({ kind: 'boom', x: e.x, y: e.y, r: 24 + Math.min(60, lives), dur: 0.35 });
     if (e.data.boss) this.toast(`${e.data.name} rammed the HQ! -${lives}`, '#ff6b6b');
@@ -721,6 +790,7 @@ export class Game {
     if (!spot) { this.toast('Place it ON the road (not too close to the gate)', '#ff8a7a'); this.sfx('error'); return null; }
     if (!this.res.spend({ credits: data.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
     const b = new Barrier(data, spot.x, spot.y, spot.lane);
+    b.owner = this.actingPid;
     this.barriers.push(b);
     this.fx({ kind: 'dust', x: b.x, y: b.y + 10, r: 26, color: '#c9b48a', dur: 0.5 });
     this.sfx('command');
@@ -732,6 +802,7 @@ export class Game {
     if (!this.grid.isFree(cell.c, cell.r)) return null;
     if (!this.res.spend({ credits: data.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
     const t = new Tower(data, cell, this);
+    t.owner = this.actingPid;
     this.grid.occupy(t, cell.c, cell.r);
     this.towers.push(t);
     if (data.fixedLane) {
@@ -756,7 +827,7 @@ export class Game {
     t.targeting = order[(order.indexOf(t.targeting) + 1) % order.length];
   }
   setTargeting(o: Tower | Squad, m: TargetingMode) { o.targeting = m; this.sfx('command'); }
-  squadCount(id: string) { return this.squads.filter((s) => s.data.id === id && s.alive).length; }
+  squadCount(id: string) { return this.ownedSquads().filter((s) => s.data.id === id).length; }
   /** Credits + scrap to field a squad (Barracks training discounts credits only). */
   deployCost(id: string, train = false): Cost {
     const d = unitById(id);
@@ -808,6 +879,8 @@ export class Game {
   spawnSquad(d: ReturnType<typeof unitById>, at: Vec, pod: boolean): Squad {
     at = { x: Math.max(20, Math.min(this.map.width - 20, at.x)), y: Math.max(20, Math.min(this.map.height - 20, at.y)) };
     const sq = new Squad(d, at);
+    sq.owner = this.actingPid;
+    if (this.isClient && !this.syncing) return sq; // host fields squads; the snapshot brings them
     for (let i = 0; i < d.squadSize; i++) {
       const U = d.role === 'worker' ? WorkerUnit : Unit;
       sq.units.push(new U(d, sq, i, this, at));
@@ -1000,9 +1073,11 @@ export class Game {
     for (const b of [...this.buildings]) if (b.alive) b.update(this, dt);
     this.updateStrikes(dt);
     if (this.state !== 'playing') return;
-    this.waves.update(this, dt);
-    for (const t of this.towers) t.update(this, dt);
-    for (const u of this.units) u.update(this, dt);
+    if (!this.isClient) this.waves.update(this, dt);
+    this.versus?.update(this, dt);
+    for (const t of this.towers) { const n0 = this.projectiles.length; this.curOwner = t.owner; t.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = t.owner; }
+    for (const u of this.units) { const n0 = this.projectiles.length; this.curOwner = u.squad.owner; u.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = u.squad.owner; }
+    this.curOwner = -1;
     this.vetAuraTick();
     this.updateGarrisons();
     this.updateSquads();
@@ -1013,7 +1088,8 @@ export class Game {
     for (const e of this.enemies) if (e.alive && e.blockedBy) this.blockLoad.set(e.blockedBy, (this.blockLoad.get(e.blockedBy) ?? 0) + 1);
     for (const e of this.enemies) if (e.alive) e.update(this, dt);
     for (const a of this.allies) if (a.alive) a.updateAlly(this, dt);
-    for (const p of this.projectiles) p.update(this, dt);
+    for (const p of this.projectiles) { this.curOwner = p.owner; p.update(this, dt); }
+    this.curOwner = -1;
     for (const p of this.pickups) p.update(this, dt);
     for (const a of this.acids) {
       a.t += dt / 0.9;
@@ -1041,6 +1117,10 @@ export class Game {
     this.shakeAmt = Math.max(0, this.shakeAmt - dt * 40);
     for (const s of this.shocks) s.t += dt;
     this.shocks = this.shocks.filter((s) => s.t < s.dur);
+    for (const p of this.pings) p.t += dt;
+    this.pings = this.pings.filter((p) => p.t < 6);
+    for (const t of this.telegraphs) t.t += dt;
+    this.telegraphs = this.telegraphs.filter((t) => t.t < t.dur);
   }
 }
 

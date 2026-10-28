@@ -3,6 +3,7 @@
 // Tier visuals: a distinct painted sprite per tier + scale + glow ring + tier pips.
 // =============================================================================
 import type { Game, Effect, Strike } from '../game/Game';
+import { PCOLORS } from '../core/players';
 import type { Building, BuildPad } from '../entities/Building';
 import { MAC, HEAL } from '../data/buildings';
 import type { Tower } from '../entities/Tower';
@@ -138,7 +139,8 @@ export class Renderer {
     for (const e of g.envs) if (this.inView(e.x, e.y, 160)) objs.push({ y: e.y + 20, f: () => this.env(e, v) });
     for (const o of g.obstacles) if (this.inView(o.x, o.y)) objs.push({ y: o.y, f: () => this.obstacle(o) });
     for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
-    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => this.unit(u, sel.has(u.squad) || v.selSquad === u.squad) });
+    const mp = g.net !== 'solo';
+    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); } });
     for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
     for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
     objs.sort((a, b) => a.y - b.y).forEach((o) => o.f());
@@ -166,7 +168,31 @@ export class Renderer {
     else if (v.placing && v.hoverCell) this.ghost(v.placing, v.hoverCell);
     if (v.deploying && v.mouse) { c.globalAlpha = 0.7; this.ringAt(v.mouse.x, v.mouse.y, 24, '#7fd3ff', 3); c.globalAlpha = 1; }
     if (v.box) this.dragBox(v.box);
+    for (const t of g.telegraphs) this.telegraph(t);
+    for (const p of g.pings) this.ping(p);
     this.shockwaves();
+  }
+  /** Owner colour ellipse under co-op towers / troops. */
+  private ownerRing(x: number, y: number, r: number, col: string) {
+    const c = this.ctx; c.globalAlpha = 0.85; c.strokeStyle = col; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y, r, r * 0.42, 0, 0, 7); c.stroke();
+    c.globalAlpha = 0.18; c.fillStyle = col; c.fill(); c.globalAlpha = 1;
+  }
+  /** Versus: red pulsing warning where a major / boss card is about to spawn (2 s ahead). */
+  private telegraph(t: { x: number; y: number; t: number; dur: number; label: string }) {
+    const c = this.ctx, k = t.t / t.dur, pulse = 0.5 + 0.5 * Math.sin(t.t * 14);
+    c.globalAlpha = 0.25 + 0.35 * pulse; c.fillStyle = '#ff2a2a'; c.beginPath(); c.arc(t.x, t.y, 70 + 30 * k, 0, 7); c.fill();
+    c.globalAlpha = 1; this.ringAt(t.x, t.y, 70 + 30 * k, '#ff4a4a', 4);
+    c.setLineDash([10, 8]); this.ringAt(t.x, t.y, 110 - 40 * k, '#ffb0b0', 2); c.setLineDash([]);
+    this.label(t.x, t.y - 96, `⚠ ${t.label} in ${Math.max(0, t.dur - t.t).toFixed(1)}s`, '#ff6b6b', 18, 4);
+  }
+  private ping(p: { x: number; y: number; kind: string; pid: number; t: number }) {
+    const c = this.ctx, col = PCOLORS[p.pid] ?? '#fff', k = (p.t % 1.2) / 1.2;
+    const info = p.kind === 'defend' ? { icon: '🛡', text: 'DEFEND HERE', c2: '#7fd3ff' } : p.kind === 'attack' ? { icon: '⚔', text: 'ATTACK HERE', c2: '#ffb35a' } : { icon: '⚠', text: 'ENEMY SPAWNING', c2: '#ff6b6b' };
+    c.globalAlpha = Math.max(0, 1 - k); this.ringAt(p.x, p.y, 20 + k * 60, info.c2, 4); c.globalAlpha = 1;
+    this.ringAt(p.x, p.y, 18, col, 4);
+    c.fillStyle = col; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - 10, p.y - 26); c.lineTo(p.x + 10, p.y - 26); c.closePath(); c.fill();
+    this.label(p.x, p.y - 40, `${info.icon} ${info.text}`, info.c2, 16, 4);
+    this.label(p.x, p.y - 58, `P${p.pid + 1}`, col, 13, 3);
   }
   /** Shockwave ripple: the frame inside an expanding annulus is redrawn slightly magnified
    *  (cheap refraction) plus a bright ring. Screen-space, one drawImage per ripple. */
@@ -576,12 +602,13 @@ export class Renderer {
       c.fillStyle = 'rgba(230,210,160,0.55)';
       for (let i = 0; i < 4; i++) { const k = i / 4; c.beginPath(); c.arc(t.slide.fx + (t.x - t.slide.fx) * k, t.slide.fy + (t.y - t.slide.fy) * k + 18, 4 + i * 2, 0, 7); c.fill(); }
     }
+    if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30, PCOLORS[t.owner] ?? '#fff');
     if (t.disabled) c.globalAlpha = 0.55;
     this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aimVis, false, t.recoil, (t.uid % 7) * 0.9, { charge: t.charge, since: t.sinceFire, engaged: t.engaged });
     if (t.hypno) { const n = t.hypno.mine.filter((e) => e.alive).length; if (n) this.label(t.x, t.y - 44, '🌀'.repeat(n), '#ff7ae6', 11); }
     c.globalAlpha = 1;
     this.pips(t.x, t.y + 26, t.tier, t.t.visual.glow);
-    if (t.health.frac < 0.999) this.bar(t.x, t.y - 38, 40, t.health.frac, t.disabled ? '#888' : '#5fe06a', t.uid);
+    if (t.health.frac < 0.999 || (this.g.net !== 'solo' && this.g.mode === 'coop')) this.bar(t.x, t.y - 38, 40, t.health.frac, t.disabled ? '#888' : this.g.net !== 'solo' && this.g.mode === 'coop' ? PCOLORS[t.owner] ?? '#5fe06a' : '#5fe06a', t.uid);
     if (t.disabled) this.label(t.x, t.y - 46, 'OFFLINE', '#ff8a7a');
     if (t.garrisoned.length) this.label(t.x, t.y + 40, '●'.repeat(t.garrisoned.length) + '○'.repeat(Math.max(0, t.gSlots() - t.garrisoned.length)), '#7fd3ff', 11);
     if (t.farm && t.farm.crates > 0) { const n = Math.min(6, Math.ceil(t.farm.crates / 15)); for (let i = 0; i < n; i++) if (IMG.fx_crate) this.img(IMG.fx_crate, t.x + 26 + (i % 2) * 12, t.y + 14 - Math.floor(i / 2) * 11, 18); this.label(t.x + 32, t.y - 24, `¢${t.farm.crates}`, '#ffe14d', 11); }
@@ -692,6 +719,11 @@ export class Renderer {
   /** Bloons float (bob + sway, string wiggle via rotation); bugs scuttle (stride-synced
    *  bob + alternating squash that reads as leg motion) and flip to face their heading. */
   private enemy(e: Enemy) {
+    if (e.smokeT > 0) { this.ctx.globalAlpha = 0.4; this.enemyBody(e); this.ctx.globalAlpha = 1; return; }
+    if (e.surgeT > 0) { const c = this.ctx; c.globalAlpha = 0.5; c.fillStyle = '#ff9a2a'; c.beginPath(); c.ellipse(e.x - Math.cos(e.ang) * 14, e.y - Math.sin(e.ang) * 14 + 6, e.data.radius * 1.4, e.data.radius * 0.6, e.ang, 0, 7); c.fill(); c.globalAlpha = 1; }
+    this.enemyBody(e);
+  }
+  private enemyBody(e: Enemy) {
     const c = this.ctx, d = e.data, im0 = body(d.sprite), time = this.g.time + (e.uid % 13) * 0.7;
     const im = im0 && e.ally ? tintOf(im0, '#ff3fd2') : im0;
     if (d.bossKit && e.bossPhase >= 2) { const R = d.size * 0.55; c.globalAlpha = 0.35 + 0.2 * Math.sin(time * 8); this.additive(IMG.fx_spark, e.x, e.y, R * 2.2, time, e.bossPhase === 3 ? 0.9 : 0.5); c.globalAlpha = 1; }

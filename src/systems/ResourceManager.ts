@@ -15,6 +15,19 @@ export interface Cost { credits: number; power?: number; scrap?: number }
 export class ResourceManager {
   private amounts: Record<ResourceType, number> = { credits: 0, power: 0, scrap: 0 };
   enableSecondary = false;
+  /** Multiplayer client mirror: the host owns the wallet, local adds/spends are ignored. */
+  frozen = false;
+  /** Co-op host: split shared income (kills, farms, waves) across every player's wallet. */
+  splitHook: ((amount: number, type: ResourceType) => number) | null = null;
+  dump() { return { ...this.amounts, earned: this.earned, spent: this.spent }; }
+  load(w: { credits: number; power?: number; scrap: number; earned?: number; spent?: number }, silent = false) {
+    const dc = w.credits - this.amounts.credits, ds = w.scrap - this.amounts.scrap;
+    this.amounts.credits = w.credits; this.amounts.scrap = w.scrap; this.amounts.power = w.power ?? 0;
+    if (w.earned !== undefined) this.earned = w.earned; if (w.spent !== undefined) this.spent = w.spent;
+    if (silent) return;
+    if (dc) this.bus.emit('credits', { credits: this.amounts.credits, delta: dc });
+    if (ds) this.bus.emit('scrap', { scrap: this.amounts.scrap, delta: ds });
+  }
   /** Lifetime stats for the HUD / tests. */
   earned = 0;
   spent = 0;
@@ -31,7 +44,7 @@ export class ResourceManager {
   }
   /** Returns false (and spends nothing) if unaffordable. */
   spend(c: Cost): boolean {
-    if (!this.canAfford(c)) return false;
+    if (this.frozen || !this.canAfford(c)) return false;
     this.amounts.credits -= c.credits;
     if (this.enableSecondary) this.amounts.power -= c.power ?? 0;
     if (c.scrap) { this.amounts.scrap -= c.scrap; this.scrapSpent += c.scrap; this.bus.emit('scrap', { scrap: this.amounts.scrap, delta: -c.scrap }); }
@@ -40,8 +53,10 @@ export class ResourceManager {
     return true;
   }
   add(amount: number, type: ResourceType = 'credits') {
-    if (amount <= 0) return;
+    if (amount <= 0 || this.frozen) return;
+    if (this.splitHook) amount = this.splitHook(amount, type);
     amount = Math.round(amount);
+    if (amount <= 0) return;
     this.amounts[type] += amount;
     if (type === 'credits') {
       this.earned += amount;

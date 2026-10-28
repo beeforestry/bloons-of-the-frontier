@@ -16,10 +16,14 @@ import { towerById } from './data/towers';
 import { DIFFICULTIES, difficultyById, type DifficultyId } from './data/difficulty';
 import { Tutorial, TUTORIAL_KEY } from './ui/Tutorial';
 import { ENEMIES } from './data/enemies';
+import { Lobby, type MpStart } from './ui/Lobby';
+import { Sync } from './net/Sync';
+import { NetHud } from './ui/NetHud';
+import type { PingKind } from './game/Game';
 
 const LS = { get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* */ } } };
 
-declare global { interface Window { __game?: ReturnType<typeof testHooks> } }
+declare global { interface Window { __game?: ReturnType<typeof testHooks>; __lobby?: Lobby } }
 
 async function boot() {
   // Dev-time upgrade-rule validation (also enforced in `npm run build`).
@@ -48,13 +52,17 @@ async function boot() {
   }
   paint();
   document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start('garden', diff, true); };
+  // Multiplayer modes + lobby (Co-Op Defense / 1v1 Versus); ?room=1234 auto-joins.
+  window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp));
   const q = qs.get('map');
   if (q && MAPS.some((m) => m.id === q)) start(q, diff);
 }
 
-function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false) {
+function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false, mp?: MpStart) {
   document.getElementById('menu')!.classList.remove('show');
   const g = new Game(MAPS.find((m) => m.id === mapId)!, difficultyById(diffId));
+  // Multiplayer: host-authoritative sync (single player never creates it)
+  const sync = mp ? new Sync(g, mp.net, mp.settings, mp.players, mp.localPid) : null;
   const canvas = document.getElementById('game') as HTMLCanvasElement;
   const view: ViewState = { placing: null, deploying: null, hoverCell: null, mouse: null, selTower: null, selSquad: null, selBuilding: null, selPad: null, power: null, rallyFor: null,
     selSquads: [], box: null, boxMode: false, queueMode: false, patrolMode: false, patrolPts: [], showFps: false };
@@ -79,6 +87,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
+  const netHud = sync ? new NetHud(g, sync) : null;
   window.addEventListener('resize', () => r.resize());
   new ResizeObserver(() => r.resize()).observe(canvas);
   // Start zoomed out on the whole battlefield, then the player can dive in.
@@ -102,10 +111,16 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   const busy = () => !!(view.placing || view.deploying || view.power || view.rallyFor);
   canvas.addEventListener('pointerdown', (ev) => {
     const l = local(ev), touch = ev.pointerType !== 'mouse';
+    // Multiplayer pings: Alt+Click (desktop) or long-press with nothing selected (touch)
+    if (netHud && ev.altKey && !touch) { netHud.openPing(l.x, l.y, toMap(ev)); ev.preventDefault(); return; }
     const pt: Ptr = { x: l.x, y: l.y, sx: l.x, sy: l.y, moved: false, button: ev.button, touch, box: false, lp: 0, long: false };
     ptrs.set(ev.pointerId, pt);
     canvas.setPointerCapture?.(ev.pointerId);
     if (ptrs.size === 2) { for (const q of ptrs.values()) { clearTimeout(q.lp); q.box = false; } view.box = null; const [p1, p2] = [...ptrs.values()]; pinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, zoom: r.cam.zoom }; }
+    if (netHud && touch && ptrs.size === 1 && !view.selSquads.length && !busy()) {
+      const at = toMap(ev);
+      pt.lp = window.setTimeout(() => { if (pt.moved || ptrs.size !== 1) return; pt.long = true; navigator.vibrate?.(20); netHud.openPing(l.x, l.y, at); }, 550);
+    }
     if (touch && ptrs.size === 1 && view.selSquads.length && !busy()) {
       const at = toMap(ev);
       pt.lp = window.setTimeout(() => {
@@ -196,6 +211,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (view.selBuilding?.data.id === 'barracks') g.setRally(view.selBuilding, p);
   }
   function click(p: Vec, keep = false) {
+    if (netHud?.mapClick(p)) return;
     if (view.power) {
       const id = view.power;
       if (g.castPower(id, p)) { view.power = null; g.sfx('ability'); }
@@ -317,7 +333,9 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   // FPS meter + auto-quality governor (drops particle caps / shockwave refraction /
   // damage numbers when frames dip below 45 fps, restores above 57).
   const fps = { cur: 60, lowT: 0, highT: 0, acc: 0, n: 0, t: 0, sample: null as null | number[] };
-  let last = performance.now();
+  let last = performance.now(), lastFrame = last;
+  // MP host in a background tab: rAF pauses, so keep the authoritative sim + snapshots ticking.
+  if (sync?.isHost) setInterval(() => { const now = performance.now(); if (now - lastFrame > 300) { lastFrame = now; g.update(0.1); sync.update(0.1); } }, 100);
   function frame(now: number) {
     const raw = (now - last) / 1000, dt = Math.min(0.1, raw); last = now;
     fps.acc += raw; fps.n++; fps.t += raw;
@@ -330,7 +348,10 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
       fps.t = 0;
       if (view.showFps && fpsEl) fpsEl.textContent = `${fps.cur.toFixed(0)} FPS · Q${r.quality} · ${r.drawn.parts} parts · ${g.enemies.length} foes · ${r.drawn.objs} drawn`;
     }
+    lastFrame = now;
     g.update(dt);
+    sync?.update(dt);
+    netHud?.update(dt);
     hud.update(dt);
     tut?.update(dt);
     // keyboard + screen-edge panning (speed in screen px / s)
@@ -351,7 +372,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   requestAnimationFrame(frame);
   // First-play tutorial (auto on the first match; replay via 🎓 in the menu).
   let tut: Tutorial | null = null;
-  if (forceTutorial || !Tutorial.done()) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
+  if (!mp && (forceTutorial || !Tutorial.done())) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
   window.__game = Object.assign(testHooks(g, view, hud, click, r), {
     tutorial: () => ({ active: !!tut?.active, step: tut?.i ?? -1, steps: tut?.steps ?? 0, done: Tutorial.done(), visible: !(document.getElementById('tutorial')?.hidden ?? true) }),
     tutNext: () => tut?.go(tut.i + 1), tutSkip: () => tut?.finish(),
@@ -379,6 +400,20 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     fpsNow: () => ({ fps: fps.cur, quality: r.quality }),
     setQuality: (q: number) => r.setQuality(q),
     keyFps: () => !!fpsEl && !fpsEl.hidden,
+    // ---- multiplayer hooks (null in single player)
+    mp: () => sync && ({ net: g.net, mode: g.mode, pid: sync.localPid, role: sync.localRole, snaps: sync.snaps, code: sync.net.code, players: sync.players.map((p) => p.pid),
+      credits: g.res.credits, all: sync.isHost ? sync.players.map((p) => sync.creditsOf(p.pid)) : [...sync.allCredits], pings: g.pings.map((p) => ({ ...p })), telegraphs: g.telegraphs.map((t) => ({ label: t.label, lane: t.lane })),
+      vs: sync.isHost ? sync.versus?.s ?? null : sync.vs, allow: [...sync.allowAlly], waveCountdown: sync.waveCountdown, towers: g.towers.map((t) => ({ id: t.data.id, owner: t.owner, tier: t.tier, c: t.cell.c, r: t.cell.r, disabled: t.disabledT })),
+      enemies: g.enemies.map((e) => ({ id: e.data.id, smoke: e.smokeT, surge: e.surgeT, lane: e.lane })), stats: { combos: g.stats.combos } }),
+    mpPing: (kind: PingKind, x: number, y: number) => sync?.ping(kind, { x, y }),
+    mpDonate: (to: number, amount: number) => sync?.donate(to, amount),
+    mpAllow: (on: boolean) => { sync?.allowAlly.set(sync.localPid, on); sync?.setAllow(on); },
+    mpCard: (id: string, lane: number) => sync?.card(id, lane),
+    mpSpell: (id: string, x: number, y: number) => sync?.spell(id, { x, y }),
+    mpDigest: () => sync?.digest() ?? null,
+    mpRequestDigest: () => sync?.requestDigest(),
+    mpHostDigest: () => sync?.hostDigest ?? null,
+    mpOpenPing: (x: number, y: number) => { const s = r.worldToScreen(x, y); netHud?.openPing(s.x, s.y, { x, y }); },
   });
 }
 

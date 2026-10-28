@@ -20,6 +20,8 @@ import { ABILITIES, SWEEP } from '../data/abilities';
 export class Tower implements Buffable, Garrisonable {
   readonly uid = nextId();
   tier = 0;
+  /** Player who built it (multiplayer; 0 = host / single player). */
+  owner = 0;
   x: number; y: number;
   alive = true;
   readonly buffs = new BuffReceiver();
@@ -107,7 +109,7 @@ export class Tower implements Buffable, Garrisonable {
     this.health.heal(amount);
   }
   takeDamage(g: Game, n: number) {
-    if (!this.alive || this.disabled) return;
+    if (!this.alive || this.disabled || g.isClient) return;
     this.health.damage(n);
     this.pulse = 1;
     if (!this.health.alive) {

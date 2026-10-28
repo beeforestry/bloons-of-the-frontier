@@ -114,6 +114,9 @@ def compose(M):
     if M.get('tint'): g = Image.blend(g, Image.new('RGB', g.size, M['tint']), 0.12)
     lo = noise(M['seed'] + 2, 400, 120)  # large-scale value variation
     g = Image.composite(ImageEnhance.Brightness(g).enhance(1.12), ImageEnhance.Brightness(g).enhance(0.84), lo)
+    block = deco_ok = None
+    if M.get('painter'):  # hand-built map painter (El Morro v2)
+        g, block, deco_ok = M['painter'](M, W, H, tex, noise)
     water_polys = [catmull(w) for w in M.get('water', [])]
     if water_polys:
         wm = line_mask(water_polys, M['waterWidth'], M['seed'] + 3)
@@ -137,10 +140,10 @@ def compose(M):
         g = Image.composite(ImageEnhance.Brightness(tex('sandstone', 520)).enhance(0.62), g, rim)
         g = Image.composite(tex('sandstone', 520), g, mm)
     # ---- base plaza
-    pm = Image.new('L', (W, H), 0); d = ImageDraw.Draw(pm)
+    pm = Image.new('L', (W, H), 0) if M.get('noPlaza') else Image.new('L', (W, H), 0); d = ImageDraw.Draw(pm)
     d.ellipse([hq[0] - 300, hq[1] - 290, hq[0] + 300, hq[1] + 290], fill=255)
-    pm = pm.filter(ImageFilter.GaussianBlur(40))
-    g = Image.composite(ImageEnhance.Brightness(tex(M.get('plaza', 'stone'), 420)).enhance(0.95), g, pm)
+    pm = pm.filter(ImageFilter.GaussianBlur(40)) if not M.get('noPlaza') else pm
+    if not M.get('noPlaza'): g = Image.composite(ImageEnhance.Brightness(tex(M.get('plaza', 'stone'), 420)).enhance(0.95), g, pm)
     # ---- lanes: dark rut edge, then road
     road = tex(M['road'], 512)
     edge = line_mask(lanes, pw + 22, M['seed'] + 5)
@@ -152,6 +155,7 @@ def compose(M):
     # centre wear line
     wear = line_mask(lanes, pw * 0.35, M['seed'] + 7).point(lambda v: v * 0.25)
     g = Image.composite(ImageEnhance.Brightness(g).enhance(1.15), g, wear)
+    if M.get('post'): g = M['post'](M, g, lanes)
     # ---- decorations
     blocked = []  # (x, y, r)
     def clear(x, y, r):
@@ -160,9 +164,11 @@ def compose(M):
         if water_polys and min(poly_dist((x, y), w) for w in water_polys) < M['waterWidth'] / 2 + r: return False
         if ocean is not None and ocean.getpixel((int(min(W - 1, x)), int(min(H - 1, y)))) > 20: return False
         if math.hypot(x - hq[0], y - hq[1]) < 330 + r: return False
+        if deco_ok is not None and deco_ok.getpixel((int(min(W - 1, max(0, x))), int(min(H - 1, max(0, y))))) < 128: return False
         for bx, by, br in blocked:
             if math.hypot(x - bx, y - by) < (r + br) * 0.85: return False
         return True
+    if M.get('roadEdge') is False: pass
     for (key, x, y, sc) in M.get('fixed', []):
         g, r = stamp(g, key, x, y, sc); blocked.append((x, y, r))
     items = []
@@ -196,6 +202,7 @@ def compose(M):
             ok = min(poly_dist((cx, cy), l) for l in lanes) > pw / 2 + CELL * 0.42
             if ok and water_polys: ok = min(poly_dist((cx, cy), w) for w in water_polys) > M['waterWidth'] / 2 + CELL * 0.35
             if ok and ocean is not None and ocean.getpixel((int(cx), int(cy))) > 60: ok = False
+            if ok and block is not None and block.getpixel((int(cx), int(cy))) > 60: ok = False
             if ok and abs(cx - hq[0]) < HQ_R + 30 and abs(cy - hq[1]) < HQ_R + 30: ok = False
             if ok:
                 for px, py in pads:
@@ -220,6 +227,10 @@ def compose(M):
                 **({'envs': M['envs']} if M.get('envs') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}))
 
 HQ_G = [1980, 744]
+import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import morro_v2
+MORRO_HQ = [1730, 830]
+MORRO_PADS = [[1590, 600], [1730, 640], [1250, 560], [1240, 1080], [1700, 1000], [1880, 760]]
 def ring(hq):  # 6 pads around HQ (left side kept open for lane entry)
     x, y = hq
     return [[x - 140, y - 210], [x + 50, y - 230], [x + 165, y - 90], [x + 165, y + 100], [x + 50, y + 235], [x - 140, y + 215]]
@@ -248,26 +259,31 @@ MAPS = [
              [[-80, 740], [300, 740], [520, 600], [700, 360], [980, 260], [1240, 380], [1340, 620], [1560, 720], [1840, 744]],
              [[-80, 740], [300, 740], [520, 900], [700, 1140], [980, 1240], [1240, 1110], [1340, 860], [1560, 770], [1840, 744]],
          ]),
-    # Castillo San Felipe del Morro, San Juan, Puerto Rico: Atlantic along the north, the fort's
-    # sandstone bastions around the HQ, the green esplanade lawn, lanes from Old San Juan.
-    dict(id='morro', name='El Morro, San Juan', seed=53, ground='grass', tint=(40, 90, 30), road='stone', plaza='sandstone', pathWidth=58, decoCount=48,
-         deco=['palm2', 'palm2', 'palm', 'cannonballs', 'barrels', 'fern', 'boulders'],
-         hq=HQ_G, pads=ring(HQ_G), rally=[1640, 744],
-         ocean=[[[-20, -20], [2230, -20], [2230, 1500], [2196, 1500], [2196, 360], [2120, 300], [1900, 250], [1660, 230], [1420, 190], [1180, 210], [940, 170], [700, 200], [460, 160], [220, 190], [-20, 150]]],
-         masonry=[[[1640, 330], [1900, 300], [2160, 340], [2160, 1180], [1900, 1220], [1640, 1150], [1600, 980], [1650, 900], [1580, 760], [1640, 620], [1590, 470]]],
-         fixed=[['lighthouse', 1950, 330, 1.0], ['rampart', 1700, 470, 0.85], ['rampart', 1700, 1080, 0.85], ['cannon', 1810, 400, 0.9], ['cannon', 2120, 1120, 0.9],
-                ['prflag', 2150, 1250, 1.0], ['searocks', 430, 210, 1.0], ['searocks', 1120, 240, 1.1], ['searocks', 1560, 250, 0.9], ['cannonballs', 2120, 420, 1.0],
-                ['rampart', 2060, 1270, 0.8]],
-         envs=[['garita', 1660, 360], ['garita', 1650, 1180], ['garita', 1340, 260], ['garita', 2100, 1180]],
+    # Castillo San Felipe del Morro v2 (t33u/t34u, repainted from aerial references): the
+    # triangular fort points east into the Atlantic; harbor bay to the south; esplanade lawn
+    # west; Old San Juan along the land edge. Lanes: diagonal lawn footpath through the west
+    # gate + south ramp from the city, and a sea landing from the harbor along the seawall
+    # promenade, up the breakwater stairs at the point.
+    dict(id='morro', name='El Morro, San Juan', seed=53, ground='grass', road='stone', pathWidth=58, decoCount=9, noPlaza=True,
+         painter=morro_v2.paint, post=morro_v2.post, streets=[600, 1250], gate=[1150, 825],
+         deco=['palm2', 'palm2', 'palm', 'palm', 'fern', 'fern', 'boulders'],
+         hq=MORRO_HQ, pads=MORRO_PADS, rally=[1560, 830],
+         fixed=[['lighthouse', 1462, 470, 0.62], ['cannon', 1880, 720, 0.7], ['cannon', 1560, 1150, 0.7], ['cannonballs', 1250, 980, 0.8],
+                ['prflag', 1185, 1010, 0.8], ['palm2', 900, 250, 0.9], ['palm2', 470, 1390, 0.9]],
+         envs=[['garita', 1150, 345], ['garita', 1440, 322], ['garita', 1238, 1282], ['garita', 1650, 478]],
          flavor='morro',
          lanes=[
-             [[-80, 430], [260, 400], [560, 470], [880, 390], [1180, 440], [1420, 560], [1620, 690], [1840, 744]],
-             [[-80, 900], [260, 860], [520, 980], [820, 900], [1060, 760], [1340, 820], [1600, 770], [1840, 744]],
-             [[520, 1570], [560, 1330], [760, 1190], [1000, 1380], [1250, 1410], [1380, 1250], [1260, 1090], [1420, 980], [1600, 870], [1840, 744]],
+             [[-80, 600], [260, 590], [480, 470], [720, 400], [930, 450], [1010, 600], [960, 740], [1040, 815], [1100, 825], [1230, 822], [1330, 765], [1450, 735], [1530, 800], [1590, 830]],
+             [[-80, 1250], [300, 1240], [620, 1320], [920, 1300], [1180, 1345], [1380, 1268], [1480, 1150], [1560, 1040], [1630, 960]],
+             [[700, 1570], [820, 1470], [1080, 1455], [1360, 1420], [1640, 1320], [1880, 1180], [2040, 1050], [2075, 960], [1985, 900], [1870, 850]],
          ]),
 ]
 os.makedirs('/tmp/chk', exist_ok=True)
-out = [compose(M) for M in MAPS]
-json.dump(out, open(f'{ROOT}/src/data/maps.generated.json', 'w'))
+# `--only morro` re-composes just that map and merges it into the existing JSON
+only = sys.argv[sys.argv.index('--only') + 1].split(',') if '--only' in sys.argv else None
+J = f'{ROOT}/src/data/maps.generated.json'
+prev = {m['id']: m for m in json.load(open(J))} if only else {}
+out = [compose(M) if not only or M['id'] in only else prev[M['id']] for M in MAPS]
+json.dump(out, open(J, 'w'))
 for m in out:
     print(m['id'], 'buildable', sum(r.count('1') for r in m['grid']['buildable']), 'kb', os.path.getsize(f'{ROOT}/public/{m["image"]}') // 1024)

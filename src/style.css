@@ -217,3 +217,62 @@ body.panel-hidden #side { transform: translateX(100%); opacity: 0; pointer-event
   body.panel-hidden #side { transform: translateY(100%); max-height: 0; }
   #tutorial { top: auto; bottom: 140px; font-size: 12px; }
 }
+
+/* ---- Multiplayer (phase 2): menu modes, lobby, co-op strip, invader hand, pings, telegraphs */
+#modes { display: flex; gap: 10px; justify-content: center; margin: 10px 0 14px; flex-wrap: wrap; }
+.mode-pick { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 170px; background: #26303c; border: 3px solid #0b0e12; border-radius: 12px; color: #fff; padding: 8px 12px; cursor: pointer; font-size: 18px; }
+.mode-pick small { color: #9fb0c2; font-size: 12px; }
+.mode-pick.on { border-color: #ffd24a; background: #303c4a; }
+body.menu-mp #diffs, body.menu-mp .diff-title, body.menu-mp #maps, body.menu-mp .menu-row { display: none; }
+#mp-panel { margin: 6px 0 12px; }
+.mp-entry { display: flex; gap: 14px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.mp-join { display: flex; gap: 6px; }
+.mp-join input { width: 92px; font-size: 22px; text-align: center; letter-spacing: 4px; border-radius: 10px; border: 2px solid #0e1217; background: #11161c; color: #fff; padding: 6px; }
+.mp-status { color: #ffd24a; min-height: 1.2em; margin: 8px 0 0; }
+.lobby { text-align: left; }
+.lobby-code { display: flex; align-items: center; gap: 12px; justify-content: center; font-size: 16px; }
+.lobby-code b { font-size: 40px; letter-spacing: 8px; color: #ffd24a; text-shadow: 0 2px 0 #000; }
+.lobby-link { width: 100%; box-sizing: border-box; margin: 6px 0; background: #11161c; color: #9fd3ff; border: 1px solid #2a3440; border-radius: 8px; padding: 5px 8px; font-size: 12px; }
+.lobby-players { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.lobby-players li { display: flex; align-items: center; gap: 8px; background: #151b22; border: 2px solid var(--pc, #333); border-radius: 10px; padding: 6px 10px; }
+.lobby-players li i { width: 14px; height: 14px; border-radius: 50%; background: var(--pc, #444); box-shadow: 0 0 8px var(--pc, #000); }
+.lobby-players li em { color: #c9a8ff; font-style: normal; margin-left: 6px; }
+.lobby-players li span { margin-left: auto; } .lobby-players .ok { color: #8ff08f; } .lobby-players .wait { color: #9aa7b4; }
+.lobby-players li.empty { border-style: dashed; color: #7b8794; }
+.lobby-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 8px 0; }
+.lobby-settings label { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: #151b22; border-radius: 8px; padding: 5px 8px; font-size: 13px; }
+.lobby-settings select { background: #26303c; color: #fff; border: 1px solid #0e1217; border-radius: 6px; padding: 3px; }
+.lobby-btns { justify-content: center; gap: 10px; }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn.tiny { padding: 1px 5px; font-size: 11px; border-radius: 6px; margin-left: 4px; }
+#mp-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mp-chip { display: inline-flex; align-items: center; gap: 5px; background: #151b22; border: 2px solid var(--pc); border-radius: 999px; padding: 2px 8px; font-size: 13px; font-weight: 700; }
+.mp-chip i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 6px var(--pc); }
+.mp-chip.me { background: color-mix(in srgb, var(--pc) 25%, #151b22); }
+.mp-allow { font-size: 12px; color: #cfe0f0; display: flex; align-items: center; gap: 4px; }
+.mp-timer, .vs-timer { font-weight: 800; color: #ffd24a; font-size: 14px; }
+.vs-timer { font-size: 18px; padding: 0 6px; }
+body.mp #topbar { border-bottom-color: var(--me); box-shadow: inset 0 -3px 0 var(--me); }
+body.mp:not(.role-invader) #btn-pause { display: none; }
+body.mp-versus #btn-start, body.mp-versus #btn-auto { display: none; }
+body.role-invader #tower-cards, body.role-invader #faction-tabs, body.role-invader #bottombar, body.role-invader #powers, body.role-invader #abilities, body.role-invader #btn-organize { display: none !important; }
+#vs-panel { padding: 10px; display: grid; gap: 8px; }
+#vs-panel h3 { margin: 0; color: #d86bff; } #vs-panel h4 { margin: 4px 0 0; color: #cfe0f0; }
+#vs-panel .te { position: relative; background: #11161c; border-radius: 8px; height: 26px; overflow: hidden; border: 2px solid #0b0e12; }
+#vs-panel .te i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #7a2aff, #d86bff); }
+#vs-panel .te span { position: relative; z-index: 1; font-size: 12px; padding: 4px 8px; display: block; font-weight: 700; }
+#vs-panel .lanes { display: flex; gap: 4px; align-items: center; font-size: 13px; }
+#vs-panel .lanes .on { border-color: #ffd24a; background: #4a3a10; }
+#vs-panel .cards, #vs-panel .spells { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.vs-card, .vs-spell { display: grid; grid-template-columns: 30px 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: 6px; text-align: left; background: #26303c; border: 2px solid #11161c; border-left: 5px solid #d86bff; border-radius: 10px; color: #fff; padding: 5px 7px; cursor: pointer; }
+.vs-card .ic, .vs-spell .ic { grid-row: span 2; font-size: 22px; }
+.vs-card b, .vs-spell b { font-size: 12px; } .vs-card em, .vs-spell em { font-style: normal; color: #ffd24a; font-size: 12px; font-weight: 800; }
+.vs-card small { grid-column: 2 / 4; color: #9fb0c2; font-size: 10px; }
+.vs-card.major { border-left-color: #ff4a4a; }
+.vs-card.poor, .vs-spell.cool { opacity: 0.45; }
+.vs-spell { border-left-color: #7fe8ff; } .vs-spell.armed { border-color: #ffd24a; box-shadow: 0 0 12px #ffd24a; }
+#tele-banner { position: absolute; top: 56px; left: 50%; transform: translateX(-50%); background: #7a0f0fe6; border: 2px solid #ff4a4a; color: #fff; font-weight: 800; padding: 6px 16px; border-radius: 10px; z-index: 6; animation: telePulse 0.5s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes telePulse { from { box-shadow: 0 0 4px #ff2a2a; } to { box-shadow: 0 0 22px #ff2a2a; } }
+#ping-menu { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 4px; transform: translate(-50%, -110%); background: #151b22ee; border: 2px solid var(--me, #7fd3ff); border-radius: 10px; padding: 6px; }
+#ping-menu[hidden] { display: none; }
+@media (max-width: 700px) { .mode-pick { min-width: 120px; font-size: 15px; } .lobby-code b { font-size: 30px; } #mp-bar { font-size: 11px; } .vs-card small { display: none; } }

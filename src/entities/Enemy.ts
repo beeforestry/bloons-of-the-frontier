@@ -62,6 +62,11 @@ export class Enemy {
   pathLen = 1;
   /** Difficulty speed multiplier. */
   speedK = 1;
+  /** Co-op COMBO: who slowed/glued this enemy last, and when (game time). */
+  slowBy = -1; slowAt = -99;
+  /** Versus: Speed Surge (+30% speed) / Smoke Screen (untargetable) timers. */
+  surgeT = 0; smokeT = 0;
+  markSlow(g: Game) { this.slowBy = g.curOwner; this.slowAt = g.time; }
 
   constructor(public data: EnemyData, progress: number, lateral = 0, lane = 0, hpMul = 1) {
     this.hpMul = hpMul;
@@ -100,9 +105,11 @@ export class Enemy {
     if (this.maxShield > 0 && !this.shieldDown && this.shield < this.maxShield) { this.shieldIdle += dt; if (this.shieldIdle > 4) this.shield = Math.min(this.maxShield, this.shield + 10 * dt); }
     const path = this.route ?? g.paths[this.lane] ?? g.path; this.pathLen = path.length;
     if (this.empT > 0) this.empT -= dt;
+    if (this.surgeT > 0) this.surgeT -= dt;
+    if (this.smokeT > 0) { this.smokeT -= dt; this.targetable = this.smokeT <= 0; }
     if (this.stunT > 0) { this.stunT -= dt; return; }
-    if (d.bossKit) this.updateBoss(g, dt);
-    const speedMul = 1 - this.slowAmt;
+    if (d.bossKit && !g.isClient) this.updateBoss(g, dt);
+    const speedMul = (1 - this.slowAmt) * (this.surgeT > 0 ? 1.3 : 1);
 
     // --- blocking by troops (ground only; Bile Titans stomp through)
     if (!d.flying && !this.leapAnim) {
@@ -119,7 +126,7 @@ export class Enemy {
         this.blockedBy = null;
       }
     }
-    if (d.spawns) {
+    if (d.spawns && !g.isClient) {
       this.spawnT -= dt;
       if (this.spawnT <= 0) {
         this.spawnT = d.spawns.every;
@@ -127,7 +134,7 @@ export class Enemy {
         g.fx({ kind: 'ring', x: this.x, y: this.y, r: 30, color: '#e8c35a', dur: 0.4 });
       }
     }
-    if (d.acid) {
+    if (d.acid && !g.isClient) {
       this.acidT -= dt;
       if (this.acidT <= 0) {
         const tgt = g.nearestFriendly(this, d.acid.range);
@@ -172,6 +179,7 @@ export class Enemy {
     this.ang = p.ang;
     if (this.progress >= path.length - (d.family === 'bug' && d.meleeDps ? 6 + (this.uid % 5) * 8 : 0)) {
       if (d.family === 'bug' && d.meleeDps) { this.atBase = true; this.progress = Math.min(this.progress, path.length - 6); }
+      else if (g.isClient) this.progress = path.length; // the host decides leaks; the mirror just waits
       else { this.alive = false; g.leak(this, totalLeak(d.id)); }
     }
   }
@@ -180,6 +188,11 @@ export class Enemy {
   takeDamage(g: Game, amount: number, type: DamageType = 'melee', from?: Vec, hit?: HitOpts): number {
     if (!this.alive || amount <= 0) return 0;
     const d = this.data;
+    if (g.isClient) { // mirror: visuals only, the host's snapshot owns HP / pops
+      this.hitFlash = 0.08;
+      if (!this.ally && !(d.air && !hit?.antiAir)) g.dmgNumber(this.x, this.y - d.size * 0.4, amount, hit?.crit ? '#ffe14d' : '#ffffff', hit?.crit, this.uid);
+      return 0;
+    }
     if (this.ally) { // hypnotized: hurt by the enemies it brawls
       this.hp -= amount; this.hitFlash = 0.08;
       if (this.hp <= 0) { this.alive = false; g.fx({ kind: 'pop', x: this.x, y: this.y, r: d.size * 0.5, color: '#d86bff', dur: 0.4 }); }
@@ -256,7 +269,7 @@ export class Enemy {
   }
   /** Bounty / kill / XP / scrap / pop fx for one popped layer. */
   private reward(g: Game, d: EnemyData) {
-    g.res.add(d.bounty);
+    g.res.add(d.bounty * g.bountyMul);
     g.stats.kills++;
     if (d.bossKit) { g.stats.bossKills++; g.toast(`💀 ${d.name} destroyed!`, '#ffd84a'); g.shake(18); g.fx({ kind: 'boom', x: this.x, y: this.y, r: d.size * 0.7, dur: 0.9 }); g.sfx('explosion', this.x, this.y); g.voice('Target down! Outstanding!'); }
     g.stats.layers = (g.stats.layers ?? 0) + 1;

@@ -22,6 +22,8 @@ import { gLeave, type Garrisonable } from './Garrison';
 
 export class Squad {
   readonly uid = nextId();
+  /** Player who fielded it (multiplayer). */
+  owner = 0;
   units: Unit[] = [];
   /** Structure this squad is walking to garrison (Halo Wars style 'enter building'). */
   garrisonTarget: Garrisonable | null = null;
@@ -109,7 +111,7 @@ export class Unit implements Buffable {
 
   /** Projectile / acid / stomp damage. Garrisoned troops take reduced damage. */
   takeDamage(g: Game, n: number) {
-    if (!this.alive || this.dropT > 0) return;
+    if (!this.alive || this.dropT > 0 || this.isWorker || g.isClient) return; // collectors are immune + untargetable
     if (this.garrison) n *= 1 - this.garrison.gProtect();
     this.health.damage(n);
     this.hitPulse = 1;

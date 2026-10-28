@@ -153,7 +153,10 @@ with sync_playwright() as p:
     if M == 'morro':
         n = G('H.g.envs ? H.g.envs.filter(e => e.kind === "garita").length : H.g.garrisons?.filter?.(e => e.kind === "garita").length')
         check((n or 0) >= 3, f'El Morro has {n} garitas')
-        G('H.camReset()'); pg.keyboard.press('h'); pg.wait_for_timeout(500); shot(pg, 'el_morro_full_map'); pg.keyboard.press('h')
+        G('H.camReset()'); pg.keyboard.press('h'); pg.wait_for_timeout(500); shot(pg, 'el_morro_full_map'); shot(pg, 'el_morro_v2_full_map'); pg.keyboard.press('h')
+        sc = G('H.g.shortcuts.length'); check(sc >= 1, f'El Morro v2 keeps a blocked shortcut ({sc})')
+        ob = G('H.g.obstacles.length'); check(ob >= 3, f'El Morro v2 has destructible terrain ({ob} obstacles)')
+        ln = G('H.g.paths.length'); check(ln == 3, f'El Morro v2: lawn footpath + south ramp + sea-landing jetty lanes ({ln})')
     # -------- difficulty: Hard -> wave 100 final boss -> victory -> freeplay
     print('== hard / wave 100 / freeplay')
     hp = b.new_page(viewport={'width': 1600, 'height': 960}); attach(hp)
@@ -162,7 +165,7 @@ with sync_playwright() as p:
     G, until = mk(hp)
     d = G('H.diff()'); check(d['id'] == 'hard' and d['total'] == 100, f'Hard runs to wave {d["total"]}')
     check(d['dartCost'] > base_dart, f'Hard raises costs (dart {base_dart} -> {d["dartCost"]})')
-    check(G('H.state().hqMax') < 1000 * 10 and G('H.state().credits') == 650, f'Hard start cash {G("H.state().credits")}, HQ {G("H.state().hqMax")}')
+    check(G('H.state().hqMax') < 1000 * 10 and G('H.state().credits') == 750, f'Hard start cash {G("H.state().credits")}, HQ {G("H.state().hqMax")}')
     check(hp.evaluate("localStorage.getItem('bof.difficulty')") == 'hard', 'difficulty remembered')
     G('H.sandbox(2,80); H.addCredits(500000)')
     G('H.skipTo(55)'); G('H.startWave(); H.setSpeed(4)')

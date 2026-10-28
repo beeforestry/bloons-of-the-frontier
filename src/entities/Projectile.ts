@@ -27,6 +27,8 @@ export class Projectile {
   /** Height above ground for lobbed shots (render offset). */
   height = 0;
   /** Boomerang: arcs out and curves back to the thrower; enemies can be hit again on the return. */
+  /** Player who fired it (co-op COMBO attribution). */
+  owner = 0;
   private boomT = 0; private returned = false;
   update(g: Game, dt: number) {
     this.life -= dt;
@@ -66,7 +68,7 @@ export class Projectile {
       this.hit.add(e);
       if (o.splash) { this.alive = false; g.splash(this.x, this.y, o.splash, o.damage, o.type, this.origin, o.kind === 'flak' ? 'boom_fire' : 'boom', o.hit, o.slow); return; }
       e.takeDamage(g, o.damage, o.type, this.origin, o.hit);
-      if (o.slow) { e.slowAmt = Math.max(e.slowAmt, o.slow); e.slowT = 1.6; }
+      if (o.slow) { e.slowAmt = Math.max(e.slowAmt, o.slow); e.slowT = 1.6; e.markSlow(g); }
       if (--this.pierce <= 0) { this.alive = false; return; }
     }
   }

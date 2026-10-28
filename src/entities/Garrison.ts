@@ -73,7 +73,7 @@ export class Obstacle {
    *  rockslide only yields to big blasts (MAC / pods / Cherry) or Demolish,
    *  so opening it is always a deliberate choice. */
   blast(g: Game, n: number) {
-    if (!this.alive) return;
+    if (!this.alive || g.isClient) return;
     if (this.shortcut && n < 999) { if (Math.random() < 0.05) g.fx({ kind: 'text', x: this.x, y: this.y - 40, text: 'too solid — MAC or Demolish', color: '#d8c8a8', dur: 0.8 }); return; }
     this.hp -= n; this.hitFlash = 0.1;
     if (this.hp <= 0) g.clearObstacle(this);
@@ -95,14 +95,15 @@ export class Barrier {
   get b() { return this.data.tiers[0].barrier!; }
   get blockCap() { return this.b.blockCap; }
   get isPod() { return !!this.b.blast; }
+  owner = 0;
   takeDamage(g: Game, n: number) {
-    if (!this.alive) return;
+    if (!this.alive || g.isClient) return;
     this.hp -= n; this.hitFlash = 0.08;
     if (this.hp <= 0) { if (this.isPod) this.detonate(g); else { this.alive = false; g.fx({ kind: 'splat', x: this.x, y: this.y, r: 30, color: '#b5823d', dur: 0.4 }); g.toast('Wall-Nut barrier broke!', '#ffb35a'); } }
   }
   update(g: Game, dt: number) {
     this.hitFlash = Math.max(0, this.hitFlash - dt);
-    if (!this.isPod) return;
+    if (!this.isPod || g.isClient) return;
     if (this.fuse < 0) {
       for (const e of g.enemies) if (e.alive && !e.data.air && (e.x - this.x) ** 2 + (e.y - this.y) ** 2 < 60 * 60) { this.fuse = 0.7; g.sfx('fuse'); break; }
     } else { this.fuse -= dt; if (this.fuse <= 0) this.detonate(g); }

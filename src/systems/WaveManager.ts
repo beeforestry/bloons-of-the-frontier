@@ -15,6 +15,8 @@ export class WaveManager {
   private t = 0;
   private queue: { t: number; id: string; lane: number }[] = [];
   hpMul = 1;
+  /** Per-map enemy HP ease (tighter / longer-lane maps are a touch more forgiving). */
+  mapEase = 1;
   constructor(readonly waves: WaveData[], readonly diffHp = 1) {}
   get total() { return this.waves.length; }
   get current() { return this.active ? this.index + 1 : this.index; }
@@ -30,7 +32,10 @@ export class WaveManager {
     if (this.active || !w || g.state !== 'playing') return false;
     this.queue = [];
     const sc = waveScale(this.index + 1), lanes = Math.max(1, g.paths.length);
-    this.hpMul = sc.hp * this.diffHp;
+    // Hard/Impoppable HP bonus ramps in over the first 25 waves (no early-game wall: the
+    // sim showed fully-spent bots going broke by wave 9-10), full strength after that.
+    const ramp = Math.min(1, 0.35 + this.index / 25);
+    this.hpMul = sc.hp * (this.diffHp > 1 ? 1 + (this.diffHp - 1) * ramp : this.diffHp) * this.mapEase;
     w.groups.forEach((grp, gi) => {
       const n = Math.round(grp.count * (grp.count > 2 ? sc.count : 1));
       const spacing = grp.spacing / Math.sqrt(sc.count);
