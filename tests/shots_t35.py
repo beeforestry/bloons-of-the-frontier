@@ -25,7 +25,10 @@ with sync_playwright() as p:
     G('H.addCredits(60000)'); hq = G('({x: g.hq.x, y: g.hq.y})')
     G(f'H.deploy("farmhand", {hq["x"]} - 220, {hq["y"]} + 40)'); pg.wait_for_timeout(1500)
     for i in range(8): G(f'H.spawnPickup({hq["x"]} - 800 + {i} * 70, {hq["y"]} - 250 + {i} * 40, 10, "{["credit", "orb", "scrap"][i % 3]}")')
-    G(f'H.camFocus({hq["x"]} - 450, {hq["y"]}, 1.0)'); pg.wait_for_timeout(900); shot(pg, 'collector_hud_cap')
+    G(f'H.camFocus({hq["x"]} - 450, {hq["y"]}, 1.0)'); pg.wait_for_timeout(900)
+    pg.evaluate("document.querySelector('#troop-bar .deploy[data-unit=farmhand]')?.closest('.troop')?.scrollIntoView({inline: 'center'})"); pg.wait_for_timeout(300)
+    print('collector card', pg.evaluate("document.querySelector('#troop-bar .deploy[data-unit=farmhand]')?.closest('.troop')?.innerText.replace(/\\s+/g, ' ')"), 'disabled', pg.evaluate("document.querySelector('#troop-bar .deploy[data-unit=farmhand]')?.disabled"))
+    shot(pg, 'collector_hud_cap')
     # auto army toggle + in action
     G('g.deployCd = {}; for (const [i, id] of ["marine", "ranger", "line_watch", "monkey_soldier", "paladin"].entries()) { const p = H.lanePoint(i % g.paths.length, 0.55); H.deploy(id, p.x + 40, p.y + 40); g.deployCd = {}; }')
     pg.wait_for_timeout(1500)

@@ -117,13 +117,15 @@ with sync_playwright() as p:
     G('H.killAllEnemies()')
     # ---- anti-air shoots flyers first
     G(f'g.deployCd = {{}}; H.deploy("marine", {pt["x"]} + 50, {pt["y"]} + 50)')  # a fresh squad (earlier steps leave others healing / garrisoned)
-    until('g.squads[g.squads.length - 1].data.id === "marine" && g.units.every((u) => u.dropT <= 0)', 4000); pg.wait_for_timeout(600)
-    G('const q = g.squads[g.squads.length - 1]; q.autoT = 1e9; q.manual = false; q.autoHeal = false; window.__aaq = q; const c = q.center; const gr = g.spawnEnemy("ironback", 0, 0, 0, 50); const fl = g.spawnEnemy("gargoyle", 0, 0, 0, 50); for (const e of [gr, fl]) { e.speedK = 0; } window.__gr = gr; window.__fl = fl;')
-    G('const q = window.__aaq; const L = g.paths[q.autoLane >= 0 ? q.autoLane : 0]; const c = q.center; let bf = 0, bd = 1e9; for (let f = 0; f < L.length; f += 6) { const a = L.at(f); const d = Math.hypot(a.x - c.x, a.y - c.y); if (d < bd) { bd = d; bf = f; } } for (const e of [window.__gr, window.__fl]) { e.lane = q.autoLane >= 0 ? q.autoLane : 0; e.progress = bf; } window.__gr.progress = bf + 4; window.__h0 = [window.__gr.hp, window.__fl.hp]')
+    until('g.squads[g.squads.length - 1].data.id === "marine" && g.units.every((u) => u.dropT <= 0)', 4000); 
+    G('const q = g.squads[g.squads.length - 1]; q.autoT = 1e9; q.manual = false; q.autoHeal = false; q.rally = {...q.center}; window.__aaq = q; const c = q.center; const gr = g.spawnEnemy("ironback", 0, 0, 0, 50); const fl = g.spawnEnemy("gargoyle", 0, 0, 0, 50); for (const e of [gr, fl]) { e.speedK = 0; } window.__gr = gr; window.__fl = fl;')
+    G('const q = window.__aaq; const c = q.center; let bf = 0, bd = 1e9, bl = 0; g.paths.forEach((L, li) => { for (let f = 0; f < L.length; f += 6) { const a = L.at(f); const d = Math.hypot(a.x - c.x, a.y - c.y); if (d < bd) { bd = d; bf = f; bl = li; } } }); for (const e of [window.__gr, window.__fl]) { e.lane = bl; e.progress = bf; } window.__gr.progress = bf + 4; window.__h0 = [window.__gr.hp, window.__fl.hp]; window.__aaShots = {fl: 0, gr: 0}; if (!window.__aaHook) { window.__aaHook = 1; const o = g.unitAttack.bind(g); g.unitAttack = (u, t, tt) => { if (window.__aaq && u.squad === window.__aaq) { if (t === window.__fl) window.__aaShots.fl++; else if (t === window.__gr) window.__aaShots.gr++; } return o(u, t, tt); }; } 1')
     pg.wait_for_timeout(1500)
     h = G('[window.__h0, [window.__gr.hp, window.__fl.hp], window.__fl.alive]')
     check(h[0][1] - h[1][1] > 0 or not h[2], f'anti-air marines shoot the flyer first (flyer {h[0][1]:.0f}->{h[1][1]:.0f}, ground {h[0][0]:.0f}->{h[1][0]:.0f})')
-    check((h[0][0] - h[1][0]) <= (h[0][1] - h[1][1]) + 1e-6, 'flyer took at least as much fire as the closer ground target')
+    sh = G('window.__aaShots')
+    print('  aa diag', G('(() => { const q = window.__aaq; const c = q.center; return {id: q.data.id, n: g.squads.length, task: q.autoTask, heal: q.autoHeal, manual: q.manual, units: q.units.map((u) => [u.alive, !!u.garrison, Math.round(Math.hypot(u.x - window.__fl.x, u.y - window.__fl.y)), Math.round(u.range(g)), +u.dropT.toFixed(2)]), stance: q.stance}; })()'))
+    check(sh['fl'] > 0 and sh['fl'] >= sh['gr'], f'the auto squad aims at the flyer over the closer ground target (shots flyer {sh["fl"]} / ground {sh["gr"]})')
     G('window.__aaq.autoT = 0; H.killAllEnemies()')
     # ---- Farmhand auto-organizes farms
     G(f'g.deployCd = {{}}; H.deploy("farmhand", {hq["x"]} - 200, {hq["y"]} + 40)'); until('g.workers().length === 1', 4000)
