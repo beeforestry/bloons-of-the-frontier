@@ -23,7 +23,8 @@ MID = [(1505, 470), (1640, 520), (1820, 700), (1720, 760), (1560, 760), (1540, 9
 COURT = [(1300, 470), (1405, 462), (1415, 1040), (1312, 1050)]  # long central plaza
 SUNKEN = [[(1215, 395), (1330, 390), (1320, 445), (1220, 450)], [(1585, 560), (1680, 610), (1640, 660), (1560, 640)],
           [(1215, 1150), (1290, 1110), (1330, 1180), (1255, 1215)]]
-JETTY = [(1985, 900), (2070, 955), (2135, 1040), (2165, 1150), (2150, 1270), (2110, 1360), (2060, 1430)]
+# detached curved breakwater off the point (open water between it and the seawall), like the reference
+JETTY = [(2120, 600), (2165, 710), (2190, 840), (2192, 970), (2170, 1090), (2128, 1200), (2070, 1290)]
 
 
 def P(img_or_size, polys, fill=255, blur=0, width=None):
@@ -94,7 +95,8 @@ def paint(M, W, H, tex, noise):
     # boulder seawall (outside land) + golden cliffs (inside land edge)
     sw_band = ImageChops.subtract(land.filter(ImageFilter.MaxFilter(57)), land)
     sw_band = ImageChops.multiply(sw_band, coast_fort.filter(ImageFilter.GaussianBlur(80)))
-    jet = P(size, [JETTY], width=74)
+    jet = Image.new('L', size, 0); ImageDraw.Draw(jet).line(JETTY, fill=255, width=46, joint='curve')  # open arc, not a closed loop
+    for (jx, jy) in (JETTY[0], JETTY[-1]): ImageDraw.Draw(jet).ellipse([jx - 23, jy - 23, jx + 23, jy + 23], fill=255)
     jet_m = jet.filter(ImageFilter.GaussianBlur(3))
     rocks = ImageChops.lighter(sw_band, jet_m)
     cliff = ImageChops.subtract(land, land.filter(ImageFilter.MinFilter(45)))
@@ -166,10 +168,25 @@ def paint(M, W, H, tex, noise):
     d = ImageDraw.Draw(g)
     pastel = [(236, 120, 120), (120, 190, 220), (245, 210, 110), (150, 210, 150), (230, 150, 200), (250, 170, 110), (180, 160, 230), (240, 240, 230)]
     def house(x, y, w, h, c):
-        d.rectangle([x + 6, y + 8, x + w + 6, y + h + 8], fill=(40, 40, 40))  # drop shadow
-        d.rectangle([x, y, x + w, y + h], fill=c, outline=tuple(int(v * 0.6) for v in c), width=3)
-        d.rectangle([x + 6, y + 6, x + w - 6, y + h - 6], outline=tuple(min(255, int(v * 1.12)) for v in c), width=2)  # flat roof parapet
-        if rnd.random() < 0.5: d.rectangle([x + w * 0.3, y + h * 0.3, x + w * 0.55, y + h * 0.5], fill=(200, 200, 195))  # water tank / skylight
+        dk = tuple(int(v * 0.6) for v in c); lt = tuple(min(255, int(v * 1.15)) for v in c)
+        d.rectangle([x + 7, y + 9, x + w + 7, y + h + 9], fill=(38, 36, 34))  # drop shadow (depth)
+        d.rectangle([x, y, x + w, y + h], fill=c, outline=dk, width=3)
+        if rnd.random() < 0.35:  # red clay tile roof (hip roof, lit from NW)
+            cx, cy = x + w / 2, y + h / 2
+            d.polygon([(x + 2, y + 2), (x + w - 2, y + 2), (cx + w * 0.18, cy), (cx - w * 0.18, cy)], fill=(196, 92, 60))
+            d.polygon([(x + 2, y + 2), (cx - w * 0.18, cy), (x + 2, y + h - 2)], fill=(214, 112, 74))
+            d.polygon([(x + w - 2, y + 2), (x + w - 2, y + h - 2), (cx + w * 0.18, cy)], fill=(150, 64, 44))
+            d.polygon([(x + 2, y + h - 2), (x + w - 2, y + h - 2), (cx + w * 0.18, cy), (cx - w * 0.18, cy)], fill=(168, 74, 50))
+            d.line([(cx - w * 0.18, cy), (cx + w * 0.18, cy)], fill=(232, 150, 110), width=2)
+        else:  # flat azotea roof: parapet + water tank / stairwell
+            d.rectangle([x + 5, y + 5, x + w - 5, y + h - 5], outline=lt, width=3)
+            d.line([(x + 5, y + h - 6), (x + w - 5, y + h - 6)], fill=dk, width=2)
+            if rnd.random() < 0.6:
+                tx, ty = x + rnd.uniform(0.2, 0.55) * w, y + rnd.uniform(0.2, 0.5) * h
+                d.ellipse([tx + 3, ty + 4, tx + 17, ty + 18], fill=(60, 58, 55)); d.ellipse([tx, ty, tx + 14, ty + 14], fill=(226, 226, 222), outline=(150, 150, 150))
+        for k in range(3):  # wrought-iron balconies on the street face (south)
+            bx = x + 6 + k * (w - 12) / 3
+            d.rectangle([bx + 2, y + h - 3, bx + (w - 12) / 3 - 3, y + h + 2], fill=(52, 46, 44))
     streets = M['streets']
     # cemetery: walled, white tombs, by the north shore (inside the city band, top)
     d.rectangle([20, 230, 330, 400], fill=(196, 190, 170), outline=(120, 110, 95), width=8)
@@ -184,9 +201,9 @@ def paint(M, W, H, tex, noise):
     d.rectangle([bx0 + 40, by0 + 40, bx1 - 40, by1 - 40], fill=(205, 180, 140), outline=(170, 130, 50), width=4)
     for yy in range(by0 + 12, by1 - 10, 22): d.rectangle([bx0 + 8, yy, bx0 + 20, yy + 10], fill=(200, 150, 50))
     taken = [(20, 230, 330, 400), (bx0, by0, bx1, by1)]
-    for yy in range(408, 1430, 58):
-        for xx in range(-6, 236, 56):
-            w, h = rnd.randint(40, 50), rnd.randint(40, 50)
+    for yy in range(408, 1430, 74):
+        for xx in range(-6, 236, 72):
+            w, h = rnd.randint(54, 66), rnd.randint(50, 62)
             if any(a - 10 < xx + w and xx < c + 10 and b - 10 < yy + h and yy < e + 10 for a, b, c, e in taken): continue
             if any(abs((yy + h / 2) - sy) < 70 for sy in streets): continue
             if xx + w > 226 + (yy - 200) * 0.026: continue
