@@ -32,6 +32,8 @@ with sync_playwright() as p:
         try: pg.wait_for_function(f'(() => {{ const H = window.__game, g = H.g; return eval({json.dumps(js)}); }})()', timeout=ms, polling=100); return True
         except Exception: return False
     G('H.addCredits(60000); H.sandbox(5, 200)')
+    # t36: the free Sprout Farmhand is covered by e2e_collector; drop it so squad indexes here stay [troops...]
+    G('(() => { const ws = g.workers(); g.units = g.units.filter((u) => !ws.includes(u)); g.squads = g.squads.filter((q) => q.data.id !== "farmhand"); })()')
     nl = G('g.paths.length')
     # ---- auto OFF: squads keep their post through enemy traffic
     pt = G('H.lanePoint(0, 0.6)')
@@ -55,7 +57,7 @@ with sync_playwright() as p:
     G('for (let i = 0; i < 6; i++) H.spawn("ceramic", 0, 0.3 + i * 0.01, 3); for (let i = 0; i < 6; i++) H.spawn("ceramic", 1 % g.paths.length, 0.3 + i * 0.01, 3)')
     G('for (const e of g.enemies) e.speedK = 0')  # freeze so the test is deterministic
     pg.wait_for_timeout(1500)
-    lanes = G('g.squads.map((q) => q.autoLane)'); tasks = G('g.squads.map((q) => q.autoTask)')
+    lanes = G('g.squads.filter((q) => q.data.id !== "farmhand").map((q) => q.autoLane)'); tasks = G('g.squads.filter((q) => q.data.id !== "farmhand").map((q) => q.autoTask)')
     check(nl < 2 or sorted(lanes) == [0, 1], f'two auto squads spread over the two threatened lanes {lanes} {tasks}')
     check(all(t.startswith('defending lane') for t in tasks), f'tasks read "defending lane N" {tasks}')
     d = G('Math.min(...g.squads.map((q) => { const p = g.paths[q.autoLane]; let b = 1e9; for (let f = 0; f <= 1; f += 0.01) { const a = p.at(p.length * f); b = Math.min(b, Math.hypot(a.x - q.rally.x, a.y - q.rally.y)); } return b; }))')

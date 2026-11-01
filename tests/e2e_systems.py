@@ -50,6 +50,8 @@ with sync_playwright() as p:
         try: pg.wait_for_function(f'(() => {{ const H = window.__game; return eval({json.dumps(js)}); }})()', timeout=ms, polling=100); return True
         except Exception: return False
     G('H.sandbox(2, 80); H.addCredits(200000); H.setSpeed(1)')
+    # t36: park the free Sprout Farmhand out of the way so it can't vacuum the scrap these checks count
+    G('(() => { const ws = H.g.workers(); H.g.units = H.g.units.filter((u) => !ws.includes(u)); H.g.squads = H.g.squads.filter((q) => q.data.id !== "farmhand"); })()')
     lane = lambda f, l=0: G(f'H.lanePoint({l},{f})')
     cc = lambda c, r: G(f'H.g.grid.cellCenter({c},{r})')
     def cell_near(pt, dmin=0, dmax=160):
