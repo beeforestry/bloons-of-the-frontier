@@ -493,7 +493,7 @@ export class Hud {
    *  (moved back into place on wider screens). */
   private compactTopbar() {
     const more = document.getElementById('hud-more')!, btn = document.getElementById('btn-more')!, sp = document.getElementById('btn-speed')!;
-    const items = ['#tech-stat', '#orbs-stat', '#btn-auto', '[data-speed="1"]', '[data-speed="2"]', '[data-speed="4"]', '#btn-voice'].map((q) => document.querySelector<HTMLElement>('#topbar ' + q)).filter((e): e is HTMLElement => !!e);
+    const items = ['#tech-stat', '#orbs-stat', '#btn-auto', '[data-speed="1"]', '[data-speed="2"]', '[data-speed="4"]', '#btn-voice', '#btn-bug'].map((q) => document.querySelector<HTMLElement>('#topbar ' + q)).filter((e): e is HTMLElement => !!e);
     const marks = items.map((e) => { const c = document.createComment('hud-slot'); e.before(c); return c; });
     const close = () => { more.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('on'); };
     btn.onclick = (ev) => { ev.stopPropagation(); const open = more.hidden; more.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.classList.toggle('on', open); };

@@ -297,3 +297,23 @@ body.role-invader #tower-cards, body.role-invader #faction-tabs, body.role-invad
   #hud-more .btn.small { padding: 6px 10px; font-size: 14px; }
 }
 #topbar [hidden] { display: none !important; }
+
+/* ---- t36: pause menu, bug report, settings */
+#pause-menu { position: absolute; top: 14%; left: 50%; transform: translateX(-50%); z-index: 8; background: #10161cf0; border: 1px solid #ffffff2a; border-radius: 12px; padding: 14px 18px; display: flex; flex-direction: column; gap: 9px; min-width: 240px; box-shadow: 0 8px 30px #0008; }
+#pause-menu[hidden] { display: none; }
+#pause-menu h2 { margin: 0 0 2px; font-size: 18px; text-align: center; }
+.pm-set { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.seg { display: flex; gap: 4px; }
+.seg .btn { flex: 1; }
+.seg .btn.on { background: #3a7d2c; border-color: #8fe36f; }
+.br-overlay { z-index: 30; }
+.br-panel { width: min(520px, 94vw); display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.br-panel h2 { margin: 0; }
+.br-cats { display: flex; gap: 14px; flex-wrap: wrap; }
+#br-desc { width: 100%; box-sizing: border-box; background: #0c1116; color: #eee; border: 1px solid #ffffff33; border-radius: 8px; padding: 8px; font: inherit; resize: vertical; }
+.br-btns { gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+#br-fallback { border-top: 1px solid #ffffff22; padding-top: 8px; font-size: 13px; }
+#br-fallback a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+#br-toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 30px); opacity: 0; transition: all .3s; background: #1d2a1d; border: 1px solid #8fe36f; color: #eaffdf; padding: 9px 16px; border-radius: 10px; z-index: 40; pointer-events: none; font-size: 14px; }
+#br-toast.show { opacity: 1; transform: translate(-50%, 0); }
+.menu-bug { position: absolute; top: 10px; right: 12px; }

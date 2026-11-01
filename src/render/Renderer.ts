@@ -157,7 +157,7 @@ export class Renderer {
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = '#141a14'; c.fillRect(0, 0, this.canvas.width, this.canvas.height);
     const z = this.cam.zoom * this.dpr;
-    const sh = g.shakeAmt, sx = sh ? (Math.random() * 2 - 1) * sh : 0, sy = sh ? (Math.random() * 2 - 1) * sh : 0;
+    const sh = g.shakeAmt / this.cam.zoom, sx = sh ? (Math.random() * 2 - 1) * sh : 0, sy = sh ? (Math.random() * 2 - 1) * sh : 0;
     c.setTransform(z, 0, 0, z, (-this.cam.x + sx) * z, (-this.cam.y + sy) * z);
     this.vx0 = this.cam.x; this.vy0 = this.cam.y; this.vx1 = this.cam.x + this.vw / this.cam.zoom; this.vy1 = this.cam.y + this.vh / this.cam.zoom;
     const bg = IMG['map:' + g.map.image];

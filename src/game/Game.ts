@@ -61,6 +61,9 @@ export interface Effect {
 export const DMG_AGG_WINDOW = 0.35;
 const fmtDmg = (n: number) => (n >= 10 ? `${Math.round(n)}` : `${Math.round(n * 10) / 10}`);
 
+/** Camera shake tuning: max amplitude (screen px), exponential decay rate (1/s), longest continuous run (s). */
+const SHAKE_CAP = 14, SHAKE_DECAY = 8, SHAKE_MAX_RUN = 1.2;
+
 export class Game {
   readonly bus = new EventBus();
   readonly res: ResourceManager;
@@ -110,6 +113,17 @@ export class Game {
   barriers: Barrier[] = [];
   /** Juice: camera shake amplitude (px) + shockwave ripples, read by the renderer. */
   shakeAmt = 0;
+  /** Screen-shake setting multiplier (Settings: Full 1 / Reduced 0.4 / Off 0). */
+  shakeScale = 1;
+  /** Real (unscaled) seconds the camera has been shaking without a break, plus a cooldown
+   *  that ignores new shakes after a long run, so sustained retriggers can never lock it on. */
+  private shakeRun = 0;
+  private shakeCool = 0;
+  private realT = 0;
+  private lastMinorShake = -1;
+  private wasPaused = false;
+  /** Shake call counter (tests). */
+  shakeCalls = 0;
   shocks: { x: number; y: number; r: number; t: number; dur: number }[] = [];
   /** WebAudio hook (main.ts wires Sfx); no-op headless. */
   sfxHook: (n: SfxName, x?: number, y?: number) => void = () => {};
@@ -568,7 +582,16 @@ export class Game {
   // ------------------------------------------------------------------ effects
   fx(e: Effect) { e.t = 0; this.effects.push(e); if (this.effects.length > 600) this.effects.splice(0, 100); }
   sfx(n: SfxName, x?: number, y?: number) { this.sfxHook(n, x, y); }
-  shake(a: number) { this.shakeAmt = Math.min(22, Math.max(this.shakeAmt, a)); }
+  /** Camera shake (screen px). Max-combined (never additive), hard-capped, and rate-limited for
+   *  routine splash shakes; a run longer than SHAKE_MAX_RUN forces a quiet cooldown. */
+  shake(a: number, minor = false) {
+    this.shakeCalls++;
+    if (this.shakeScale <= 0 || !(a > 0) || this.shakeCool > 0) return;
+    if (minor) { if (this.realT - this.lastMinorShake < 0.6) return; this.lastMinorShake = this.realT; a = Math.min(a, 6); }
+    this.shakeAmt = Math.min(SHAKE_CAP * this.shakeScale, Math.max(this.shakeAmt, a * this.shakeScale));
+  }
+  /** Stop all camera shake now (pause, menu, map change, settings change). */
+  resetShake() { this.shakeAmt = 0; this.shakeRun = 0; this.shakeCool = 0; }
   shock(x: number, y: number, r: number, dur = 0.5) { this.shocks.push({ x, y, r, t: 0, dur }); if (this.shocks.length > 8) this.shocks.shift(); }
   /**
    * Floating damage numbers: crit yellow, normal white, shield cyan. Rapid hits
@@ -714,7 +737,7 @@ export class Game {
     }
     if (type === 'explosive' || type === 'fire') {
       this.blastTerrain(x, y, r, dmg);
-      if (r >= 70) { this.shake(r / 14); this.shock(x, y, r * 1.4, 0.4); }
+      if (r >= 70) { this.shake(r / 14, true); this.shock(x, y, r * 1.4, 0.4); }
       if (r >= 45) this.sfx('explosion', x, y);
     }
     this.fx({ kind: look, x, y, r, dur: 0.35 });
@@ -1085,6 +1108,7 @@ export class Game {
 
   // ------------------------------------------------------------------ main update
   update(dtReal: number) {
+    if (this.paused !== this.wasPaused) { this.wasPaused = this.paused; this.resetShake(); }
     if (this.paused || this.state !== 'playing') { this.updateEffects(dtReal); return; }
     let left = Math.min(0.1, dtReal) * this.speed;
     while (left > 1e-6) { const dt = Math.min(1 / 60, left); left -= dt; this.step(dt); }
@@ -1134,13 +1158,26 @@ export class Game {
     this.squads = this.squads.filter((s) => s.units.length);
     this.barriers = this.barriers.filter((b) => b.alive);
   }
+  /** Exponential, real-time shake decay (dt is unscaled frame time, so 4x speed or a slow
+   *  tab can't keep it alive). */
+  private decayShake(dtReal: number) {
+    const dt = Number.isFinite(dtReal) && dtReal > 0 ? Math.min(0.25, dtReal) : 0;
+    this.realT += dt;
+    if (this.shakeCool > 0) this.shakeCool = Math.max(0, this.shakeCool - dt);
+    if (this.shakeAmt > 0) {
+      this.shakeRun += dt;
+      this.shakeAmt *= Math.exp(-SHAKE_DECAY * dt);
+      if (this.shakeRun > SHAKE_MAX_RUN) { this.shakeCool = 0.8; this.shakeRun = 0; this.shakeAmt *= 0.5; }
+      if (this.shakeAmt < 0.25) { this.shakeAmt = 0; this.shakeRun = 0; }
+    } else this.shakeRun = 0;
+  }
   private updateEffects(dt: number) {
     for (const e of this.effects) e.t! += dt;
     this.effects = this.effects.filter((e) => e.t! < e.dur);
     for (const [k, e] of this.dmgAgg) if (e.t! >= DMG_AGG_WINDOW || e.t! >= e.dur) this.dmgAgg.delete(k);
     let n = 0; for (const e of this.effects) if (e.kind === 'dmg') n++;
     this.dmgLive = n;
-    this.shakeAmt = Math.max(0, this.shakeAmt - dt * 40);
+    this.decayShake(dt);
     for (const s of this.shocks) s.t += dt;
     this.shocks = this.shocks.filter((s) => s.t < s.dur);
     for (const p of this.pings) p.t += dt;

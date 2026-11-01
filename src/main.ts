@@ -20,6 +20,9 @@ import { Lobby, type MpStart } from './ui/Lobby';
 import { Sync } from './net/Sync';
 import { NetHud } from './ui/NetHud';
 import type { PingKind } from './game/Game';
+import { installConsoleCapture, logEvent, setReportContext, openBugReport, flushQueue, queued, buildReport, submit, issueUrl, reportText, transport, cooldownLeft, BUILD, type ReportCategory } from './ui/BugReport';
+import { PauseMenu } from './ui/PauseMenu';
+installConsoleCapture();
 
 const LS = { get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* */ } } };
 
@@ -51,6 +54,8 @@ async function boot() {
     dEl.appendChild(b);
   }
   paint();
+  document.getElementById('btn-menu-bug')!.onclick = () => openBugReport();
+  setTimeout(() => { void flushQueue().then((n) => { if (n) console.info(`[report] sent ${n} queued report(s)`); }); }, 1500);
   document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start('garden', diff, true); };
   // Single Player / Co-Op Defense / 1v1 Versus on the main menu; ?room=1234 invite links auto-join.
   window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp));
@@ -87,6 +92,12 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
+  const pauseMenu = new PauseMenu(g, () => { if (g.netPause) g.netPause(false); else g.paused = false; });
+  document.getElementById('btn-bug')!.onclick = () => openBugReport();
+  logEvent(`start map=${mapId} diff=${diffId} mode=${mp ? mp.settings.mode : 'solo'}`);
+  g.bus.on('wave', (e) => logEvent(`wave ${e.wave}/${e.total} ${e.active ? 'started' : 'cleared'} hq=${Math.ceil(g.hq.health.hp)} cash=${Math.floor(g.res.credits)}`));
+  g.bus.on('gameover', (e) => logEvent(`gameover won=${e.won} wave=${g.waves.index}`));
+  g.bus.on('toast', (e) => logEvent(`toast ${e.text}`));
   const netHud = sync ? new NetHud(g, sync) : null;
   window.addEventListener('resize', () => r.resize());
   new ResizeObserver(() => r.resize()).observe(canvas);
@@ -352,6 +363,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     }
     lastFrame = now;
     g.update(dt);
+    pauseMenu.update();
     sync?.update(dt);
     netHud?.update(dt);
     hud.update(dt);
@@ -375,7 +387,12 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   // First-play tutorial (auto on the first match; replay via 🎓 in the menu).
   let tut: Tutorial | null = null;
   if (!mp && (forceTutorial || !Tutorial.done())) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
+  setReportContext(() => ({ map: g.map.id, difficulty: g.diff.id, wave: g.waves.freeplay ? `freeplay ${g.waves.index}` : `${g.waves.index}/${g.waves.total}`, mode: g.mode === 'solo' ? 'SP' : g.mode, fps: Math.round(fps.cur), quality: r.quality, speed: g.speed, paused: g.paused, state: g.state, hq: Math.ceil(g.hq.health.hp), credits: Math.floor(g.res.credits), towers: g.towers.length, squads: g.squads.length, enemies: g.enemies.length, canvas }));
   window.__game = Object.assign(testHooks(g, view, hud, click, r), {
+    report: { build: (c: ReportCategory, d: string, shot = true) => buildReport(c, d, shot), submit, queued, issueUrl, reportText, transport, cooldownLeft, BUILD, open: openBugReport, flush: flushQueue },
+    shakeTest: (n: number, a = 16) => { for (let i = 0; i < n; i++) g.shake(a); return g.shakeAmt; },
+    shakeState: () => ({ amt: g.shakeAmt, scale: g.shakeScale, calls: g.shakeCalls }),
+    pauseMenu: () => ({ visible: !pauseMenu.el.hidden }),
     tutorial: () => ({ active: !!tut?.active, step: tut?.i ?? -1, steps: tut?.steps ?? 0, done: Tutorial.done(), visible: !(document.getElementById('tutorial')?.hidden ?? true) }),
     tutNext: () => tut?.go(tut.i + 1), tutSkip: () => tut?.finish(),
     panel: () => ({ hidden: document.body.classList.contains('panel-hidden'), sideW: document.getElementById('side')!.getBoundingClientRect().width, stored: LS.get('bof.panelHidden') }),
