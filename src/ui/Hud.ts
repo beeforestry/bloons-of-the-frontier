@@ -5,7 +5,7 @@
 // =============================================================================
 import type { Game } from '../game/Game';
 import type { Tower } from '../entities/Tower';
-import type { Squad } from '../entities/Unit';
+import type { Squad, Unit } from '../entities/Unit';
 import type { ViewState } from '../render/Renderer';
 import { FACTIONS, factionInfo } from '../data/factions';
 import { TOWERS, towerById } from '../data/towers';
@@ -87,6 +87,8 @@ export class Hud {
   private refreshT = 0;
   private toasts: HTMLElement;
   private lastSel = '\u0000';
+  /** Set by main.ts: lazy-loads the three.js first-person view (t37). */
+  onPossess: ((o: Tower | Unit) => void) | null = null;
 
   constructor(readonly g: Game, readonly view: ViewState, readonly root: HTMLElement) {
     this.toasts = $('#toasts');
@@ -150,13 +152,23 @@ export class Hud {
         <div><div class="cn">${u.name}</div><div class="cs"><span class="tname"></span> · <span class="ucost">${this.g.costLabel(this.g.deployCost(u.id))}</span> · ${u.squadSize}×</div></div>
         <div class="cd"></div></button><button class="research" data-research="${u.id}"></button>`);
       el.style.setProperty('--fc', f.color);
-      $('.deploy', el).onclick = () => { this.view.deploying = this.view.deploying === u.id ? null : u.id; this.view.placing = null; this.refresh(true); };
+      if (u.free) { el.classList.add('free'); const dp = $<HTMLButtonElement>('.deploy', el); dp.disabled = true; $('.ucost', el).textContent = 'FREE · auto'; }
+      $('.deploy', el).onclick = () => { if (u.free) return; this.view.deploying = this.view.deploying === u.id ? null : u.id; this.view.placing = null; this.refresh(true); };
       $('.research', el).onclick = () => { this.g.researchUnit(u.id); this.refresh(true); };
       bar.appendChild(el);
     }
   }
 
   // ---------------------------------------------------------------- selection
+  /** Yours to control? (solo: everything; co-op: only your own towers / squads). */
+  mine(o: Tower | Squad) { return this.g.net === 'solo' || o.owner === this.g.localPid; }
+  /** 👁 Possess the selected tower / the selected squad's lead troop. */
+  possessSelected() {
+    const t = this.view.selTower, s = this.view.selSquad;
+    if (t && t.alive && t.combat && this.mine(t)) { this.onPossess?.(t); return; }
+    if (s && s.alive && s.data.role !== 'worker' && this.mine(s)) { const u = s.units.find((x) => x.alive && !x.garrison); if (u) { this.onPossess?.(u); return; } }
+    if (t || s) this.g.toast(t && !t.combat ? 'Only attacking towers can be possessed' : 'You can only possess your own towers and troops', '#ffd84a');
+  }
   select(t: Tower | null, s: Squad | null, group?: Squad[]) {
     if (t || s || group?.length) this.selShortcut = null;
     this.view.selTower = t; this.view.selSquad = s; this.view.selBuilding = null; this.view.selPad = null;
@@ -272,12 +284,13 @@ export class Hud {
         ${n ? `<button class="btn up" id="sp-up" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
-        <div class="row"><button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
+        <div class="row">${t.combat && this.mine(t) ? `<button class="btn possess" id="sp-possess" title="See and fight through this tower in first person (E)">👁 Possess <small>(E)</small></button>` : ''}<button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
         ${slots ? `<div class="sp-sub">Garrison: ${t.garrisoned.length}/${slots} · −${Math.round(t.gProtect() * 100)}% dmg taken · +${Math.round(t.gRange() * 100)}% range · select a squad and press Garrison</div>${t.garrisoned.length ? '<button class="btn" id="sp-eject">Eject troops</button>' : ''}` : ''}
-        ${t.isFarm ? '<div class="sp-sub">Tip: deploy a Sprout Farmhand, then press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
+        ${t.isFarm ? '<div class="sp-sub">Tip: your free Sprout Farmhand can pack farms — press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
       const up = $('#sp-up', p); if (up) up.onclick = () => { t.upgrade(g); this.lastSel = ''; this.refresh(true); };
       for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-tgt]'))) el.onclick = () => { g.setTargeting(t, el.dataset.tgt as never); this.lastSel = ''; this.refresh(true); };
       const ab = $('#sp-abil', p); if (ab) ab.onclick = () => t.useAbility(g);
+      const ps = $('#sp-possess', p); if (ps) ps.onclick = () => this.possessSelected();
       $('#sp-sell', p).onclick = () => { g.sellTower(t); this.select(null, null); };
       const ej = $('#sp-eject', p); if (ej) ej.onclick = () => { gEject(t); this.lastSel = ''; };
       this.liveTower(t);
@@ -293,9 +306,11 @@ export class Hud {
         <div class="seg stance">${STANCES.map(([k, l]) => `<button class="${s.stance === k ? 'on' : ''}" data-stance="${k}">${l}</button>`).join('')}</div>
         <div class="sp-sub">🎯 Targeting</div>${tgtButtons(s.targeting)}`}
         <div class="row"><button class="btn${this.view.queueMode ? ' on' : ''}" id="sp-queue-m" title="Shift-click also queues">➕ Queue</button><button class="btn${this.view.patrolMode ? ' on' : ''}" id="sp-patrol" title="Tap points then Done; or press P">🔁 Patrol</button></div>
+        ${!worker && this.mine(s) && s.units.some((u) => u.alive && !u.garrison) ? '<button class="btn possess" id="sp-possess" title="Take direct control of this troop in first person (E); the squad follows">👁 Possess / First-Person <small>(E)</small></button>' : ''}
         <div class="row">${worker ? '<button class="btn" id="sp-org">🧹 Organize Farms</button>' : '<button class="btn" id="sp-gar">🏰 Garrison</button><button class="btn" id="sp-ungar">Leave cover</button>'}
         <button class="btn" id="sp-desel">Done</button></div>`;
       for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-stance]'))) el.onclick = () => { g.setStance(s, el.dataset.stance as Stance); this.lastSel = ''; };
+      const ps = $('#sp-possess', p); if (ps) ps.onclick = () => this.possessSelected();
       for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-tgt]'))) el.onclick = () => { g.setTargeting(s, el.dataset.tgt as never); this.lastSel = ''; };
       $('#sp-queue-m', p).onclick = () => { this.view.queueMode = !this.view.queueMode; this.view.patrolMode = false; this.lastSel = ''; };
       $('#sp-patrol', p).onclick = () => this.togglePatrol();
@@ -413,9 +428,9 @@ export class Hud {
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('#troop-bar .troop'))) {
       const id = $('.deploy', b).dataset.unit!, d = unitById(id), tier = g.unitTier(id), nt = d.tiers[tier + 1];
       const cd = g.deployCd[id] ?? 0, n = g.squadCount(id);
-      $('.deploy', b).classList.toggle('poor', !g.canDeploy(id));
+      $('.deploy', b).classList.toggle('poor', !d.free && !g.canDeploy(id));
       $('.deploy', b).classList.toggle('on', this.view.deploying === id);
-      $('.tname', b).textContent = `${d.tiers[tier].name} (${n}/${d.maxSquads})`;
+      $('.tname', b).textContent = d.free ? `${d.tiers[tier].name} ${n ? '✓ on field' : '(next match)'}` : `${d.tiers[tier].name} (${n}/${d.maxSquads})`;
       $('.cd', b).style.height = `${(cd / d.cooldown) * 100}%`;
       const r = $<HTMLButtonElement>('.research', b);
       const need = g.researchTech(id), techLock = !!nt && g.tech < need;
@@ -423,6 +438,7 @@ export class Hud {
       r.disabled = !nt || g.res.credits < nt.cost || techLock;
       r.title = nt ? `Research ${nt.name}: ${nt.blurb}\n${unitLine(nt)}${techLock ? `\nRequires Tech ${need} (Reactors)` : ''}` : '';
       const blk = g.fieldBlock(id);
+      if (d.free) { $('.deploy', b).title = `${d.desc}\nYou get one free at the start of every match — no need to buy it.`; continue; }
       $('.deploy', b).title = `${d.desc}\nPop ${d.population}${d.tech ? ` · Tech ${d.tech}` : ''}${blk ? `\n⛔ ${blk}` : ''}`;
       $('.deploy', b).classList.toggle('locked', !!blk && g.tech < d.tech);
     }

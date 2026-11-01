@@ -92,6 +92,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
+  if (!mp) g.spawnFreeCollector(0);
   const pauseMenu = new PauseMenu(g, () => { if (g.netPause) g.netPause(false); else g.paused = false; });
   document.getElementById('btn-bug')!.onclick = () => openBugReport();
   logEvent(`start map=${mapId} diff=${diffId} mode=${mp ? mp.settings.mode : 'solo'}`);
@@ -285,6 +286,14 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   const formBtn = document.getElementById('btn-form');
   const syncForm = () => { if (formBtn) formBtn.textContent = g.formation === 'line' ? '━ Line' : '┃ Column'; };
   formBtn?.addEventListener('click', () => { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); hud.refresh(true); });
+  // 👁 Possess / First-Person (t37): three.js lives in its own lazy chunk, loaded on first use.
+  let possessing = false;
+  hud.onPossess = (o) => {
+    if (possessing) return; possessing = true;
+    g.toast('👁 Loading first-person view…', '#7fe8ff');
+    import('./fps/Possess').then((m) => { const p = m.possess({ g, onExit: () => { possessing = false; keys.clear(); hud.refresh(true); } }, o); if (!p) possessing = false; })
+      .catch((e) => { possessing = false; console.error('possess load failed', e); g.toast('Could not load the 3D view', '#ff8a6a'); });
+  };
   window.addEventListener('keydown', (ev) => {
     const k = ev.key.toLowerCase();
     if ((ev.target as HTMLElement)?.tagName === 'INPUT') return;
@@ -296,6 +305,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     else if (k === 'u' && view.selBuilding) { view.selBuilding.upgrade(g); hud.refresh(true); }
     else if ((ev.key === 'Delete' || ev.key === 'Backspace') && view.selTower) { g.sellTower(view.selTower); hud.select(null, null); }
     else if (k === 't' && view.selTower) { g.cycleTargeting(view.selTower); hud.refresh(true); }
+    else if (k === 'e' && (view.selTower || view.selSquad)) hud.possessSelected();
     else if (k === 'f') { view.showFps = !view.showFps; if (fpsEl) fpsEl.hidden = !view.showFps; }
     else if (k === 'q') { view.boxMode = !view.boxMode; hud.refresh(true); }
     else if (k === 'v') { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); g.toast(`Formation: ${g.formation}`); hud.refresh(true); }
@@ -379,7 +389,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
       if (edge.y < E) py -= sp * 0.8; else if (edge.y > r.vh - E) py += sp * 0.8;
     }
     if (px || py) r.pan(px, py);
-    r.draw(view);
+    if (!document.body.classList.contains('possess-on')) r.draw(view); // the 3D view covers the screen while possessed
     mmT -= dt; if (mmT <= 0) { mmT = 0.1; drawMinimap(); }
     requestAnimationFrame(frame);
   }

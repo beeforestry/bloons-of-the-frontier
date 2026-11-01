@@ -135,8 +135,8 @@ export const UNITS: UnitData[] = [
   },
   {
     id: 'farmhand', name: 'Sprout Farmhand', faction: Faction.Flora, role: 'worker', sprite: 'farmhand',
-    desc: 'COLLECTOR (max 1 per player). Immune and untargetable. Auto-collects EVERY credit, orb and scrap pickup on the whole map, repairs towers, and can ORGANIZE FARMS.',
-    squadSize: 1, maxSquads: 1, cooldown: 3, population: 1, tech: 0, trainTime: 4,
+    desc: 'FREE COLLECTOR: every player starts each match with one (max 1). Immune and untargetable. Auto-collects EVERY credit, orb and scrap pickup on the whole map, repairs towers, and can ORGANIZE FARMS.',
+    squadSize: 1, maxSquads: 1, cooldown: 3, population: 1, tech: 0, trainTime: 4, free: true,
     tiers: [
       { name: 'Farmhand', cost: 75, blurb: 'Collect, repair, organize.', visual: { level: 0, scale: 1 },
         stats: { maxHp: 25, damage: 0, attackRate: 0, range: 0, speed: 95, armor: 0, repair: 8, pickupRadius: 100000 },

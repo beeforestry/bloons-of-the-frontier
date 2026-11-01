@@ -39,9 +39,9 @@ type Ref = { $: string; u?: number; i?: number; p?: number; x?: number; y?: numb
 
 /** Game methods that become network commands on a client (and permission-checked on the host). */
 const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
-  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto'] as const;
+  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl'] as const;
 /** Applied optimistically on the client too (instant response; the snapshot corrects). */
-const OPTIMISTIC = new Set(['moveSquad', 'moveGroup', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
+const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
 /** Proto methods (Tower / Building instances). */
 const P_METHODS: [typeof Tower | typeof Building, string, string][] = [[Tower, 'upgrade', 'tw.upgrade'], [Tower, 'useAbility', 'tw.useAbility'], [Building, 'upgrade', 'bd.upgrade'], [Building, 'enqueue', 'bd.enqueue'], [Building, 'cancel', 'bd.cancel']];
 let ACTIVE: Sync | null = null;
@@ -108,6 +108,8 @@ export class Sync {
         g.waves.start = () => false; // no scripted waves in versus: the invader is the wave
       }
       this.waveCountdown = settings.mode === 'coop' ? settings.waveTimer : 0;
+      // t36: one free Sprout Farmhand per defending player (co-op: everyone; versus: the defender)
+      for (const pid of settings.mode === 'versus' ? [this.defenderPid] : players.map((p) => p.pid)) g.spawnFreeCollector(pid);
       g.netHook.onCombo = (x, y) => this.event({ k: 'combo', x: Math.round(x), y: Math.round(y) });
       net.onMsg = (pid, m) => this.hostMsg(pid, m);
       const roster = players.map((p) => ({ ...p }));
@@ -179,6 +181,7 @@ export class Sync {
     const canSq = (s: unknown) => !(s instanceof Squad) || s.owner === pid || !!this.allowAlly.get(s.owner);
     if (['moveSquad', 'patrolSquad', 'setStance', 'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'setSquadAuto'].includes(name) && !canSq(a0)) return `P${(a0 as Squad).owner + 1} hasn't allowed ally control`;
     if (name === 'setTargeting' && !canSq(a0)) return 'Not your squad';
+    if (name === 'possessCtl' && ((a0 instanceof Tower && a0.owner !== pid) || (a0 instanceof Unit && a0.squad.owner !== pid))) return 'You can only possess your own towers and troops';
     if (name === 'moveGroup' && Array.isArray(a0) && !a0.some(canSq)) return 'Not your squads';
     void g;
     return null;
@@ -403,8 +406,8 @@ export class Sync {
       hq: [r1(g.hq.health.hp), Math.round(g.hq.health.max)],
       all: this.players.map((p) => [p.pid, Math.floor(this.creditsOf(p.pid))]),
       E: [...g.enemies.filter((e) => e.alive).map(en), ...g.allies.filter((e) => e.alive).map(en)],
-      T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0]),
-      S: g.squads.filter((s) => s.alive).map((s) => [s.uid, s.data.id, s.owner, s.stance, s.targeting, Math.round(s.rally.x), Math.round(s.rally.y), s.units.filter((u) => u.alive).map((u) => [u.uid, u.index, Math.round(u.x), Math.round(u.y), r1(u.health.hp), u.stars, garCode(u), u.dropT > 0 ? 1 : 0]), (s.auto ? 1 : 0) | (s.manual ? 2 : 0), s.autoTask]),
+      T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0, t.possessedBy, r1(t.aim)]),
+      S: g.squads.filter((s) => s.alive).map((s) => [s.uid, s.data.id, s.owner, s.stance, s.targeting, Math.round(s.rally.x), Math.round(s.rally.y), s.units.filter((u) => u.alive).map((u) => [u.uid, u.index, Math.round(u.x), Math.round(u.y), r1(u.health.hp), u.stars, garCode(u), u.dropT > 0 ? 1 : 0, u.possessedBy]), (s.auto ? 1 : 0) | (s.manual ? 2 : 0), s.autoTask]),
       B: g.buildings.filter((b) => b.alive).map((b) => [b.isHQ ? -1 : b.pad!.index, b.data.id, b.tier, r1(b.health.hp), b.build ? [r1(b.build.t), b.build.dur, b.build.to] : 0, b.queue.map((q) => [q.unitId, r1(q.t), q.dur, q.held]), Math.round(b.rally.x), Math.round(b.rally.y), b.owner]),
       X: g.barriers.filter((b) => b.alive).map((b) => [b.uid, b.data.id, Math.round(b.x), Math.round(b.y), b.lane, r1(b.hp), b.owner]),
       P: g.pickups.filter((p) => p.alive).map((p) => [p.uid, Math.round(p.x), Math.round(p.y), p.value, p.kind]),
@@ -488,7 +491,7 @@ export class Sync {
   private syncTowers(T: unknown[][]) {
     const g = this.g, seen = new Set<number>();
     for (const row of T) {
-      const [uid, id, c, r, tier, owner, targeting, hp, dis, acd, sweep, crates] = row as [number, string, number, number, number, number, Tower['targeting'], number, number, number, number, number];
+      const [uid, id, c, r, tier, owner, targeting, hp, dis, acd, sweep, crates, pby, aim] = row as [number, string, number, number, number, number, Tower['targeting'], number, number, number, number, number, number, number];
       seen.add(uid);
       let t = this.h2l.get(uid) as Tower | undefined;
       if (!t) {
@@ -516,6 +519,7 @@ export class Sync {
       if (sweep && !t.sweep) { this.inExec = true; try { t.abilityCd = 0; ORIG['tw.useAbility'].call(t, g); } finally { this.inExec = false; } }
       t.abilityCd = acd;
       if (t.farm) t.farm.crates = crates;
+      if (!(t.manual && pby === this.localPid)) { t.possessedBy = pby ?? -1; if (pby >= 0 && aim != null) t.aim = aim; }
     }
     for (const t of [...g.towers]) { const u = this.l2h.get(t); if (u === undefined || !seen.has(u)) { g.grid.release(t.cell.c, t.cell.r); t.remove(); if (u !== undefined) this.h2l.delete(u); } }
     g.towers = g.towers.filter((t) => t.alive);
@@ -538,7 +542,7 @@ export class Sync {
       if (moved && (sq.owner !== this.localPid || (sq.auto && !sq.manual))) { sq.rally = { x: rx, y: ry }; sq.waypoints = []; }
       const useen = new Set<number>();
       for (const ur of units) {
-        const [uuid, index, x, y, hp, stars, gar, drop] = ur as [number, number, number, number, number, number, string | 0, number];
+        const [uuid, index, x, y, hp, stars, gar, drop, pby] = ur as [number, number, number, number, number, number, string | 0, number, number];
         useen.add(uuid);
         let u = this.h2l.get(uuid) as Unit | undefined;
         if (!u) {
@@ -547,7 +551,9 @@ export class Sync {
           sq.units.push(u); g.units.push(u); this.map(uuid, u);
         }
         const far = Math.hypot(u.x - x, u.y - y);
-        if (far > 60 || far < 0.3) { u.x = x; u.y = y; } else { u.x += (x - u.x) * 0.35; u.y += (y - u.y) * 0.35; }
+        const mine = !!u.manual && pby === this.localPid; if (!mine) u.possessedBy = pby ?? -1;
+        if (mine && far < 60) { /* client-predicted possessed unit: keep local position */ }
+        else if (far > 60 || far < 0.3) { u.x = x; u.y = y; } else { u.x += (x - u.x) * 0.35; u.y += (y - u.y) * 0.35; }
         u.health.hp = hp; u.stars = stars;
         const tgt: Garrisonable | null = !gar ? null : gar[0] === 't' ? (this.h2l.get(+gar.slice(1)) as Tower | undefined) ?? null : g.envs[+gar.slice(1)] ?? null;
         if (u.garrison !== tgt) { if (u.garrison) gLeave(u.garrison, u); if (tgt) gEnter(tgt, u); }

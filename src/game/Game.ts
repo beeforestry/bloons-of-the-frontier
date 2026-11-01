@@ -3,7 +3,7 @@
 // (firing, splash, deploying squads, garrisoning, organizing farms, leaks).
 // Rendering and DOM UI only READ from this object.
 // =============================================================================
-import { Faction, TargetingMode, TARGETING_ORDER, type AbilityId, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
+import { Faction, TargetingMode, TARGETING_ORDER, type AbilityId, type ManualCtl, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
 import { MAPS, toVec, type MapDef } from '../data/maps';
@@ -62,6 +62,8 @@ export const DMG_AGG_WINDOW = 0.35;
 const fmtDmg = (n: number) => (n >= 10 ? `${Math.round(n)}` : `${Math.round(n * 10) / 10}`);
 
 /** Camera shake tuning: max amplitude (screen px), exponential decay rate (1/s), longest continuous run (s). */
+/** First-person possession: direct (crosshair) hits deal +15% damage. */
+export const MANUAL_BONUS = 1.15;
 const SHAKE_CAP = 14, SHAKE_DECAY = 8, SHAKE_MAX_RUN = 1.2;
 
 export class Game {
@@ -103,7 +105,7 @@ export class Game {
   deployCd: Record<string, number> = {};
   stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0,
     combos: 0, powers: 0, hover: 0, hypno: 0, allyKills: 0, bossPhase2: 0, bossAttacks: 0, bossKills: 0, chain: 0, devoured: 0, vetAura: 0, rally: 0,
-    orbs: 0, scrap: 0, promotions: 0, abilities: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, scrapBy: {} as Record<string, number> };
+    orbs: 0, scrap: 0, promotions: 0, abilities: 0, possessions: 0, manualShots: 0, manualHits: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, freeCollectors: 0, scrapBy: {} as Record<string, number> };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
@@ -327,7 +329,7 @@ export class Game {
   techBonus = 0; popBonus = 0;
   get tech() { return this.techBonus + this.buildings.filter((b) => b.built && b.data.id === 'reactor').reduce((s, b) => s + (b.t.stats.tech ?? 0), 0); }
   get popCap() { return this.popBonus + this.buildings.filter((b) => b.built && (b.isHQ || b.data.id === 'reactor')).reduce((s, b) => s + (b.t.stats.pop ?? 0), 0); }
-  get pop() { return this.squads.filter((s) => s.alive).reduce((n, s) => n + (s.data.population ?? 0), 0); }
+  get pop() { return this.squads.filter((s) => s.alive && !s.data.free).reduce((n, s) => n + (s.data.population ?? 0), 0); }
   get energyRegen() { return this.buildings.filter((b) => b.built && (b.isHQ || b.data.id === 'reactor')).reduce((s, b) => s + (b.t.stats.energyRegen ?? 0), 0); }
   buildingsOf(id: BuildingKind) { return this.buildings.filter((b) => b.alive && b.data.id === id); }
   buildOnPad(pad: BuildPad, id: BuildingKind): Building | null {
@@ -687,6 +689,72 @@ export class Game {
       }));
     }
   }
+  // ------------------------------------------------------------------ first-person possession (t37)
+  /** Every tower / unit currently possessed (any player). */
+  possessed(): (Tower | Unit)[] { return [...this.towers.filter((t) => t.alive && t.manual), ...this.units.filter((u) => u.alive && u.manual)]; }
+  /** Take (ctl) or release (null) manual control of one of YOUR towers / units. Networked in co-op (Sync G_METHODS). */
+  possessCtl(o: Tower | Unit, ctl: ManualCtl | null): boolean {
+    if (!o || !o.alive) return false;
+    const pid = this.actingPid ?? 0;
+    if (ctl) {
+      if (o instanceof Tower && !o.t.combat) return false;
+      if (o.possessedBy >= 0 && o.possessedBy !== pid) return false;
+      if (!o.manual) { this.stats.possessions++; this.bus.emit('possess', { on: true, pid }); }
+      o.manual = { ...ctl, pid }; o.possessedBy = pid;
+      if (o instanceof Unit) { o.squad.manual = true; }
+    } else {
+      o.manual = null; o.possessedBy = -1;
+      if (o instanceof Unit) { o.squad.manual = false; o.squad.rally = { x: o.x, y: o.y }; }
+    }
+    return true;
+  }
+  /** Can a possessed troop stand here? Inside the map, off rocks/logs, towers and buildings. */
+  walkable(x: number, y: number): boolean {
+    if (x < 12 || y < 12 || x > this.map.width - 12 || y > this.map.height - 12) return false;
+    for (const o of this.obstacles) if (o.alive && (o.x - x) ** 2 + (o.y - y) ** 2 < 26 * 26) return false;
+    for (const t of this.towers) if (t.alive && (t.x - x) ** 2 + (t.y - y) ** 2 < 20 * 20) return false;
+    for (const b of this.buildings) if (b.alive && (b.x - x) ** 2 + (b.y - y) ** 2 < (b.isHQ ? 70 : 40) ** 2) return false;
+    return true;
+  }
+  /** The first enemy along a top-down ray (manual hitscan / melee fallback). */
+  private rayEnemy(from: Vec, ang: number, len: number, antiAir: boolean, pad = 4): Enemy | null {
+    const to = { x: from.x + Math.cos(ang) * len, y: from.y + Math.sin(ang) * len };
+    let best: Enemy | null = null, bd = Infinity;
+    for (const e of this.enemies) if (e.alive && (!e.data.air || antiAir) && segDist(e, from, to) < e.data.radius + pad) { const d = dist2(e, from); if (d < bd) { bd = d; best = e; } }
+    return best;
+  }
+  /** A possessed tower pulls the trigger: its own projectile / damage / rate, aimed by the player. */
+  manualTowerFire(tw: Tower, c: CombatStats, shotNo: number) {
+    const m = tw.manual!, range = tw.range(c.range), antiAir = !!tw.data.antiAir || (tw.data.hitsAir ?? true);
+    let tgt = m.target && m.target.alive && dist(m.target, tw) <= range * 1.25 + m.target.data.radius ? m.target : null;
+    if (!tgt && (tw.data.hitscan || c.chain || c.devour != null)) tgt = this.rayEnemy({ x: tw.x, y: tw.y }, m.aim, range * 1.1, antiAir, 10);
+    this.stats.manualShots++;
+    const direct = !!tgt && tgt === m.target;
+    const c2: CombatStats = direct ? { ...c, damage: c.damage * MANUAL_BONUS, specialDamage: c.specialDamage != null ? c.specialDamage * MANUAL_BONUS : undefined } : c;
+    if (!tgt) {
+      const ex = tw.x + Math.cos(m.aim) * range, ey = tw.y + Math.sin(m.aim) * range;
+      if (tw.data.hitscan || c.chain || c.devour != null) { this.fx({ kind: 'beam', x: tw.x, y: tw.y - 14, x2: ex, y2: ey, color: '#ffe08a', width: 2, dur: 0.08 }); this.sfx('laser', tw.x, tw.y); return; }
+      // a free shot down the crosshair: fake 'target' at the aim point (projectiles fly on and can still hit)
+      tgt = { x: ex, y: ey, ang: m.aim, alive: false, data: { speed: 0, boss: false, radius: 0 }, maxHp: Infinity } as unknown as Enemy;
+    }
+    if (direct) this.stats.manualHits++;
+    this.towerFire(tw, [tgt], c2, shotNo);
+  }
+  /** A possessed troop fires its own weapon down the crosshair. */
+  manualUnitAttack(u: Unit, t: UnitTier) {
+    const m = u.manual!, w = t.weapon, range = u.range(this), antiAir = !!w.antiAir || !!w.hitsAir;
+    let tgt = m.target && m.target.alive && dist(m.target, u) <= range * 1.3 + m.target.data.radius ? m.target : null;
+    const direct = !!tgt;
+    if (!tgt && (t.stats.range < 60 || w.hitscan)) tgt = this.rayEnemy(u, m.aim, Math.max(range, 40) * 1.1, antiAir, t.stats.range < 60 ? 18 : 8);
+    this.stats.manualShots++;
+    if (tgt) { if (direct) this.stats.manualHits++; this.unitAttack(u, tgt, t, direct ? MANUAL_BONUS : 1); return; }
+    if (t.stats.range < 60) { this.fx({ kind: 'text', x: u.x + Math.cos(m.aim) * 20, y: u.y - 12, text: '⚔', color: '#fff', dur: 0.2 }); return; }
+    const from = { x: u.x + u.facing * 8, y: u.y - 12 };
+    if (w.hitscan) { this.fx({ kind: 'beam', x: from.x, y: from.y, x2: u.x + Math.cos(m.aim) * range, y2: u.y + Math.sin(m.aim) * range, color: '#ffe08a', width: 1.5, dur: 0.08 }); return; }
+    const crit = Math.random() < 0.08, dmg = t.stats.damage * u.dmgMul * (crit ? 2 : 1) * (this.armory.has('servos') ? 1 + ARMORY_FX.servosDmg : 1);
+    this.projectiles.push(new Projectile({ kind: w.projectile ?? 'bullet', x: u.x, y: u.y - 10, angle: m.aim, speed: 800, damage: dmg, type: w.type, pierce: 1, splash: w.splash, hitsAir: w.hitsAir,
+      hit: { antiAir: !!w.antiAir, ap: !!w.armorPiercing || this.armory.has('ap'), src: u, crit } }));
+  }
   /** Tesla Coil: lightning jumps target -> nearest unhit enemy (80% damage per jump). */
   teslaChain(tw: Tower, first: Enemy, dmg: number, c: CombatStats, hit: HitOpts) {
     let from: Vec = { x: tw.x, y: tw.y - 40 }, cur: Enemy | null = first;
@@ -742,8 +810,8 @@ export class Game {
     }
     this.fx({ kind: look, x, y, r, dur: 0.35 });
   }
-  unitAttack(u: Unit, tgt: Enemy, t: UnitTier) {
-    const w = t.weapon, crit = Math.random() < 0.08, dmg = t.stats.damage * u.dmgMul * (crit ? 2 : 1) * (this.armory.has('servos') ? 1 + ARMORY_FX.servosDmg : 1);
+  unitAttack(u: Unit, tgt: Enemy, t: UnitTier, mul = 1) {
+    const w = t.weapon, crit = Math.random() < 0.08, dmg = mul * t.stats.damage * u.dmgMul * (crit ? 2 : 1) * (this.armory.has('servos') ? 1 + ARMORY_FX.servosDmg : 1);
     if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!w.antiAir, ap: !!w.armorPiercing || this.armory.has('ap'), src: u, crit };
     if (t.stats.range < 60) {
@@ -905,6 +973,17 @@ export class Game {
     if (d.maxSquads && this.squadCount(id) >= d.maxSquads) return `Max ${d.maxSquads} ${d.name} squads`;
     if (this.res.scrap < (d.scrapCost ?? 0)) return `Needs ${d.scrapCost}🔩 scrap (have ${this.res.scrap}) — troops gather scrap`;
     return null;
+  }
+  /** t36: every player starts with ONE free Sprout Farmhand collector beside their HQ
+   *  (host / solo only; clients receive it in the snapshot). */
+  spawnFreeCollector(pid = 0): Squad | null {
+    if (this.isClient) return null;
+    if (this.squads.some((s) => s.alive && s.data.id === 'farmhand' && (this.net === 'solo' || s.owner === pid))) return null;
+    const prev = this.actingPid; this.actingPid = pid;
+    const sq = this.spawnSquad(unitById('farmhand'), { x: this.hq.x - 150 + pid * 45, y: this.hq.y + 95 - pid * 20 }, false);
+    this.actingPid = prev;
+    this.stats.freeCollectors++;
+    return sq;
   }
   /** Halo-Wars-style deployment: a drop pod lands the squad at the rally point. */
   deploySquad(id: string, at: Vec): Squad | null {
@@ -1072,7 +1151,7 @@ export class Game {
     const farms = this.farms();
     if (farms.length < 2) { this.toast('Build at least 2 farms (Money Monkey / Supply Depot) first'); return false; }
     const ws = this.workers();
-    if (!ws.length) { this.toast('Deploy a Sprout Farmhand to organize farms'); return false; }
+    if (!ws.length) { this.toast('Your Sprout Farmhand is busy or missing'); return false; }
     const cx = farms.reduce((s, f) => s + f.x, 0) / farms.length, cy = farms.reduce((s, f) => s + f.y, 0) / farms.length;
     const w = ws.sort((a, b) => (a.task ? 1 : 0) - (b.task ? 1 : 0) || dist(a, { x: cx, y: cy }) - dist(b, { x: cx, y: cy }))[0];
     w.orderOrganize({ x: cx, y: cy + 20 });
@@ -1110,6 +1189,7 @@ export class Game {
   update(dtReal: number) {
     if (this.paused !== this.wasPaused) { this.wasPaused = this.paused; this.resetShake(); }
     if (this.paused || this.state !== 'playing') { this.updateEffects(dtReal); return; }
+    if (this.speed !== 1 && (this.towers.some((t) => t.manual) || this.units.some((u) => u.manual))) this.speed = 1; // possession forces 1x
     let left = Math.min(0.1, dtReal) * this.speed;
     while (left > 1e-6) { const dt = Math.min(1 / 60, left); left -= dt; this.step(dt); }
     this.updateEffects(dtReal);

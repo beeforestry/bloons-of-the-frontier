@@ -9,7 +9,7 @@
 // Tiers are researched per troop type (g.unitTier) and apply to living units.
 // =============================================================================
 import { ARMORY_FX } from '../data/armory';
-import { TargetingMode, type AbilityId, type Formation, type Stance, type UnitData, type UnitTier, type Vec } from '../core/types';
+import { TargetingMode, type ManualCtl, type AbilityId, type Formation, type Stance, type UnitData, type UnitTier, type Vec } from '../core/types';
 import { nextId, dist, rand } from '../core/math';
 import { BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
 import { pickTarget } from '../systems/TargetingSystem';
@@ -93,6 +93,9 @@ export class Unit implements Buffable {
   moving = false;
   /** Current beam target (Spartan Laser continuous beam). */
   beamTo: Enemy | null = null;
+  /** First-person possession (t37): WASD move + manual fire; the rest of the squad follows. */
+  manual: ManualCtl | null = null;
+  possessedBy = -1;
   private appliedTier = -1;
   private appliedStars = 0;
   private appliedPlating = false;
@@ -179,6 +182,7 @@ export class Unit implements Buffable {
     this.beamTo = null;
 
     const speed = t.stats.speed * (this.stimT > 0 ? STIM.speed : 1) * (sq.stance === 'retreat' ? 1.8 : 1) * (g.armory.has('servos') ? 1 + ARMORY_FX.servosSpeed : 1) * g.roadSpeedMul(this);
+    if (this.manual && !this.garrison) { this.updateManual(g, dt, t, speed); return; }
     const melee = t.stats.range < 60;
     const home = sq.slot(this.index);
     const stance = sq.stance;
@@ -239,6 +243,20 @@ export class Unit implements Buffable {
         g.splash(target.x, target.y, t.special.splash, t.special.damage * this.dmgMul, t.special.type, this, 'boom', { antiAir: !!t.weapon.antiAir, src: this, ap: true });
       }
     }
+  }
+  /** Possessed (first-person): move by input at this unit's speed, fire on the trigger. */
+  updateManual(g: Game, dt: number, t: UnitTier, speed: number) {
+    const m = this.manual!, L = Math.hypot(m.mx, m.my);
+    if (L > 0.05) {
+      const k = (Math.min(1, L) / L) * speed * dt, nx = this.x + m.mx * k, ny = this.y + m.my * k;
+      if (g.walkable(nx, ny)) { this.x = nx; this.y = ny; } else if (g.walkable(nx, this.y)) this.x = nx; else if (g.walkable(this.x, ny)) this.y = ny;
+      this.moving = true;
+  }
+    this.facing = Math.cos(m.aim) >= 0 ? 1 : -1;
+    // the rest of the squad follows the possessed unit
+    this.squad.rally = { x: this.x, y: this.y }; this.squad.waypoints = []; this.squad.patrol = null;
+    for (const p of g.pickups) if (p.alive && p.kind === 'scrap' && (p.x - this.x) ** 2 + (p.y - this.y) ** 2 < 22 * 22) p.collect(g, 1, 'troops');
+    if (m.fire && this.cooldown <= 0) { this.cooldown = 1 / (t.stats.attackRate * this.rateMul); this.attackAnim = 0.18; g.manualUnitAttack(this, t); }
   }
 }
 

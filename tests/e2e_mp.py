@@ -136,6 +136,23 @@ def coop(b):
     C(f'(() => {{ const t = __game.g.towers.find(t => t.owner === 1); t.upgrade(__game.g); }})()')
     check(bool(until(host, '__game.mp().towers.find(t => t.owner === 1).tier === 1', 6000)), 'client upgraded its own tower (host tier 1)')
     check(bool(until(cli, '__game.mp().towers.find(t => t.owner === 1).tier === 1', 6000)), 'tier-up mirrored to the client')
+    # 👁 possession in co-op (t37): own towers only; host sim drives the manual fire; allies see who
+    C('(() => { const g = __game.g, t = g.towers.find(t => t.owner === 0); g.possessCtl(t, { aim: 0, fire: true, target: null, mx: 0, my: 0 }); })()'); time.sleep(0.8)
+    check(H('__game.g.towers.find(t => t.owner === 0).possessedBy') == -1, "client cannot possess P1's tower")
+    H('(() => { const g = __game.g; __game.selectTower(g.towers.findIndex(t => t.owner === 1)); })()'); time.sleep(0.2)
+    check(not H('!!document.querySelector("#sp-possess")'), "host gets no Possess button on P2's tower")
+    C('__game.selectTower(__game.g.towers.findIndex(t => t.owner === 1))'); cli.wait_for_selector('#sp-possess', timeout=5000); cli.click('#sp-possess')
+    check(bool(until(cli, 'window.__possess && window.__possess.cur && !!document.querySelector("#possess-root")', 20000)), 'client entered first person on its own tower')
+    check(bool(until(host, '__game.g.towers.find(t => t.owner === 1).possessedBy === 1 && !!__game.g.towers.find(t => t.owner === 1).manual', 6000)), 'host sees P2 tower possessed (👁 P2 badge)')
+    for i in range(8): H(f'__game.spawn("pink", 0, {0.25 + i * 0.05:.2f})')
+    s0 = H('__game.g.stats.manualShots')
+    for i in range(10):
+        C('(() => { const P = window.__possess.cur; P.aimNearest() || P.aimAt(__game.g.hq.x, __game.g.hq.y); P.setFire(true); })()'); time.sleep(0.2)
+    C('window.__possess.cur.setFire(false)')
+    check(H('__game.g.stats.manualShots') > s0, f'client manual fire runs on the host sim ({H("__game.g.stats.manualShots") - s0} shots)')
+    cli.keyboard.press('e'); time.sleep(0.2)
+    check(bool(until(host, '__game.g.towers.find(t => t.owner === 1).possessedBy === -1', 6000)) and not C('!!document.querySelector("#possess-root")'), 'client exit releases the tower on the host')
+    H('__game.killAll()')
     # ally control: host squad, client tries to move it
     H('__game.deploy("marine", __game.g.hq.x - 220, __game.g.hq.y + 40)')
     until(cli, '__game.g.squads.length > 0', 8000)
@@ -254,7 +271,7 @@ def versus(b):
 
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True, args=['--use-fake-ui-for-media-stream'])
-    B2[0] = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True)
+    B2[0] = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), headless=True, args=['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
     print('BASE', BASE, 'transport', 'webrtc' if args.webrtc else 'relay')
     coop(b); versus(b)
     b.close()

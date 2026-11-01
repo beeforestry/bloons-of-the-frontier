@@ -226,6 +226,8 @@ export interface UnitData {
   squadSize: number;
   /** Max squads alive at once (0 = unlimited). */
   maxSquads: number;
+  /** Granted free at match start (not bought from the troop bar). */
+  free?: boolean;
   cooldown: number;
   /** Army population per squad (PopulationManager cap: HQ + Reactors). */
   population: number;
@@ -353,3 +355,15 @@ export interface BuildingData {
   tiers: BuildingTier[];
 }
 export interface PowerData { id: 'mac' | 'heal'; name: string; icon: string; energy: number; cooldown: number; desc: string }
+
+/** First-person possession input for one tower / unit (t37). Angles are top-down radians. */
+export interface ManualCtl {
+  /** Aim yaw (top-down) and whether the trigger is held. */
+  aim: number; fire: boolean;
+  /** Enemy under the crosshair (3D ray pick), if any: direct hits get MANUAL_BONUS. */
+  target: import('../entities/Enemy').Enemy | null;
+  /** Move input in world axes (-1..1), units only. */
+  mx: number; my: number;
+  /** Player id controlling it. */
+  pid?: number;
+}

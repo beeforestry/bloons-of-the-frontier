@@ -6,6 +6,7 @@ export interface GameEvents {
   lives: { lives: number };
   wave: { wave: number; total: number; active: boolean };
   toast: { text: string; color?: string };
+  possess: { on: boolean; pid: number };
   selection: { kind: 'tower' | 'squad' | 'none' };
   gameover: { won: boolean };
   organized: { moved: number; freedNote: string };

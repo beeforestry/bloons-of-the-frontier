@@ -177,7 +177,7 @@ export class Renderer {
     for (const o of g.obstacles) if (this.inView(o.x, o.y)) objs.push({ y: o.y, f: () => this.obstacle(o) });
     for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
     const mp = g.net !== 'solo';
-    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); } });
+    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); if (u.possessedBy >= 0) this.possessBadge(u.x, u.y - 34, u.possessedBy); } });
     for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
     for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
     objs.sort((a, b) => a.y - b.y).forEach((o) => o.f());
@@ -219,6 +219,15 @@ export class Renderer {
     this.shockwaves();
   }
   /** Owner colour ellipse under co-op towers / troops. */
+  /** 👁 badge over a tower / troop someone is driving in first person (co-op allies see who). */
+  private possessBadge(x: number, y: number, pid: number) {
+    const c = this.ctx, col = PCOLORS[pid] ?? '#fff', mp = this.g.net !== 'solo';
+    c.save(); c.font = 'bold 12px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    const label = mp ? `👁 P${pid + 1}` : '👁', w = c.measureText(label).width + 10;
+    c.fillStyle = 'rgba(10,14,24,.78)'; c.strokeStyle = col; c.lineWidth = 1.5;
+    c.beginPath(); c.roundRect(x - w / 2, y - 9, w, 18, 9); c.fill(); c.stroke();
+    c.fillStyle = '#fff'; c.fillText(label, x, y + 1); c.restore();
+  }
   private ownerRing(x: number, y: number, r: number, col: string) {
     const c = this.ctx; c.globalAlpha = 0.85; c.strokeStyle = col; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y, r, r * 0.42, 0, 0, 7); c.stroke();
     c.globalAlpha = 0.18; c.fillStyle = col; c.fill(); c.globalAlpha = 1;
@@ -654,6 +663,7 @@ export class Renderer {
     if (t.hypno) { const n = t.hypno.mine.filter((e) => e.alive).length; if (n) this.label(t.x, t.y - 44, '🌀'.repeat(n), '#ff7ae6', 11); }
     c.globalAlpha = 1;
     this.pips(t.x, t.y + 26, t.tier, t.t.visual.glow);
+    if (t.possessedBy >= 0) this.possessBadge(t.x, t.y - 54, t.possessedBy);
     if (t.health.frac < 0.999 || (this.g.net !== 'solo' && this.g.mode === 'coop')) this.bar(t.x, t.y - 38, 40, t.health.frac, t.disabled ? '#888' : this.g.net !== 'solo' && this.g.mode === 'coop' ? PCOLORS[t.owner] ?? '#5fe06a' : '#5fe06a', t.uid);
     if (t.disabled) this.label(t.x, t.y - 46, 'OFFLINE', '#ff8a7a');
     if (t.garrisoned.length) this.label(t.x, t.y + 40, '●'.repeat(t.garrisoned.length) + '○'.repeat(Math.max(0, t.gSlots() - t.garrisoned.length)), '#7fd3ff', 11);

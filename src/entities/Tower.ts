@@ -6,7 +6,7 @@
 //   FarmTower    - periodic credit crates + wave bonus        (tier.farm)
 // e.g. the Frost Wall-Nut Bastion is Cover + (weak) Combat.
 // =============================================================================
-import { TargetingMode, type TowerData, type TowerTier } from '../core/types';
+import { TargetingMode, type ManualCtl, type TowerData, type TowerTier } from '../core/types';
 import { nextId, easeInOut } from '../core/math';
 import { AuraEmitter, BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
 import { pickTargets, canHit } from '../systems/TargetingSystem';
@@ -54,6 +54,10 @@ export class Tower implements Buffable, Garrisonable {
   sweep: { t: number; a0: number; a1: number; tick: number } | null = null;
   /** Selection-ring pulse (damage / ability). */
   pulse = 0;
+  /** First-person possession (t37): player aims + fires; null = AI. */
+  manual: ManualCtl | null = null;
+  /** Player id possessing this tower (-1 = none; synced so allies see the 👁 badge). */
+  possessedBy = -1;
 
   constructor(readonly data: TowerData, public cell: Cell, g: Game) {
     const c = g.grid.cellCenter(cell.c, cell.r);
@@ -199,6 +203,14 @@ export class CombatTower {
     this.cooldown -= dt;
     // wind-up: ramps 0->1 over the last 35% of the reload while engaged
     tw.charge = tw.engaged ? Math.max(0, Math.min(1, 1 - this.cooldown / Math.max(0.05, this.period * 0.35))) : Math.max(0, tw.charge - dt * 3);
+    if (tw.manual) {
+      const m = tw.manual; tw.engaged = true; tw.aim = m.aim;
+      if (this.cooldown > 0 || !m.fire || tw.sweep) return;
+      this.cooldown = 1 / (c.fireRate * (1 + tw.buffs.totals.ratePct)); this.period = this.cooldown; tw.sinceFire = 0;
+      this.shotCount++; tw.recoil = 1;
+      g.manualTowerFire(tw, c, this.shotCount);
+      return;
+    }
     if (this.cooldown > 0) {
       // keep tracking the current priority target between shots (eased in Tower.update)
       this.trackT -= dt;

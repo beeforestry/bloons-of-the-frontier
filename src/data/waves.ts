@@ -25,7 +25,7 @@ export const WAVES: WaveData[] = [
   W(280, ['bile_titan', 2, 8, 0], ['pink', 36, 0.2, 2], ['hunter', 18, 0.35, 6], ['gargoyle', 14, 0.5, 5], ['ironback', 10, 0.9, 10]),
   W(300, ['moab', 2, 6, 10], ['charger', 8, 1.2, 0], ['ceramic', 12, 0.7, 4], ['scavenger', 36, 0.15, 6], ['warden', 12, 0.9, 8]),
   W(320, ['moab', 3, 7, 0], ['bile_titan', 2, 8, 4], ['lead', 14, 0.6, 6], ['brood', 4, 2.5, 8], ['gargoyle', 18, 0.4, 3], ['ironback', 12, 0.8, 9]),
-  W(400, ['boss_dreadnought', 1, 1, 14], ['moab', 5, 5, 0], ['bile_titan', 3, 6, 3], ['charger', 10, 1, 2], ['ceramic', 16, 0.5, 6], ['hunter', 22, 0.3, 9], ['warden', 14, 0.8, 4], ['gargoyle', 22, 0.35, 7], ['ironback', 14, 0.7, 11]),
+  W(400, ['boss_dreadnought', 1, 1, 14], ['moab', 4, 6, 0], ['bile_titan', 2, 7, 3], ['charger', 10, 1, 2], ['ceramic', 16, 0.5, 6], ['hunter', 22, 0.3, 9], ['warden', 14, 0.8, 4], ['gargoyle', 22, 0.35, 7], ['ironback', 14, 0.7, 11]),
 ];
 
 // ---------------------------------------------------------------------------
