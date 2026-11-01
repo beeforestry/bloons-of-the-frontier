@@ -4,7 +4,7 @@ Usage: /workspace/.venv-pw/bin/python tests/balance_sim.py [--maps garden,jungle
 import argparse, functools, http.server, json, os, socketserver, threading, time
 from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ap = argparse.ArgumentParser(); ap.add_argument('--maps', default='garden,jungle,fortress,morro'); ap.add_argument('--diffs', default='easy,medium,hard,impoppable'); ap.add_argument('--out', default='sim'); ap.add_argument('--dist', default=''); args = ap.parse_args()
+ap = argparse.ArgumentParser(); ap.add_argument('--maps', default='garden,jungle,fortress,morro'); ap.add_argument('--diffs', default='easy,medium,hard,impoppable'); ap.add_argument('--out', default='sim'); ap.add_argument('--dist', default=''); ap.add_argument('--rot', default=''); args = ap.parse_args()
 class Q(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 h = socketserver.TCPServer(('127.0.0.1', 0), functools.partial(Q, directory=args.dist or os.path.join(ROOT, 'dist'))); threading.Thread(target=h.serve_forever, daemon=True).start()
@@ -16,6 +16,7 @@ with sync_playwright() as p:
         for d in args.diffs.split(','):
             pg = b.new_page(viewport={'width': 900, 'height': 600}); pg.add_init_script("localStorage.setItem('bof.tutorialDone','1')")
             pg.goto(f'http://127.0.0.1:{h.server_address[1]}/index.html?map={m}&diff={d}'); pg.wait_for_function('window.__game')
+            if args.rot: pg.evaluate(f'window.__BOT_ROT = {json.dumps(args.rot.split(","))}')
             pg.evaluate(BOT)
             t0 = time.time(); last = None; total = pg.evaluate('window.__game.diff().total'); curve = []
             while True:

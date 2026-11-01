@@ -2,7 +2,7 @@
 // difficulty-agnostic strategy and fast-forwards the sim (no rendering) one wave at a time.
 window.__bot = (() => {
   const H = window.__game, g = H.g;
-  const ROT = ['dart_monkey', 'ninja_monkey', 'gatling_cherry_bomber', 'unsc_autoturret', 'tesla_coil', 'wizard_monkey', 'unsc_flak', 'repeater_gatling',
+  const ROT = window.__BOT_ROT || ['dart_monkey', 'ninja_monkey', 'gatling_cherry_bomber', 'unsc_autoturret', 'tesla_coil', 'wizard_monkey', 'unsc_flak', 'repeater_gatling',
     'chomper', 'boomerang_monkey', 'sniper_monkey', 'glue_slinger', 'hypno_shroom', 'arcane_obelisk', 'star_emperor', 'unsc_rail', 'flame_melon_mortar', 'super_monkey'];
   let rot = 0, maxTowers = 0;
   // candidate cells: free cells sorted by how much path they cover (samples within 150 px)

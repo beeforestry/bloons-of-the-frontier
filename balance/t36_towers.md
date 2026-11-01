@@ -59,3 +59,28 @@
 | arcane_obelisk | T1 | 650 | 650 | 8.8 | 8.8 | 1.35 | 1.35 |
 | arcane_obelisk | T2 | 600 | 650 | 20.3 | 20.3 | 1.63 | 1.56 |
 | arcane_obelisk | T3 | 1300 | 1560 | 65.5 | 55.0 | 2.57 | 1.92 |
+
+## Sims: before vs after (fixed bot, `tests/balance_sim.py`, mixed tower rotation)
+
+| map | Medium before | Medium after | Hard before | Hard after |
+|---|---|---|---|---|
+| garden | WIN, HQ 149/200 | WIN, HQ 198/200 | lost at wave 61/100 | lost at wave 61/100 |
+| jungle | WIN, HQ 160/200 | WIN, HQ 178/200 (a5 re-run; the a4 run lost at wave 19, a borderline variance case) | lost at wave 61/100 | lost at wave 60/100 |
+| fortress | WIN, HQ 194/200 | WIN, HQ 172/200 | lost at wave 61/100 | lost at wave 59/100 |
+| morro | WIN, HQ 136/200 | WIN, HQ 169/200 | lost at wave 94/100 | lost at wave 67/100 |
+
+Medium: the bot leaks and loses some HQ but survives on every map. Hard: the bot dies between waves 59 and 67, so a human needs a real plan.
+Morro Hard was the outlier before (the bot reached wave 94); it now dies at 67 like the other maps.
+
+## Single-tower spam (after; garden, Medium; the bot builds and upgrades only one tower type)
+
+| tower spammed | result |
+|---|---|
+| gatling_cherry_bomber | lost at wave 52/60 |
+| ninja_monkey | lost at wave 40/60 |
+| tesla_coil | lost at wave 15/60 |
+| repeater_gatling | lost at wave 10/60 |
+| chomper | lost at wave 7/60 |
+| unsc_flak (anti-air) | stalled at wave 7/60 |
+
+None of the six highest DPS-per-credit towers wins Medium on its own; a mixed build is needed.
