@@ -1,3 +1,4 @@
+import MIL_SPRITES from './military.sprites.json';
 // =============================================================================
 // UPGRADE RULE VALIDATOR
 // User's game rule: "all upgrades of all towers and units must have better stats
@@ -129,6 +130,8 @@ export function validateBuilding(b: BuildingData): Issue[] {
 
 /** Art rule: every tier ships its own painted sprite (so each upgrade visibly changes). */
 const ART = new Set(Object.keys(ART_MANIFEST as Record<string, number[]>));
+// t42 vehicle towers: per-tier 16-yaw sheets rendered from the GLBs (tank_0 -> unsc_tank_0 ...)
+for (const k of Object.keys(MIL_SPRITES)) ART.add('unsc_' + k);
 const artKey = (k: string) => k.replace(/^proc:/, '');
 export function validateArt(): Issue[] {
   const out: Issue[] = [];

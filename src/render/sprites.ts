@@ -7,6 +7,7 @@
 // =============================================================================
 import { assetUrl } from '../assetUrl';
 import MANIFEST from './art.manifest.json';
+import MIL_META from '../data/military.sprites.json';
 export type Img = HTMLImageElement | HTMLCanvasElement;
 export const IMG: Record<string, Img> = {};
 export const ART_KEYS = Object.keys(MANIFEST as Record<string, number[]>);
@@ -14,6 +15,10 @@ export const ART_KEYS = Object.keys(MANIFEST as Record<string, number[]>);
 const FILES: Record<string, string> = {};
 for (const k of ART_KEYS) FILES[k] = `assets/v3/${k}.webp`;
 for (const k of ['sun', 'heart', 'frame']) FILES['ui_' + k] = `assets/ui/${k}.png`;
+/** t42 military art: 16-yaw sprite sheets (tank/heli per tier) + prop clusters, rendered from the CC0 GLBs. */
+export interface MilMeta { fw: number; fh: number; ay: number; ppm: number; n?: number; elev?: number; muzzle?: number[]; rotor?: number[]; nose?: number[] }
+export const MIL = MIL_META as Record<string, MilMeta>;
+for (const k of Object.keys(MIL)) FILES['mil:' + k] = `assets/military/${k}.webp`;
 
 function load(key: string, src: string) {
   return new Promise<void>((res) => {
@@ -27,6 +32,7 @@ function load(key: string, src: string) {
 export async function loadSprites(mapImages: string[]) {
   await Promise.all([...Object.entries(FILES).map(([k, v]) => load(k, v)), ...mapImages.map((m) => load('map:' + m, m))]);
   for (const k of ['unsc_autoturret', 'unsc_rail', 'unsc_flak']) for (let t = 0; t < 3; t++) IMG[`${k}_icon_${t}`] = turretIcon(k, t);
+  for (const k of ['tank', 'heli']) for (let t = 0; t < 3; t++) { const f = milFrame(`${k}_${t}`, 14); if (f) IMG[`unsc_${k}_icon_${t}`] = f; }
   tint('fx_pea', 'fx_pea_cherry', [255, 70, 60]);
   tint('fx_boom', 'fx_boom_fire', [255, 150, 60]);
 }
@@ -48,6 +54,11 @@ function turretIcon(k: string, t: number) {
   if (b) g.drawImage(b, (256 - b.width) / 2, 256 - b.height);
   if (h) { const s = 230 / h.width; g.save(); g.translate(128, 256 - (b?.height ?? 120) * 0.62); g.rotate(-0.35); g.drawImage(h, -h.width * s * HEAD_PIVOT, -h.height * s / 2, h.width * s, h.height * s); g.restore(); }
   return c;
+}
+/** One yaw frame of a military sheet cut out to its own canvas (HUD icons). */
+function milFrame(k: string, i: number) {
+  const im = IMG['mil:' + k], m = MIL[k]; if (!im || !m) return null;
+  const [c, g] = canvas(m.fw, m.fh); g.drawImage(im, (i % 4) * m.fw, ((i / 4) | 0) * m.fh, m.fw, m.fh, 0, 0, m.fw, m.fh); return c;
 }
 /** Turret heads are painted with the rotating housing at ~28% of their width. */
 export const HEAD_PIVOT = 0.28;

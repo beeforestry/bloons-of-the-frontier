@@ -30,6 +30,7 @@ import { Pickup } from '../entities/Pickup';
 import { BuildPad, Building } from '../entities/Building';
 import { BUILDINGS, HEAL, MAC, MAX_ENERGY, POWERS, TRAIN_DISCOUNT, buildingById } from '../data/buildings';
 import type { BuildingKind } from '../core/types';
+import { PROP_DEFS, PROP_PLAN, COVER, type MapProp } from '../data/props';
 import { Barrier, EnvStructure, Obstacle, gEnter, gFree, gLeave, laneOffset, type EnvKind, type Garrisonable } from '../entities/Garrison';
 import type { PickupKind } from '../entities/Pickup';
 import type { Blocker } from '../entities/Enemy';
@@ -110,6 +111,8 @@ export class Game {
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
   obstacles: Obstacle[] = [];
+  /** t42 military prop clusters (block building, sandbags/barricades give troops cover). */
+  props: MapProp[] = [];
   /** Blocked / opened shortcut trails (one or more per map). */
   shortcuts: Shortcut[] = [];
   barriers: Barrier[] = [];
@@ -202,6 +205,7 @@ export class Game {
     for (const pd of this.pads) if (dist(pd, p) < 140) return null;
     if (dist(this.hq, p) < 220) return null;
     for (const e of [...this.envs, ...this.obstacles]) if (dist(e, p) < 150) return null;
+    for (const e of this.props) if (dist(e, p) < 120) return null;
     for (const sc of this.shortcuts) if (segDistance(p, sc.a, sc.b) < radius + this.map.pathWidth * 0.5 + 24) return null;
     const cells: Cell[] = [], n = Math.ceil(radius / this.grid.cell) + 1;
     for (let dc = -n; dc <= n; dc++) for (let dr = -n; dr <= n; dr++) {
@@ -239,7 +243,18 @@ export class Game {
         if (cells) { const o = new Obstacle(kind, p.x, p.y, (i * 1.3) % 3); o.cells = cells; this.obstacles.push(o); return; }
       }
     });
+    // military prop clusters beside the lanes (deterministic so co-op clients match)
+    PROP_PLAN.forEach(([kind, f, sd], i) => {
+      for (const side of [120, 150, 95, 185, 220]) for (const df of [0, 0.03, -0.03]) {
+        const p = laneOffset(this, i % L, f + df, side * sd);
+        if (p.x < 60 || p.y < 60 || p.x > this.map.width - 60 || p.y > this.map.height - 60) continue;
+        const cells = this.claimCells(p, PROP_DEFS[kind].radius);
+        if (cells) { this.props.push({ kind, x: p.x, y: p.y, flip: i % 2 === 1, cells }); return; }
+      }
+    });
   }
+  /** Troop cover: standing next to sandbags / a barricade cuts incoming damage. */
+  inCover(p: Vec) { for (const pr of this.props) if (PROP_DEFS[pr.kind].cover && dist(pr, p) < PROP_DEFS[pr.kind].radius + COVER.pad) return true; return false; }
   /** Reserve the trail's cells (never buildable) and choke it with a rockslide blocker. */
   private setupShortcuts() {
     const defs = ((this.map as { shortcuts?: ShortcutDef[] }).shortcuts ?? []);

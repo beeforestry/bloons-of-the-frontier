@@ -14,12 +14,13 @@ import type { TierVisual } from '../core/types';
 import type { Cell } from '../systems/PlacementSystem';
 import { TOWERS, towerById } from '../data/towers';
 const TOWER_BY_SPRITE = (k: string) => TOWERS.find((t) => t.sprite === k);
-import { IMG, HEAD_PIVOT, body, flashOf, head, tintOf, type Img } from './sprites';
+import { IMG, HEAD_PIVOT, MIL, body, flashOf, head, tintOf, type Img } from './sprites';
 import { Faction } from '../core/types';
 import { Particles, PK, QUALITY_CAPS } from './Particles';
 import type { Barrier, EnvStructure, Obstacle } from '../entities/Garrison';
 import type { Pickup } from '../entities/Pickup';
 import type { Shortcut } from '../systems/Shortcuts';
+import type { MapProp } from '../data/props';
 const hex = (s: string) => parseInt(s.replace('#', '').slice(0, 6), 16);
 const FLORA_TOWERS = new Set(['sunflower', 'solar_pea_fusion', 'gatling_cherry_bomber', 'frost_wallnut_bastion', 'flame_melon_mortar', 'repeater_gatling', 'hypno_shroom', 'chomper']);
 /** Tower animation state handed to towerImg (wind-up, throw, plant sway). */
@@ -47,6 +48,8 @@ export interface ViewState {
 }
 export interface Camera { x: number; y: number; zoom: number }
 
+/** Military sheets are rendered at 25 px/m; the map is ~20.5 px/m (3x3 pad = 144 px = 7.2 m, troop 44 px = 1.8 m tall-ish). */
+const MIL_K = 0.82, TAU = Math.PI * 2;
 const TOWER_PX = 78, UNIT_PX = 44, BLD_PX = 168, HQ_PX = 236, PAD_PX = 120;
 
 export class Renderer {
@@ -172,7 +175,8 @@ export class Renderer {
     const objs: { y: number; f: () => void }[] = [];
     const sel = new Set(v.selSquads);
     for (const b of g.buildings) objs.push({ y: b.y + 30, f: () => this.building(b, b === v.selBuilding) });
-    for (const t of g.towers) if (this.inView(t.x, t.y)) objs.push({ y: t.y, f: () => this.tower(t, t === v.selTower) });
+    for (const t of g.towers) if (this.inView(t.x, t.y, 200)) objs.push({ y: t.y + (t.data.airborne ? 400 : 0), f: () => this.tower(t, t === v.selTower) });
+    for (const pr of g.props) if (this.inView(pr.x, pr.y, 120)) objs.push({ y: pr.y, f: () => this.prop(pr) });
     for (const e of g.envs) if (this.inView(e.x, e.y, 160)) objs.push({ y: e.y + 20, f: () => this.env(e, v) });
     for (const o of g.obstacles) if (this.inView(o.x, o.y)) objs.push({ y: o.y, f: () => this.obstacle(o) });
     for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
@@ -443,6 +447,8 @@ export class Renderer {
     const ok = g.canPlace(id, cell);
     const r = t0.combat?.range ?? t0.cover?.auraRadius ?? 40;
     this.range(p.x, p.y, r, ok);
+    const fp = d.footprint ?? 1;
+    if (fp > 1) { const s = g.grid.cell, h = (fp * s) / 2; this.ctx.fillStyle = ok ? 'rgba(120,255,140,0.18)' : 'rgba(255,70,70,0.25)'; this.ctx.fillRect(p.x - h, p.y - h, fp * s, fp * s); this.ctx.strokeStyle = ok ? '#8f8' : '#f66'; this.ctx.lineWidth = 2; this.ctx.strokeRect(p.x - h, p.y - h, fp * s, fp * s); }
     this.ctx.globalAlpha = 0.65;
     this.towerImg(d.sprite, 0, p.x, p.y, t0.visual, 0, false);
     this.ctx.globalAlpha = 1;
@@ -580,6 +586,7 @@ export class Renderer {
   /** Tower art: painted 3/4 body (flips to face the target), turret heads rotate on their base,
    *  idle breathing, fire recoil (squash + kick back), muzzle flash for gun-type towers. */
   private towerImg(key: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, flash: boolean, recoil = 0, phase = 0, an?: TowerAnim) {
+    if (key === 'proc:unsc_tank' || key === 'proc:unsc_heli') { this.vehicle(key.slice(10), tier, x, y, vis, aim, recoil, phase); return; }
     const c = this.ctx, sz = TOWER_PX * (vis.scale ?? 1), footY = y + 20;
     const im = body(key, tier), hd = head(key, tier), time = this.g.time + phase;
     if (vis.glow) {
@@ -633,6 +640,47 @@ export class Renderer {
       this.additive(td.id === 'wizard_monkey' ? IMG.fx_magic : IMG.fx_star, x + (flip ? -1 : 1) * w * 0.3, footY - h * 0.85, 12 + tier * 5, time, 0.35 + 0.25 * Math.sin(time * 3));
     }
   }
+  /** t42 real-scale vehicles (M808 tank ~8-10 m, AH-9 gunship ~11-13 m) from 16-yaw sheets rendered off the GLBs.
+   *  The whole hull yaws to the aim; the gunship hovers with a bob, a ground shadow and a spinning rotor disc. */
+  private vehicle(k: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, recoil: number, phase: number) {
+    const c = this.ctx, m = MIL[`${k}_${tier}`], im = IMG[`mil:${k}_${tier}`], time = this.g.time + phase, heli = k === 'heli';
+    const ppm = (m?.ppm ?? 25) * MIL_K, el = m?.elev ?? 0.72, se = Math.sin(el), ce = Math.cos(el);
+    const L = (heli ? [11, 12, 13.2] : [7.6, 8.6, 9.6])[tier] * ppm;
+    if (vis.glow) {
+      const gr = c.createRadialGradient(x, y + 4, 6, x, y + 4, L * 0.6);
+      gr.addColorStop(0, vis.glow + '88'); gr.addColorStop(1, vis.glow + '00');
+      c.fillStyle = gr; c.beginPath(); c.ellipse(x, y + 4, L * 0.6, L * 0.6 * se, 0, 0, 7); c.fill();
+    }
+    const hover = heli ? 46 + Math.sin(time * 1.6) * 4 : 0;
+    if (heli) { // helipad marking + soft shadow on the ground
+      c.strokeStyle = 'rgba(240,240,220,0.35)'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y + 4, 52, 52 * se, 0, 0, 7); c.stroke();
+      c.font = 'bold 30px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = 'rgba(240,240,220,0.3)'; c.fillText('H', x, y + 5); c.textBaseline = 'alphabetic';
+      this.shadowAt(x, y + 6, L * 0.4, L * 0.4 * se * 0.55, 0.32);
+    }
+    if (!im || !m) { c.fillStyle = '#556b2f'; c.fillRect(x - 60, y - 40 - hover, 120, 70); return; }
+    const n = m.n ?? 16, a = ((aim % TAU) + TAU) % TAU, i = Math.round(a / (TAU / n)) % n, fa = i * TAU / n;
+    const kick = heli ? 0 : recoil * 6, ox = x - Math.cos(fa) * kick, oy = y + 4 - Math.sin(fa) * kick * se - hover;
+    const w = m.fw * MIL_K, h = m.fh * MIL_K;
+    c.drawImage(im, (i % 4) * m.fw, ((i / 4) | 0) * m.fh, m.fw, m.fh, ox - w / 2, oy - m.ay * MIL_K, w, h);
+    const proj = (fx: number, hz: number) => [ox + Math.cos(fa) * fx * ppm, oy + Math.sin(fa) * fx * ppm * se - hz * ppm * ce];
+    if (heli && m.rotor) {
+      const [hx, hy] = proj(m.rotor[0], m.rotor[1]), R = m.rotor[2] * ppm, nb = tier >= 2 ? 5 : 4, spin = time * 26;
+      c.fillStyle = 'rgba(28,32,26,0.16)'; c.beginPath(); c.ellipse(hx, hy, R, R * se, 0, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(22,25,20,0.5)'; c.lineWidth = 3.5; c.lineCap = 'round';
+      for (let b = 0; b < nb; b++) { const q = spin + b * TAU / nb; c.beginPath(); c.moveTo(hx, hy); c.lineTo(hx + Math.cos(q) * R, hy + Math.sin(q) * R * se); c.stroke(); }
+      c.lineCap = 'butt'; c.fillStyle = '#23271f'; c.beginPath(); c.arc(hx, hy, 4, 0, 7); c.fill();
+    }
+    if (recoil > 0.55) {
+      const mz = heli ? m.nose : m.muzzle;
+      if (mz) { const [mx, my] = proj(mz[0] + (heli ? 0.2 : 0.5), mz[1]); this.additive(IMG.fx_muzzle, mx, my, heli ? 26 + tier * 4 : 50 + tier * 8, fa, (recoil - 0.55) / 0.45); }
+    }
+  }
+  /** Military prop cluster (sprite rendered off the 3D model, baked shadow). */
+  private prop(pr: MapProp) {
+    const c = this.ctx, im = IMG['mil:prop_' + pr.kind], m = MIL['prop_' + pr.kind]; if (!im || !m) return;
+    const w = m.fw * MIL_K, h = m.fh * MIL_K;
+    c.save(); c.translate(pr.x, pr.y); if (pr.flip) c.scale(-1, 1); c.drawImage(im, -w / 2, -m.ay * MIL_K, w, h); c.restore();
+  }
   /** Two-part body: bottom 46% (legs / base) drawn upright, top part rotated around the waist
    *  so arms + weapon visibly swing, aim and throw. Slight overlap hides the seam. */
   private splitFeet(im: Img, x: number, footY: number, w: number, h: number, flip: boolean, upRot: number, sy = 1) {
@@ -657,21 +705,22 @@ export class Renderer {
       c.fillStyle = 'rgba(230,210,160,0.55)';
       for (let i = 0; i < 4; i++) { const k = i / 4; c.beginPath(); c.arc(t.slide.fx + (t.x - t.slide.fx) * k, t.slide.fy + (t.y - t.slide.fy) * k + 18, 4 + i * 2, 0, 7); c.fill(); }
     }
-    if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30, PCOLORS[t.owner] ?? '#fff');
+    const big = (t.data.footprint ?? 1) > 1, top = big ? (t.data.airborne ? 170 : 110) : 38, pw = big ? 2.6 : 1;
+    if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30 * pw, PCOLORS[t.owner] ?? '#fff');
     if (t.disabled) c.globalAlpha = 0.55;
     this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aimVis, false, t.recoil, (t.uid % 7) * 0.9, { charge: t.charge, since: t.sinceFire, engaged: t.engaged });
     if (t.hypno) { const n = t.hypno.mine.filter((e) => e.alive).length; if (n) this.label(t.x, t.y - 44, '🌀'.repeat(n), '#ff7ae6', 11); }
     c.globalAlpha = 1;
-    this.pips(t.x, t.y + 26, t.tier, t.t.visual.glow);
-    if (t.possessedBy >= 0) this.possessBadge(t.x, t.y - 54, t.possessedBy);
-    if (t.health.frac < 0.999 || (this.g.net !== 'solo' && this.g.mode === 'coop')) this.bar(t.x, t.y - 38, 40, t.health.frac, t.disabled ? '#888' : this.g.net !== 'solo' && this.g.mode === 'coop' ? PCOLORS[t.owner] ?? '#5fe06a' : '#5fe06a', t.uid);
+    this.pips(t.x, t.y + (big ? 74 : 26), t.tier, t.t.visual.glow);
+    if (t.possessedBy >= 0) this.possessBadge(t.x, t.y - top - 16, t.possessedBy);
+    if (t.health.frac < 0.999 || (this.g.net !== 'solo' && this.g.mode === 'coop')) this.bar(t.x, t.y - top, big ? 84 : 40, t.health.frac, t.disabled ? '#888' : this.g.net !== 'solo' && this.g.mode === 'coop' ? PCOLORS[t.owner] ?? '#5fe06a' : '#5fe06a', t.uid);
     if (t.disabled) this.label(t.x, t.y - 46, 'OFFLINE', '#ff8a7a');
     if (t.garrisoned.length) this.label(t.x, t.y + 40, '●'.repeat(t.garrisoned.length) + '○'.repeat(Math.max(0, t.gSlots() - t.garrisoned.length)), '#7fd3ff', 11);
     if (t.farm && t.farm.crates > 0) { const n = Math.min(6, Math.ceil(t.farm.crates / 15)); for (let i = 0; i < n; i++) if (IMG.fx_crate) this.img(IMG.fx_crate, t.x + 26 + (i % 2) * 12, t.y + 14 - Math.floor(i / 2) * 11, 18); this.label(t.x + 32, t.y - 24, `¢${t.farm.crates}`, '#ffe14d', 11); }
     if (t.data.ability && t.abilityCd <= 0) this.additive(IMG.fx_spark, t.x, t.y - 46, 22 + Math.sin(this.g.time * 6) * 4, this.g.time * 2, 0.8);
     if (sel || t.pulse > 0) {
       const pu = t.pulse; c.strokeStyle = pu > 0 ? `rgba(255,${Math.round(220 - pu * 120)},120,${0.6 + pu * 0.4})` : '#fff'; c.lineWidth = 2 + pu * 3;
-      c.setLineDash(sel ? [5, 4] : []); c.beginPath(); c.ellipse(t.x, t.y + 18, 30 + pu * 10, 12 + pu * 4, 0, 0, 7); c.stroke(); c.setLineDash([]);
+      c.setLineDash(sel ? [5, 4] : []); c.beginPath(); c.ellipse(t.x, t.y + (big ? 6 : 18), 30 * pw + pu * 10, 12 * pw + pu * 4, 0, 0, 7); c.stroke(); c.setLineDash([]);
     }
   }
   private pips(x: number, y: number, tier: number, glow?: string) {
@@ -703,7 +752,7 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------- units
-  private prev = new Map<number, { x: number; y: number; walk: number; moving: number }>();
+  private prev = new Map<number, { x: number; y: number; walk: number; moving: number; ang?: number }>();
   /** Part-based unit motion: walk hop + sway while moving, breathing idle, recoil + muzzle flash
    *  (ranged) or a forward lunge (melee) when attacking. Drop pods fall with a burn trail. */
   private unit(u: Unit, sel: boolean) {
@@ -720,8 +769,20 @@ export class Renderer {
     const st = this.prev.get(u.uid) ?? { x: u.x, y: u.y, walk: Math.random() * 6, moving: 0 };
     const d = Math.hypot(u.x - st.x, u.y - st.y);
     st.moving = d > 0.05 ? Math.min(1, st.moving + 0.25) : Math.max(0, st.moving - 0.1);
+    if (d > 0.4) { const na = Math.atan2(u.y - st.y, u.x - st.x), pa = st.ang ?? na; st.ang = pa + Math.atan2(Math.sin(na - pa), Math.cos(na - pa)) * 0.25; }
     st.walk += d * 0.22; st.x = u.x; st.y = u.y; this.prev.set(u.uid, st);
-    const im = body(u.data.sprite, tier), sz = UNIT_PX * (t.visual.scale ?? 1) * (u.isWorker ? 0.9 : 1);
+    // t42 real scale: the M808 Scorpion is drawn from the same ~8 m tank sheets as the Tank tower; the Warthog jeep is ~1.7x a trooper
+    const veh = u.data.id === 'scorpion' ? 2.4 : u.data.id === 'warthog' ? 1.7 : 1;
+    if (u.data.id === 'scorpion' && IMG['mil:tank_' + Math.min(2, tier)]) {
+      const atk = u.attackAnim > 0 ? Math.min(1, u.attackAnim / 0.18) : 0;
+      if (st.ang === undefined) st.ang = u.facing < 0 ? Math.PI : 0;
+      this.vehicle('tank', Math.min(2, tier), u.x, u.y, t.visual, st.ang, atk, u.uid);
+      if (sel) { c.strokeStyle = '#7fd3ff'; c.lineWidth = 2; c.beginPath(); c.ellipse(u.x, u.y + 6, 80, 32, 0, 0, 7); c.stroke(); }
+      if (u.health.frac < 0.999) this.bar(u.x, u.y - 100, 60, u.health.frac, '#7fd3ff', u.uid);
+      if (u.stars) this.label(u.x, u.y - 110, '★'.repeat(u.stars), '#ffd84a', 10);
+      return;
+    }
+    const im = body(u.data.sprite, tier), sz = UNIT_PX * (t.visual.scale ?? 1) * (u.isWorker ? 0.9 : 1) * veh;
     const footY = u.y + 14;
     if (t.visual.glow) { c.fillStyle = t.visual.glow + '44'; c.beginPath(); c.ellipse(u.x, footY - 1, sz * 0.42, sz * 0.15, 0, 0, 7); c.fill(); }
     this.shadowAt(u.x + 2, footY - 1, sz * 0.32, sz * 0.11, 0.35);

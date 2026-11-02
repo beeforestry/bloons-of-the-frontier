@@ -148,7 +148,8 @@ export async function heli(t: number): Promise<THREE.Group> {
 
 // ---------------------------------------------------------------- props
 /** Map prop clusters (2D sprite + 3D model share these): sandbag nest, supply stack, tent, barricade, fuel dump. */
-export type PropKind = 'sandbags' | 'supply' | 'tent' | 'barrier' | 'fuel';
+import type { PropKind } from '../data/props';
+export type { PropKind };
 export const PROP_KINDS: PropKind[] = ['sandbags', 'supply', 'tent', 'barrier', 'fuel'];
 /** Procedural sandbag wall (3 staggered rows of pillowy bags), SIZE.sandbags long. */
 export function sandbagWall(): THREE.Group {

@@ -1,3 +1,4 @@
+import { COVER } from '../data/props';
 // =============================================================================
 // UNITS (Halo-Wars-style troops) + WORKER UNIT (Farmhand)
 //  Squad: rally point, waypoint queue (Shift-click), patrol route, stance
@@ -124,6 +125,7 @@ export class Unit implements Buffable {
   takeDamage(g: Game, n: number) {
     if (!this.alive || this.dropT > 0 || this.isWorker || g.isClient) return; // collectors are immune + untargetable
     if (this.garrison) n *= 1 - this.garrison.gProtect();
+    else if (g.inCover(this)) n *= 1 - COVER.reduce; // sandbags / barricade cover (t42)
     this.health.damage(n);
     this.hitPulse = 1;
     if (!this.health.alive) this.kill(g);
