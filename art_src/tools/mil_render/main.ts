@@ -80,3 +80,38 @@ async function sprites() {
 if (mode === 'sprites') void sprites();
 if (mode === 'preview') void preview(); else if (mode === 'one') void one(); else if (mode === 'glb') void exportGlb();
 (W as { __render?: unknown }).__render = { tank, heli, prop, scene, R, THREE };
+
+// t44: 3D tower gallery next to the 2D sprites (top tier of every tower + tier progression for two).
+import { towerMesh, TOWER_3D_IDS } from '../../../src/fps/towers3d';
+async function img(src: string) { const i = new Image(); i.src = src; try { await i.decode(); return i; } catch { return null; } }
+async function towers() {
+  const only = q.get('ids')?.split(','), tiersQ = q.get('tiers');
+  const list: [string, number][] = [];
+  const ids = only ?? [...TOWER_3D_IDS, 'unsc_tank', 'unsc_heli'];
+  for (const id of ids) { const ts = tiersQ ? tiersQ.split(',').map(Number) : [/(wallnut_barrier|cherry_pod)/.test(id) ? 0 : 2]; for (const t of ts) list.push([id, t]); }
+  for (const id of (q.get('prog') ?? '').split(',').filter(Boolean)) for (let t = 0; t < 3; t++) list.push([id, t]);
+  const CW = 210, cols = +(q.get('cols') ?? 4), rows = Math.ceil(list.length / cols);
+  const sheet = document.createElement('canvas'); sheet.width = cols * CW * 2; sheet.height = rows * (CW + 18); document.body.prepend(sheet); cv.style.display = 'none';
+  const x2 = sheet.getContext('2d')!; x2.fillStyle = '#3d4a35'; x2.fillRect(0, 0, sheet.width, sheet.height);
+  R.setSize(CW, CW); R.setClearColor(0x000000, 0); scene.background = null;
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(3.2, 24).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x6f8a4a })); ground.receiveShadow = true; scene.add(ground);
+  const man = soldier(); man.position.set(-0.6, 0, -2.3); man.scale.setScalar(0.92); scene.add(man);
+  for (let i = 0; i < list.length; i++) {
+    const [id, t] = list[i], cx = (i % cols) * CW * 2, cy = Math.floor(i / cols) * (CW + 18);
+    const s2 = id.startsWith('unsc_') && /autoturret|rail|flak/.test(id) ? [await img(`/assets/v3/turret_base_${t}.webp`), await img(`/assets/v3/${id}_head_${t}.webp`)]
+      : id === 'unsc_tank' || id === 'unsc_heli' ? [await img(`/art_src/military/render/${id === 'unsc_tank' ? 'tank' : 'heli'}_${t}.png`)] : [await img(`/assets/v3/${id}_${t}.webp`)];
+    for (const im of s2) if (im) { const k = Math.min((CW - 10) / im.width, (CW - 10) / im.height); x2.drawImage(im, cx + (CW - im.width * k) / 2, cy + 18 + (CW - im.height * k) / 2, im.width * k, im.height * k); }
+    let o: THREE.Object3D | null = null, big = false, hh = 3;
+    if (id === 'unsc_tank') { o = await tank(t); big = true; } else if (id === 'unsc_heli') { o = await heli(t); o.position.y = 3; big = true; }
+    else { const m = towerMesh(id, t); if (m) { o = m.root; m.head.rotation.y = 0; hh = m.height; } }
+    if (o) { o.traverse((x) => { x.castShadow = true; }); scene.add(o); }
+    const cam = new THREE.PerspectiveCamera(32, 1, 0.1, 200), d = big ? 2.6 : Math.max(1, hh / 3.3);
+    cam.position.set(6.2 * d, 4.4 * d, 4.6 * d); cam.lookAt(0, big ? 1.8 : 1.35 * d, -0.3); ground.scale.setScalar(big ? 2.5 : 1);
+    R.render(scene, cam); x2.drawImage(R.domElement, cx + CW, cy + 18);
+    if (o) scene.remove(o);
+    x2.fillStyle = '#fff'; x2.font = 'bold 13px sans-serif'; x2.fillText(`${id} T${t + 1}  (2D | 3D)`, cx + 6, cy + 14);
+    x2.strokeStyle = '#ffffff22'; x2.strokeRect(cx + 0.5, cy + 0.5, CW * 2 - 1, CW + 17);
+  }
+  W.__done = true;
+}
+if (mode === 'towers') void towers();
