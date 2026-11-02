@@ -440,7 +440,7 @@ export class Renderer {
   /** t44: dark wedges where the sniper's line of sight is blocked (palms, tents, vehicles, hills, walls). */
   private losShadow(t: Tower, r: number) {
     const c = this.ctx, L = losTable(this.g, t), NS = L.need.length / LOS.bins, da = (Math.PI * 2) / LOS.bins; let best = -1, bestN = 0, run = 0;
-    c.save(); c.fillStyle = 'rgba(20,0,0,0.42)'; c.beginPath();
+    c.save(); c.fillStyle = 'rgba(25,0,0,0.5)'; c.beginPath();
     for (let b = 0; b < LOS.bins; b++) {
       const a0 = b * da, a1 = a0 + da + 0.002; let s0 = -1;
       for (let s = 0; s <= NS; s++) {
@@ -454,7 +454,7 @@ export class Renderer {
     c.strokeStyle = 'rgba(255,90,70,0.85)'; c.lineWidth = 2; c.setLineDash([6, 5]); c.beginPath();
     for (let b = 0; b < LOS.bins; b++) { const d = L.firstBlock[b]; if (d < r) { const a0 = b * da; c.moveTo(t.x + Math.cos(a0) * d, t.y + Math.sin(a0) * d); c.arc(t.x, t.y, d, a0, a0 + da); } }
     c.stroke(); c.setLineDash([]);
-    if (best >= 0) { const a = (best + 0.5) * da, d = Math.min(r - 30, L.firstBlock[best] + 60), x = t.x + Math.cos(a) * d, y = t.y + Math.sin(a) * d;
+    if (best >= 0) { const a = (best + 0.5) * da, d = Math.min(r - 30, L.firstBlock[best] + 50, 300), x = t.x + Math.cos(a) * d, y = t.y + Math.sin(a) * d;
       c.font = 'bold 15px sans-serif'; c.textAlign = 'center'; c.lineWidth = 4; c.strokeStyle = 'rgba(0,0,0,0.8)'; c.strokeText('LOS BLOCKED', x, y); c.fillStyle = '#ff8a70'; c.fillText('LOS BLOCKED', x, y); }
     c.restore();
   }

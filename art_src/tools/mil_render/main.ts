@@ -87,7 +87,7 @@ async function img(src: string) { const i = new Image(); i.src = src; try { awai
 async function towers() {
   const only = q.get('ids')?.split(','), tiersQ = q.get('tiers');
   const list: [string, number][] = [];
-  const ids = only ?? [...TOWER_3D_IDS, 'unsc_tank', 'unsc_heli'];
+  const ids = only ? only.filter((i) => i !== 'none') : [...TOWER_3D_IDS, 'unsc_tank', 'unsc_heli'];
   for (const id of ids) { const ts = tiersQ ? tiersQ.split(',').map(Number) : [/(wallnut_barrier|cherry_pod)/.test(id) ? 0 : 2]; for (const t of ts) list.push([id, t]); }
   for (const id of (q.get('prog') ?? '').split(',').filter(Boolean)) for (let t = 0; t < 3; t++) list.push([id, t]);
   const CW = 210, cols = +(q.get('cols') ?? 4), rows = Math.ceil(list.length / cols);
