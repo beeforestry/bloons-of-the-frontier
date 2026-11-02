@@ -10,6 +10,7 @@ import { TargetingMode, type ManualCtl, type TowerData, type TowerTier } from '.
 import { nextId, easeInOut } from '../core/math';
 import { AuraEmitter, BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
 import { pickTargets, canHit } from '../systems/TargetingSystem';
+import { canSee, usesLOS, type LosCache } from '../systems/LineOfSight';
 import type { Cell } from '../systems/PlacementSystem';
 import type { Game } from '../game/Game';
 import type { Unit } from './Unit';
@@ -32,6 +33,8 @@ export class Tower implements Buffable, Garrisonable {
   disabledT = 0;
   slide: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number } | null = null;
   aim = -Math.PI / 2;
+  /** Cached sniper line-of-sight table (t44). */
+  los?: LosCache;
   /** Rendered aim: eases toward `aim` (smooth turret / arm tracking). */
   aimVis = -Math.PI / 2;
   recoil = 0;
@@ -216,7 +219,7 @@ export class CombatTower {
       this.trackT -= dt;
       if (this.trackT <= 0 && tw.fixedAim === null && !tw.sweep) {
         this.trackT = 0.12;
-        const f = { hitsAir: tw.data.hitsAir ?? true, hitsGround: tw.data.hitsGround ?? true, antiAir: !!tw.data.antiAir };
+        const f = { hitsAir: tw.data.hitsAir ?? true, hitsGround: tw.data.hitsGround ?? true, antiAir: !!tw.data.antiAir, see: losFilter(g, tw) };
         const t0 = pickTargets(g.enemies, tw, tw.range(c.range), tw.targeting, f, 1)[0];
         tw.engaged = !!t0;
         if (t0) tw.aim = Math.atan2(t0.y - tw.y, t0.x - tw.x);
@@ -226,7 +229,7 @@ export class CombatTower {
     if (tw.sweep) return;
     const range = tw.range(c.range);
     const shots = c.shots ?? 1;
-    const filter = { hitsAir: tw.data.hitsAir ?? true, hitsGround: tw.data.hitsGround ?? true, antiAir: !!tw.data.antiAir };
+    const filter = { hitsAir: tw.data.hitsAir ?? true, hitsGround: tw.data.hitsGround ?? true, antiAir: !!tw.data.antiAir, see: losFilter(g, tw) };
     let targets: Enemy[];
     if (tw.fixedAim !== null) {
       // Repeater: only enemies inside the fixed firing corridor
@@ -342,4 +345,9 @@ export class HypnoTower {
     g.hypnotize(best, tw, h.power);
     this.mine.push(best);
   }
+}
+
+/** t44: Sniper Monkey needs a clear line of sight to ground targets (flyers / aircraft are above cover). */
+function losFilter(g: Game, tw: Tower): ((e: Enemy) => boolean) | undefined {
+  return usesLOS(tw.data.id) ? (e) => !!(e.data.flying || e.data.air) || canSee(g, tw, e) : undefined;
 }

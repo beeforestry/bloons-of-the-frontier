@@ -7,7 +7,7 @@ import type { Enemy } from '../entities/Enemy';
 let HQ_POS: Vec = { x: 0, y: 0 };
 export function setHQ(p: Vec) { HQ_POS = { x: p.x, y: p.y }; }
 
-export interface TargetFilter { hitsAir: boolean; hitsGround: boolean; antiAir?: boolean; exclude?: Set<Enemy> }
+export interface TargetFilter { hitsAir: boolean; hitsGround: boolean; antiAir?: boolean; exclude?: Set<Enemy>; see?: (e: Enemy) => boolean }
 /** Can this source hit e at all? Aircraft (air) need anti-air; other flyers need hitsAir. */
 export function canHit(e: Enemy, f: { hitsAir?: boolean; hitsGround?: boolean; antiAir?: boolean }): boolean {
   if (e.data.air) return !!f.antiAir;
@@ -17,7 +17,7 @@ export function canHit(e: Enemy, f: { hitsAir?: boolean; hitsGround?: boolean; a
 export function inRange(enemies: Enemy[], origin: Vec, range: number, f: TargetFilter): Enemy[] {
   // An enemy counts as in range when any part of its body is inside the circle.
   return enemies.filter((e) => e.alive && e.targetable && canHit(e, f) &&
-    !f.exclude?.has(e) && dist2(e, origin) <= (range + e.data.radius) ** 2);
+    !f.exclude?.has(e) && dist2(e, origin) <= (range + e.data.radius) ** 2 && (!f.see || f.see(e)));
 }
 
 export function pickTarget(enemies: Enemy[], origin: Vec, range: number, mode: TargetingMode, f: TargetFilter): Enemy | null {

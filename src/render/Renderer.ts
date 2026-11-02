@@ -21,6 +21,7 @@ import type { Barrier, EnvStructure, Obstacle } from '../entities/Garrison';
 import type { Pickup } from '../entities/Pickup';
 import type { Shortcut } from '../systems/Shortcuts';
 import type { MapProp } from '../data/props';
+import { LOS, losTable, usesLOS } from '../systems/LineOfSight';
 const hex = (s: string) => parseInt(s.replace('#', '').slice(0, 6), 16);
 const FLORA_TOWERS = new Set(['sunflower', 'solar_pea_fusion', 'gatling_cherry_bomber', 'frost_wallnut_bastion', 'flame_melon_mortar', 'repeater_gatling', 'hypno_shroom', 'chomper']);
 /** Tower animation state handed to towerImg (wind-up, throw, plant sway). */
@@ -436,6 +437,27 @@ export class Renderer {
       c.setLineDash([8, 6]); this.ringAt(t.x, t.y, r, sel ? 'rgba(160,220,255,0.9)' : 'rgba(160,220,255,0.35)', 2); c.setLineDash([]);
     }
   }
+  /** t44: dark wedges where the sniper's line of sight is blocked (palms, tents, vehicles, hills, walls). */
+  private losShadow(t: Tower, r: number) {
+    const c = this.ctx, L = losTable(this.g, t), NS = L.vis.length / LOS.bins, da = (Math.PI * 2) / LOS.bins; let best = -1, bestN = 0, run = 0;
+    c.save(); c.fillStyle = 'rgba(20,0,0,0.42)'; c.beginPath();
+    for (let b = 0; b < LOS.bins; b++) {
+      const a0 = b * da, a1 = a0 + da + 0.002; let s0 = -1;
+      for (let s = 0; s <= NS; s++) {
+        const blocked = s < NS && (s + 1) * LOS.step <= r && L.vis[b * NS + s] === 0;
+        if (blocked && s0 < 0) s0 = s;
+        if (!blocked && s0 >= 0) { const d0 = (s0 + 0.5) * LOS.step, d1 = (s + 0.5) * LOS.step; c.moveTo(t.x + Math.cos(a0) * d0, t.y + Math.sin(a0) * d0); c.arc(t.x, t.y, d1, a0, a1); c.arc(t.x, t.y, d0, a1, a0, true); c.closePath(); s0 = -1; }
+      }
+      if (L.firstBlock[b] < r) { run++; if (run > bestN) { bestN = run; best = b - (run >> 1); } } else run = 0;
+    }
+    c.fill();
+    c.strokeStyle = 'rgba(255,90,70,0.85)'; c.lineWidth = 2; c.setLineDash([6, 5]); c.beginPath();
+    for (let b = 0; b < LOS.bins; b++) { const d = L.firstBlock[b]; if (d < r) { const a0 = b * da; c.moveTo(t.x + Math.cos(a0) * d, t.y + Math.sin(a0) * d); c.arc(t.x, t.y, d, a0, a0 + da); } }
+    c.stroke(); c.setLineDash([]);
+    if (best >= 0) { const a = (best + 0.5) * da, d = Math.min(r - 30, L.firstBlock[best] + 60), x = t.x + Math.cos(a) * d, y = t.y + Math.sin(a) * d;
+      c.font = 'bold 15px sans-serif'; c.textAlign = 'center'; c.lineWidth = 4; c.strokeStyle = 'rgba(0,0,0,0.8)'; c.strokeText('LOS BLOCKED', x, y); c.fillStyle = '#ff8a70'; c.fillText('LOS BLOCKED', x, y); }
+    c.restore();
+  }
   private ringAt(x: number, y: number, r: number, col: string, w = 2) { const c = this.ctx; c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke(); }
   private range(x: number, y: number, r: number, ok = true) {
     const c = this.ctx;
@@ -700,6 +722,7 @@ export class Renderer {
     if (sel) {
       const r = t.combat ? t.range(t.t.combat!.range) : t.cover ? t.t.cover!.auraRadius : 0;
       if (r) this.range(t.x, t.y, r);
+      if (r && usesLOS(t.data.id)) this.losShadow(t, Math.min(r, LOS.maxDist));
     }
     if (t.slide) { // dust trail while sliding into the organized grid
       c.fillStyle = 'rgba(230,210,160,0.55)';

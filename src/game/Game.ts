@@ -113,6 +113,8 @@ export class Game {
   obstacles: Obstacle[] = [];
   /** t42 military prop clusters (block building, sandbags/barricades give troops cover). */
   props: MapProp[] = [];
+  /** Bumped whenever towers are placed / sold so cached sniper line-of-sight tables rebuild. */
+  losVer = 0;
   /** Blocked / opened shortcut trails (one or more per map). */
   shortcuts: Shortcut[] = [];
   barriers: Barrier[] = [];
@@ -931,7 +933,7 @@ export class Game {
     const t = new Tower(data, cell, this);
     t.owner = this.actingPid;
     this.grid.occupyArea(t, cell.c, cell.r, fp);
-    this.towers.push(t);
+    this.towers.push(t); this.losVer++;
     if (data.fixedLane) {
       const nl = this.nearestLane(t), q = this.paths[nl.lane].at(nl.d);
       t.fixedAim = t.aim = Math.atan2(q.y - t.y, q.x - t.x);
@@ -946,7 +948,7 @@ export class Game {
     this.res.add(t.sellValue);
     this.grid.releaseArea(t.cell.c, t.cell.r, t.data.footprint ?? 1);
     t.remove();
-    this.towers = this.towers.filter((x) => x !== t);
+    this.towers = this.towers.filter((x) => x !== t); this.losVer++;
     this.fx({ kind: 'text', x: t.x, y: t.y - 20, text: `+${t.sellValue}`, color: '#ffe14d', dur: 1 });
   }
   cycleTargeting(t: Tower) {
