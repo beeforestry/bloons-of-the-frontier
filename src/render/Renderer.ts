@@ -48,8 +48,8 @@ export interface ViewState {
 }
 export interface Camera { x: number; y: number; zoom: number }
 
-/** Military sheets are rendered at 25 px/m; the map is ~20.5 px/m (3x3 pad = 144 px = 7.2 m, troop 44 px = 1.8 m tall-ish). */
-const MIL_K = 0.82, TAU = Math.PI * 2;
+/** Military sheets are rendered at 25 px/m; drawn at x1.1 = 27.5 px/m so vehicles read big next to the painted 44 px troopers (t42: "no tiny tanks"). */
+const MIL_K = 1.1, TAU = Math.PI * 2;
 const TOWER_PX = 78, UNIT_PX = 44, BLD_PX = 168, HQ_PX = 236, PAD_PX = 120;
 
 export class Renderer {
@@ -648,10 +648,10 @@ export class Renderer {
     const L = (heli ? [11, 12, 13.2] : [7.6, 8.6, 9.6])[tier] * ppm;
     if (vis.glow) {
       const gr = c.createRadialGradient(x, y + 4, 6, x, y + 4, L * 0.6);
-      gr.addColorStop(0, vis.glow + '88'); gr.addColorStop(1, vis.glow + '00');
+      gr.addColorStop(0, vis.glow + '66'); gr.addColorStop(1, vis.glow + '00');
       c.fillStyle = gr; c.beginPath(); c.ellipse(x, y + 4, L * 0.6, L * 0.6 * se, 0, 0, 7); c.fill();
     }
-    const hover = heli ? 46 + Math.sin(time * 1.6) * 4 : 0;
+    const hover = heli ? 60 + Math.sin(time * 1.6) * 5 : 0;
     if (heli) { // helipad marking + soft shadow on the ground
       c.strokeStyle = 'rgba(240,240,220,0.35)'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y + 4, 52, 52 * se, 0, 0, 7); c.stroke();
       c.font = 'bold 30px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = 'rgba(240,240,220,0.3)'; c.fillText('H', x, y + 5); c.textBaseline = 'alphabetic';
@@ -705,7 +705,7 @@ export class Renderer {
       c.fillStyle = 'rgba(230,210,160,0.55)';
       for (let i = 0; i < 4; i++) { const k = i / 4; c.beginPath(); c.arc(t.slide.fx + (t.x - t.slide.fx) * k, t.slide.fy + (t.y - t.slide.fy) * k + 18, 4 + i * 2, 0, 7); c.fill(); }
     }
-    const big = (t.data.footprint ?? 1) > 1, top = big ? (t.data.airborne ? 170 : 110) : 38, pw = big ? 2.6 : 1;
+    const big = (t.data.footprint ?? 1) > 1, top = big ? (t.data.airborne ? 230 : 140) : 38, pw = big ? 2.6 : 1;
     if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30 * pw, PCOLORS[t.owner] ?? '#fff');
     if (t.disabled) c.globalAlpha = 0.55;
     this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aimVis, false, t.recoil, (t.uid % 7) * 0.9, { charge: t.charge, since: t.sinceFire, engaged: t.engaged });
@@ -772,14 +772,14 @@ export class Renderer {
     if (d > 0.4) { const na = Math.atan2(u.y - st.y, u.x - st.x), pa = st.ang ?? na; st.ang = pa + Math.atan2(Math.sin(na - pa), Math.cos(na - pa)) * 0.25; }
     st.walk += d * 0.22; st.x = u.x; st.y = u.y; this.prev.set(u.uid, st);
     // t42 real scale: the M808 Scorpion is drawn from the same ~8 m tank sheets as the Tank tower; the Warthog jeep is ~1.7x a trooper
-    const veh = u.data.id === 'scorpion' ? 2.4 : u.data.id === 'warthog' ? 1.7 : 1;
+    const veh = u.data.id === 'warthog' ? 1.8 : 1;
     if (u.data.id === 'scorpion' && IMG['mil:tank_' + Math.min(2, tier)]) {
       const atk = u.attackAnim > 0 ? Math.min(1, u.attackAnim / 0.18) : 0;
       if (st.ang === undefined) st.ang = u.facing < 0 ? Math.PI : 0;
       this.vehicle('tank', Math.min(2, tier), u.x, u.y, t.visual, st.ang, atk, u.uid);
-      if (sel) { c.strokeStyle = '#7fd3ff'; c.lineWidth = 2; c.beginPath(); c.ellipse(u.x, u.y + 6, 80, 32, 0, 0, 7); c.stroke(); }
-      if (u.health.frac < 0.999) this.bar(u.x, u.y - 100, 60, u.health.frac, '#7fd3ff', u.uid);
-      if (u.stars) this.label(u.x, u.y - 110, '★'.repeat(u.stars), '#ffd84a', 10);
+      if (sel) { c.strokeStyle = '#7fd3ff'; c.lineWidth = 2; c.beginPath(); c.ellipse(u.x, u.y + 6, 105, 40, 0, 0, 7); c.stroke(); }
+      if (u.health.frac < 0.999) this.bar(u.x, u.y - 130, 60, u.health.frac, '#7fd3ff', u.uid);
+      if (u.stars) this.label(u.x, u.y - 140, '★'.repeat(u.stars), '#ffd84a', 10);
       return;
     }
     const im = body(u.data.sprite, tier), sz = UNIT_PX * (t.visual.scale ?? 1) * (u.isWorker ? 0.9 : 1) * veh;

@@ -17,6 +17,7 @@ import { PCOLORS } from '../core/players';
 import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
+import { tank, heli, prop, gun, hand, gunFor } from './military';
 
 /** Metres per map pixel (garden ~110 x 74 m). */
 export const S = 0.05;
@@ -25,6 +26,7 @@ const BUG_COL: Record<string, number> = { scavenger: 0x8a5a2b, hunter: 0x6b3a8a,
 const BOSS_COL: Record<string, number> = { moab: 0x2f6fd8, boss_zeppelin: 0x8a3fd8, boss_leviathan: 0x1f9a8a, boss_scarab: 0xb8862b, boss_dreadnought: 0x3a3f48, gargoyle: 0x707070 };
 const coarse = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 const at = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T => { o.position.set(x, y, z); return o; };
+const pistol = (k: string) => k === 'pistol';
 const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c });
 
 export interface PossessHost { g: Game; onExit(): void }
@@ -44,7 +46,12 @@ export class Possess {
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
-  private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group }>();
+  private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli'; tier?: number; model?: THREE.Group }>();
+  private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number }>();
+  private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
+  private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
+  /** t42 test hooks: what the first-person view actually loaded. */
+  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0 };
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
   private gun = new THREE.Group(); private flash!: THREE.Mesh; private flashT = 0; private kick = 0;
@@ -61,7 +68,7 @@ export class Possess {
     this.pr = Math.min(devicePixelRatio, this.touch ? 1.25 : 1.75); this.renderer.setPixelRatio(this.pr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.domElement.className = 'p3d';
     this.root.appendChild(this.renderer.domElement);
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 400); this.camera.rotation.order = 'YXZ';
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, 420); this.camera.rotation.order = 'YXZ';
     this.buildWorld(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
     // face the nearest enemy (or the HQ's lanes) on entry
     const near = this.g.enemies.filter((e) => e.alive).sort((a, b) => (a.x - obj.x) ** 2 + (a.y - obj.y) ** 2 - ((b.x - obj.x) ** 2 + (b.y - obj.y) ** 2))[0];
@@ -77,9 +84,14 @@ export class Possess {
   // ------------------------------------------------------------------ world (built once from the live map)
   private buildWorld() {
     const { scene, g } = this, W = g.map.width * S, D = g.map.height * S;
-    scene.background = new THREE.Color(0x9fd3f0); scene.fog = new THREE.Fog(0x9fd3f0, 55, 170);
-    scene.add(new THREE.HemisphereLight(0xdff2ff, 0x4a6a2a, 1.7));
-    const sun = new THREE.DirectionalLight(0xfff1d6, 1.7); sun.position.set(-40, 80, 30); scene.add(sun);
+    // warm late-afternoon light (t42, after the user's FPS reference): soft sky fill + low golden sun, shadows on desktop
+    const hemi = new THREE.HemisphereLight(0xfff0d8, 0x56603a, 1.25); hemi.layers.enableAll(); scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xffd9a8, 2.4); sun.position.copy(this.sunDir).multiplyScalar(80); scene.add(sun, sun.target); this.sun = sun; sun.layers.enableAll();
+    if (!this.touch) {
+      this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
+      Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 220 });
+    }
     const T = g.map.terrain;
     if (T) { this.buildTerrain(W, D); } else {
     // floor: the map image itself (lanes, paths and decor are painted into it)
@@ -98,7 +110,15 @@ export class Possess {
     spots.forEach((s, i) => { this.dummy.position.copy(s); this.dummy.rotation.set(0, rnd() * 6, 0); this.dummy.scale.setScalar(0.9 + rnd() * 0.8); this.dummy.updateMatrix(); trunk.setMatrixAt(i, this.dummy.matrix); crown.setMatrixAt(i, this.dummy.matrix); crown.setColorAt(i, this.tmpC.setHSL(0.28 + rnd() * 0.08, 0.45, 0.25 + rnd() * 0.12)); });
     scene.add(trunk, crown);
     }
+    this.buildSky(W, D);
+    const fl = scene.getObjectByName('floor'); if (fl) fl.receiveShadow = true;
     const gy = (x: number, y: number) => standH(g.map, x, y);
+    // t42 military prop clusters: the real CC0 3D models (sandbag nests, crates, barrels, tents, barricades)
+    for (const pr of g.props) void prop(pr.kind).then((o) => {
+      if (!this.alive) return;
+      o.position.set(pr.x * S, gy(pr.x, pr.y), pr.y * S); o.rotation.y = (pr.kind === 'tent' ? 0.5 : 0.25) + (pr.flip ? Math.PI : 0);
+      o.userData.mil = pr.kind; o.traverse((m) => { m.castShadow = true; m.receiveShadow = true; }); scene.add(o); this.vm.props++;
+    }).catch((e) => console.warn('prop load', e));
     // obstacles (rocks / logs) and garrisonable structures as extruded blocks
     for (const o of g.obstacles) if (o.alive) {
       const m = o.kind === 'rock' ? new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0).scale(1.2, 0.8, 1.1), lam(0x7d7f86)) : new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 3.2, 8).rotateZ(Math.PI / 2), lam(0x7a5230));
@@ -122,6 +142,44 @@ export class Possess {
     this.ring.position.y = 0.04; scene.add(this.ring);
   }
 
+  /** Gradient sky dome + sun glow + horizon fog + a ring of distant hazy hills (cheap: ~3 draw calls). */
+  private buildSky(W: number, D: number) {
+    const { scene } = this, HOR = new THREE.Color(0xdde4df), ZEN = new THREE.Color(0x5f97cf), WARM = new THREE.Color(0xffe2b8), LOW = new THREE.Color(0xa9b5a6);
+    scene.background = HOR.clone(); scene.fog = new THREE.Fog(HOR.getHex(), 40, 185);
+    const sky = new THREE.Group(); sky.name = 'sky';
+    const geo = new THREE.SphereGeometry(360, 32, 16), pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), n = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      n.fromBufferAttribute(pos, i).normalize();
+      if (n.y < 0) c.copy(HOR).lerp(LOW, Math.min(1, -n.y * 4)); else c.copy(HOR).lerp(ZEN, Math.pow(n.y, 0.55));
+      c.lerp(WARM, Math.pow(Math.max(0, n.dot(this.sunDir)), 5) * 0.75);
+      col.set([c.r, c.g, c.b], i * 3);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const dome = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    dome.renderOrder = -2; sky.add(dome);
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d')!, gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(255,255,250,1)'); gr.addColorStop(0.07, 'rgba(255,252,236,1)'); gr.addColorStop(0.22, 'rgba(255,224,170,0.5)'); gr.addColorStop(1, 'rgba(255,205,150,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+    const sg = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true }));
+    sg.position.copy(this.sunDir).multiplyScalar(330); sg.scale.setScalar(150); sg.name = 'sunglow'; sky.add(sg);
+    scene.add(sky); this.sky = sky;
+    // two rings of low-poly hills beyond the map edge, pre-hazed toward the horizon colour (fog-free so they stay visible)
+    const hills = new THREE.Group(); hills.name = 'hills';
+    const R0 = Math.max(W, D) * 0.5 + 85;
+    for (let ring = 0; ring < 2; ring++) {
+      const N = 72, R = R0 + ring * 70, vs: number[] = [], cs: number[] = [], idx: number[] = [];
+      const top = new THREE.Color(ring ? 0xa7b8b6 : 0x7d9580).lerp(HOR, ring ? 0.35 : 0.15), bot = top.clone().lerp(HOR, 0.55);
+      for (let i = 0; i <= N; i++) {
+        const a = (i / N) * Math.PI * 2, h = (12 + 9 * Math.sin(a * 3 + ring * 2) + 6 * Math.sin(a * 7 + 1.3) + 3.5 * Math.sin(a * 17)) * (ring ? 1.7 : 1) + 4;
+        const px = W / 2 + Math.cos(a) * R, pz = D / 2 + Math.sin(a) * R * 0.92;
+        vs.push(px, -3, pz, px, h, pz); cs.push(bot.r, bot.g, bot.b, top.r, top.g, top.b);
+        if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+      }
+      const hg = new THREE.BufferGeometry(); hg.setAttribute('position', new THREE.Float32BufferAttribute(vs, 3)); hg.setAttribute('color', new THREE.Float32BufferAttribute(cs, 3)); hg.setIndex(idx);
+      const hm = new THREE.Mesh(hg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide })); hm.renderOrder = -1 + ring * -0.5; hills.add(hm);
+    }
+    scene.add(hills);
+  }
   /** Tropical Island: heightfield mesh (shared groundH), sea plane, prop billboards at the 2D decor spots. */
   private buildTerrain(W: number, D: number) {
     const { scene, g } = this, T = g.map.terrain!, h = heights(T);
@@ -159,7 +217,65 @@ export class Possess {
     }
     this.flash = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.flash.position.set(0, 0.02, this.isTower ? -0.85 : -0.78); this.flash.visible = false; this.gun.add(this.flash);
+    this.gunBase.copy(this.gun.position); this.gun.traverse((x) => x.layers.set(1));
     this.camera.add(this.gun); this.scene.add(this.camera);
+    void this.loadViewmodel().catch((e) => console.warn('viewmodel', e));
+  }
+  /** t42 viewmodels: real CC0 gun (Kenney Weapon Pack) in gloved hands for troops, the main gun for the
+   *  Tank, the chin gun + cockpit for the Gunship, a mounted MG for UNSC gun turrets. Box gun stays as fallback. */
+  private async loadViewmodel() {
+    const o = this.obj, swap = (grp: THREE.Group, muzzle: THREE.Vector3, base: THREE.Vector3, kind: string, flashK = 1) => {
+      if (!this.alive) return;
+      for (const ch of [...this.gun.children]) this.gun.remove(ch);
+      this.gun.add(grp); grp.add(this.flash); this.flash.position.copy(muzzle); this.flash.scale.setScalar(flashK);
+      this.gun.position.copy(base); this.gunBase.copy(base); this.vm.kind = kind; this.gun.traverse((x) => x.layers.set(1));
+    };
+    const dark = lam(0x23271f);
+    if (o instanceof Tower && o.data.id === 'unsc_tank') {
+      const g = new THREE.Group(), hull = lam([0xb59c6c, 0x5d6b45, 0x56653f][Math.min(2, o.tier)]);
+      g.add(at(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.14, 1.6), hull), 0, -0.98, -0.45)); // turret roof
+      g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.55, 0.7), hull), 0, -0.88, -1.15)); // mantlet
+      g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 3.6, 12).rotateX(Math.PI / 2), dark), 0, -0.78, -2.9)); // main gun
+      g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.5, 12).rotateX(Math.PI / 2), dark), 0, -0.78, -3.3)); // fume extractor
+      g.add(at(new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.06, 6, 16).rotateX(Math.PI / 2), dark), 0, -0.9, 0.05)); // hatch ring
+      if (o.tier >= 1) { const mg = await gun('rifle'); mg.scale.setScalar(1.3); at(mg, 0.7, -0.88, -0.4); g.add(mg); }
+      this.vm.vehicles++; return swap(g, new THREE.Vector3(0, -0.78, -4.8), new THREE.Vector3(0, 0, 0), 'tank_cannon', 4);
+    }
+    if (o instanceof Tower && o.data.id === 'unsc_heli') {
+      const g = new THREE.Group(), frame = lam(0x2b3126), glow = new THREE.MeshBasicMaterial({ color: 0x8cff9a });
+      g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.3, 0.55), frame), 0, -0.62, -0.75)); // dashboard
+      for (let i = 0; i < 3; i++) g.add(at(new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.16), glow), -0.45 + i * 0.45, -0.46, -0.47));
+      for (const sx of [-1, 1]) { const p = at(new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.8, 0.07), frame), sx * 0.95, 0.05, -0.75); p.rotation.z = sx * 0.28; p.rotation.x = -0.35; g.add(p); }
+      g.add(at(new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.07, 0.07), frame), 0, 0.82, -0.55));
+      const chin = new THREE.Group(); chin.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), dark));
+      for (const sx of [-0.06, 0.06]) chin.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.3, 6).rotateX(Math.PI / 2), dark), sx, 0, -0.65));
+      at(chin, 0, -1.25, -1.5); g.add(chin);
+      this.vm.vehicles++; return swap(g, new THREE.Vector3(0, -1.25, -2.25), new THREE.Vector3(0, 0, 0), 'heli_chingun', 1.6);
+    }
+    if (o instanceof Tower && (o.data.id === 'unsc_autoturret' || o.data.id === 'unsc_flak')) {
+      const mg = await gun('rifle'), g = new THREE.Group(); mg.scale.setScalar(1.25); g.add(mg);
+      if (o.data.id === 'unsc_flak') { const m2 = await gun('rifle'); m2.scale.setScalar(1.25); m2.position.x = -0.32; g.add(m2); }
+      const mz = (mg.userData.muzzle as THREE.Vector3).clone().multiplyScalar(1.25);
+      return swap(g, mz, new THREE.Vector3(0.12, -0.3, -0.42), 'mounted_mg');
+    }
+    if (o instanceof Unit) {
+      const veh = !!o.squad.data.vehicle, kind = gunFor(o.squad.data.id, veh), gm = await gun(kind);
+      // Kenney guns are chunky extruded silhouettes: flatten the profile a bit so it reads like a real rifle
+      gm.scale.set(1, 0.78, 1);
+      const L = gm.userData.len as number, mz = (gm.userData.muzzle as THREE.Vector3).clone(); mz.y *= 0.78;
+      const g = new THREE.Group(); g.add(gm);
+      if (!veh) {
+        const sleeve = new THREE.Color(factionInfo(o.squad.data.faction).color).lerp(new THREE.Color(0x4a5236), 0.7).getHex();
+        const pistol = kind === 'pistol';
+        const rh = hand(sleeve); rh.scale.setScalar(0.9); at(rh, 0.035, mz.y - 0.1, pistol ? 0.02 : L * 0.17); rh.rotation.set(-1.0, 0.15, 0.3); g.add(rh);
+        if (!pistol) { const lh = hand(sleeve); lh.scale.setScalar(0.9); at(lh, -0.035, mz.y - 0.095, -L * 0.2); lh.rotation.set(-0.55, -0.25, -0.45); g.add(lh); this.vm.hands = 2; } else this.vm.hands = 1;
+        g.rotation.set(0.02, 0.07, 0.03);
+      }
+      // sights sit a little under and right of the eye line; the stock reaches back toward the shoulder (bottom-right, like the reference M4)
+      const base = veh ? new THREE.Vector3(0, -0.45 - mz.y * 1.4, -0.75) : new THREE.Vector3(pistol(kind) ? 0.1 : 0.17, -0.1 - mz.y, -(L * 0.5) - 0.12);
+      if (veh) gm.scale.multiplyScalar(1.4);
+      return swap(g, mz.multiplyScalar(veh ? 1.4 : 1), base, 'gun_' + kind, kind === 'rocket' ? 2 : 0.7);
+    }
   }
 
   private buildPools() {
@@ -196,13 +312,22 @@ export class Possess {
     this.scene.add(m); this.bossModels.set(e, m); return m;
   }
   private towerModel(t: Tower) {
-    let m = this.towerModels.get(t); if (m) return m;
+    let m = this.towerModels.get(t);
+    if (m && m.veh && m.tier !== t.tier) { this.scene.remove(m.root); this.towerModels.delete(t); m = undefined; }
+    if (m) return m;
+    if (t.data.id === 'unsc_tank' || t.data.id === 'unsc_heli') { // t42 real-size vehicles (~8-10 m tank, 11-13 m gunship)
+      const root = new THREE.Group(), head = new THREE.Group(), veh = t.data.id === 'unsc_tank' ? 'tank' as const : 'heli' as const; root.add(head);
+      const mm = { root, head, veh, tier: t.tier, model: undefined as THREE.Group | undefined };
+      void (veh === 'tank' ? tank(t.tier) : heli(t.tier)).then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; });
+      root.userData.veh = veh; this.scene.add(root); this.towerModels.set(t, mm); return mm;
+    }
     const root = new THREE.Group(), head = new THREE.Group(), fc = new THREE.Color(factionInfo(t.data.faction).color).getHex();
     root.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.5, 10), lam(0x6d5a44)), 0, 0.25, 0));
     root.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.6, 1.3, 8), lam(fc)), 0, 1.1, 0));
     head.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.9), lam(fc)));
     head.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.2, 6).rotateZ(Math.PI / 2), lam(0x22262a)), 0.9, 0, 0));
     head.position.y = 2.0; root.add(head);
+    if (t.data.id === 'unsc_autoturret' || t.data.id === 'unsc_flak') void gun('rifle').then((mg) => { mg.scale.setScalar(1.5); mg.rotation.y = -Math.PI / 2; mg.position.set(0.3, 0.32, 0); head.add(mg); });
     this.scene.add(root); m = { root, head }; this.towerModels.set(t, m); return m;
   }
 
@@ -293,7 +418,10 @@ export class Possess {
     const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
     this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
     if (!this.tick(dt)) return;
-    this.renderer.render(this.scene, this.camera);
+    // two passes: world, then the viewmodel (layer 1) over a cleared depth buffer so walls never clip the gun/hands
+    const r = this.renderer, c = this.camera; c.layers.set(0); r.autoClear = true; r.render(this.scene, c);
+    const bg = this.scene.background; this.scene.background = null;
+    c.layers.set(1); r.autoClear = false; r.clearDepth(); r.render(this.scene, c); c.layers.set(0); this.scene.background = bg;
     this.raf = requestAnimationFrame(this.loop);
   };
   private governor() {
@@ -304,8 +432,8 @@ export class Possess {
   private eye(): THREE.Vector3 {
     const o = this.obj;
     const gh = standH(this.g.map, o.x, o.y);
-    if (o instanceof Tower) return this.v.set(o.x * S, gh + 2.7 + o.tier * 0.15, o.y * S);
-    return this.v.set(o.x * S, gh + (o.squad.data.vehicle ? 2.4 : 1.65), o.y * S);
+    if (o instanceof Tower) return this.v.set(o.x * S, gh + (o.data.id === 'unsc_tank' ? 3.4 : o.data.id === 'unsc_heli' ? 7.6 + Math.sin(performance.now() / 640) * 0.15 : 2.7 + o.tier * 0.15), o.y * S);
+    return this.v.set(o.x * S, gh + (o.squad.data.id === 'scorpion' ? 3.3 : o.squad.data.vehicle ? 2.4 : 1.65), o.y * S);
   }
   /** Returns false once possession ended. */
   tick(dt: number): boolean {
@@ -314,6 +442,7 @@ export class Possess {
     if (g.speed !== 1) g.speed = 1;
     // camera
     const eye = this.eye(); this.camera.position.copy(eye); this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.sky.position.copy(eye); this.sun.position.copy(eye).addScaledVector(this.sunDir, 80); this.sun.target.position.copy(eye); this.sun.target.updateMatrixWorld();
     // crosshair ray -> enemy under the crosshair (manual direct hit) / aim point on the ground
     this.ray.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     let best: Enemy | null = null, bt = Infinity;
@@ -349,12 +478,17 @@ export class Possess {
     if (shotNo !== this.lastShot) {
       this.lastShot = shotNo; this.shots++; this.flashT = 0.06; this.kick = 1;
       const end = best ? new THREE.Vector3(best.x * S, this.ey(best), best.y * S) : eye.clone().addScaledVector(d, Math.min(range, 40));
-      this.tracer(this.gun.localToWorld(this.flash.position.clone()), end);
+      this.tracer(this.flash.getWorldPosition(new THREE.Vector3()), end); this.gunRoll = (Math.random() - 0.5) * 0.05;
       if (best) { this.hits++; this.hitT = 0.15; }
     }
     this.hitT -= dt; this.el.cross.classList.toggle('hit', this.hitT > 0);
     this.flashT -= dt; this.flash.visible = this.flashT > 0; if (this.flash.visible) this.flash.rotation.z = Math.random() * 3;
-    this.kick = Math.max(0, this.kick - dt * 9); this.gun.position.z = (this.isTower ? -0.5 : -0.45) + this.kick * 0.06; this.gun.rotation.x = this.kick * 0.08;
+    // recoil: kick back + muzzle climb + a little random roll; walking bob for troops
+    const moving = !this.isTower && (Math.abs(ctl.mx) + Math.abs(ctl.my) > 0.1); this.bob += dt * (moving ? 9 : 1.5);
+    const bobA = moving ? 0.012 : 0.003;
+    this.kick = Math.max(0, this.kick - dt * 9); const big = this.vm.kind === 'tank_cannon' ? 2.5 : 1;
+    this.gun.position.set(this.gunBase.x + Math.cos(this.bob) * bobA, this.gunBase.y + Math.abs(Math.sin(this.bob)) * bobA - this.kick * 0.01, this.gunBase.z + this.kick * 0.06 * big);
+    this.gun.rotation.set(this.kick * 0.09, 0, this.gunRoll * this.kick);
     this.syncEntities(dt);
     this.hud(dt);
     return true;
@@ -404,7 +538,9 @@ export class Possess {
     const tl = new Set<Tower>();
     for (const t of g.towers) {
       if (!t.alive) continue; tl.add(t); const m = this.towerModel(t);
-      m.root.visible = t !== me; m.root.position.set(t.x * S, standH(g.map, t.x, t.y), t.y * S); m.root.scale.setScalar(1 + t.tier * 0.08); m.head.rotation.y = -t.aim;
+      m.root.visible = t !== me; m.root.position.set(t.x * S, standH(g.map, t.x, t.y), t.y * S); m.head.rotation.y = -t.aim;
+      if (m.veh === 'heli') { m.root.position.y += 6 + Math.sin(performance.now() / 640 + t.uid) * 0.3; const md = m.model?.userData; if (md) { (md.rotor as THREE.Object3D).rotation.y += dt * 24; (md.tail as THREE.Object3D).rotation.z += dt * 40; } }
+      else if (!m.veh) m.root.scale.setScalar(1 + t.tier * 0.08);
     }
     for (const [t, m] of this.towerModels) if (!tl.has(t)) { this.scene.remove(m.root); this.towerModels.delete(t); }
     // troops (instanced), coloured by faction / co-op owner
@@ -412,11 +548,13 @@ export class Possess {
     for (const u of g.units) {
       if (!u.alive || u.garrison || u === me || nu >= 300) continue;
       if ((u.x - me.x) ** 2 + (u.y - me.y) ** 2 < 26 * 26) continue; // don't block the camera
+      if (u.squad.data.vehicle) { this.vehicleUnit(u, dt); continue; }
       D.position.set(u.x * S, standH(g.map, u.x, u.y), u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(u.squad.data.vehicle ? 1.6 : 1); D.updateMatrix();
       this.unitMesh.setMatrixAt(nu, D.matrix);
       const col = g.net !== 'solo' && g.mode === 'coop' ? PCOLORS[u.squad.owner] ?? '#fff' : factionInfo(u.squad.data.faction).color;
       this.unitMesh.setColorAt(nu++, this.tmpC.set(col));
     }
+    for (const [u, v] of this.unitVeh) if (!u.alive || u.garrison || u === me) { if (!u.alive) { this.scene.remove(v.g); this.unitVeh.delete(u); } else v.g.visible = false; }
     this.unitMesh.count = nu; this.unitMesh.instanceMatrix.needsUpdate = true; if (this.unitMesh.instanceColor) this.unitMesh.instanceColor.needsUpdate = true;
     // projectiles
     let np = 0;
@@ -434,6 +572,24 @@ export class Possess {
     for (const tr of this.tracers) if (tr.life > 0) { tr.life -= dt; if (tr.life <= 0) tr.line.visible = false; }
     // range ring
     const r = this.rangePx() * S; this.ring.position.set(me.x * S, standH(g.map, me.x, me.y) + 0.06, me.y * S); this.ring.scale.set(r, 1, r);
+  }
+  /** Vehicle troops at real size: Scorpion = the M808 tank model, Warthog = a 4.6 m jeep. */
+  private vehicleUnit(u: Unit, dt: number) {
+    let v = this.unitVeh.get(u);
+    if (!v) {
+      const g = new THREE.Group(); v = { g, ang: u.facing > 0 ? 0 : Math.PI, x: u.x, y: u.y }; this.unitVeh.set(u, v); this.scene.add(g);
+      if (u.squad.data.id === 'scorpion') void tank(Math.min(2, this.g.unitTier(u.squad.data.id))).then((m) => { m.traverse((x) => { x.castShadow = true; }); g.add(m); this.vm.vehicles++; });
+      else {
+        const body = lam(0x5d6b45), dark = lam(0x22261f);
+        g.add(at(new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.9, 2.0), body), 0, 1.0, 0), at(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 1.9), body), 1.5, 1.6, 0));
+        for (const [wx, wz] of [[1.4, 1], [1.4, -1], [-1.4, 1], [-1.4, -1]]) g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.4, 12).rotateX(Math.PI / 2), dark), wx, 0.48, wz));
+        g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.0, 1.9), dark), 0.2, 2.0, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.3, 6).rotateZ(Math.PI / 2), dark), -0.6, 2.2, 0));
+        g.traverse((x) => { x.castShadow = true; });
+      }
+    }
+    const dx = u.x - v.x, dy = u.y - v.y; if (dx * dx + dy * dy > 0.2) { const na = Math.atan2(dy, dx); v.ang += Math.atan2(Math.sin(na - v.ang), Math.cos(na - v.ang)) * Math.min(1, dt * 5); }
+    v.x = u.x; v.y = u.y; v.g.visible = true;
+    v.g.position.set(u.x * S, standH(this.g.map, u.x, u.y), u.y * S); v.g.rotation.y = -v.ang;
   }
   private burst(x: number, y: number, z: number, color: number, n: number) {
     for (let i = 0; i < n; i++) { if (this.bits.length > 480) break; const a = Math.random() * 6.283, s = 2 + Math.random() * 4; this.bits.push({ floor: standH(this.g.map, x / S, z / S) + 0.05, x, y, z, vx: Math.cos(a) * s, vy: 2 + Math.random() * 4, vz: Math.sin(a) * s, life: 0.5 + Math.random() * 0.3, c: new THREE.Color(color) }); }

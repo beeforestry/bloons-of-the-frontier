@@ -195,17 +195,25 @@ export async function prop(k: PropKind): Promise<THREE.Group> {
 
 // ---------------------------------------------------------------- first-person guns + gloved hands
 export type GunKind = 'rifle' | 'rocket' | 'sniper' | 'shotgun' | 'pistol' | 'smg';
-const GUN_MAT: Record<string, number> = { Gray8: 0x1b1d1f, Gray6: 0x2b2f31, Gray5: 0x4d4a3c, FrontColor: 0x34373a };
+const GUN_MAT: Record<string, number> = { Gray8: 0x2a2d2f, Gray6: 0x42474a, Gray5: 0x6b6450, FrontColor: 0x4c5156 };
 /** Gun model pointing -Z (camera forward), stock at z=0, grip origin; `userData.muzzle` = local tip. */
 export async function gun(k: GunKind): Promise<THREE.Group> {
   const key = ('gun_' + k) as keyof typeof SIZE, src = await raw(key);
   const g = normalise(src, SIZE[key] as number);
   recolor(g, (n) => GUN_MAT[n] ?? null);
-  const b = new THREE.Box3().setFromObject(g);
-  // Kenney guns are modelled along X with the muzzle at -X? detect by the longest axis and turn to -Z
+  g.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; // lift near-black parts to gunmetal so the shape reads
+    if (m && m.color && m.color.getHSL({ h: 0, s: 0, l: 0 }).l < 0.12) { (o as THREE.Mesh).material = m.clone(); ((o as THREE.Mesh).material as THREE.MeshStandardMaterial).color.setHex(0x3b4043); } });
+  g.updateMatrixWorld(true);
+  // Kenney guns lie along Z. The muzzle is the end with the thinner (y) profile: barrel vs stock/grip.
+  const b = new THREE.Box3().setFromObject(g), L = b.max.z - b.min.z, v = new THREE.Vector3();
+  const prof = { lo: [Infinity, -Infinity], hi: [Infinity, -Infinity] };
+  g.traverse((o) => { const m = o as THREE.Mesh; if (!m.isMesh) return; const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); const e = v.z < b.min.z + L * 0.15 ? prof.lo : v.z > b.max.z - L * 0.15 ? prof.hi : null; if (e) { e[0] = Math.min(e[0], v.y); e[1] = Math.max(e[1], v.y); } } });
+  const muzzleAtMinZ = prof.lo[1] - prof.lo[0] < prof.hi[1] - prof.hi[0];
   const out = new THREE.Group(); out.add(g);
-  g.rotation.y = -Math.PI / 2; // +X front -> -Z
-  out.userData.len = b.max.x - b.min.x; out.userData.h = b.max.y;
+  if (!muzzleAtMinZ) g.rotation.y = Math.PI; // muzzle -> -Z (camera forward)
+  const muzzleY = muzzleAtMinZ ? (prof.lo[0] + prof.lo[1]) / 2 : (prof.hi[0] + prof.hi[1]) / 2;
+  out.userData = { len: L, h: b.max.y, muzzle: new THREE.Vector3(0, muzzleY, -L / 2 - 0.02) };
   return out;
 }
 /** Gloved hand (palm block + wrapped fingers + thumb) and a sleeve, in metres. */
@@ -220,5 +228,5 @@ export function hand(sleeve = 0x4f5b3c, glove = 0x2a2620): THREE.Group {
 }
 export function gunFor(id: string, vehicle?: boolean): GunKind {
   if (vehicle) return 'rifle';
-  return ({ odst: 'smg', spartan: 'rocket', line_watch: 'shotgun', paladin: 'pistol', ranger: 'sniper', monkey_soldier: 'smg' } as Record<string, GunKind>)[id] ?? 'rifle';
+  return ({ odst: 'rifle', marine: 'rifle', spartan: 'rocket', line_watch: 'shotgun', paladin: 'pistol', ranger: 'sniper', monkey_soldier: 'smg' } as Record<string, GunKind>)[id] ?? 'rifle';
 }
