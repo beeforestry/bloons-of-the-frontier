@@ -439,12 +439,12 @@ export class Renderer {
   }
   /** t44: dark wedges where the sniper's line of sight is blocked (palms, tents, vehicles, hills, walls). */
   private losShadow(t: Tower, r: number) {
-    const c = this.ctx, L = losTable(this.g, t), NS = L.vis.length / LOS.bins, da = (Math.PI * 2) / LOS.bins; let best = -1, bestN = 0, run = 0;
+    const c = this.ctx, L = losTable(this.g, t), NS = L.need.length / LOS.bins, da = (Math.PI * 2) / LOS.bins; let best = -1, bestN = 0, run = 0;
     c.save(); c.fillStyle = 'rgba(20,0,0,0.42)'; c.beginPath();
     for (let b = 0; b < LOS.bins; b++) {
       const a0 = b * da, a1 = a0 + da + 0.002; let s0 = -1;
       for (let s = 0; s <= NS; s++) {
-        const blocked = s < NS && (s + 1) * LOS.step <= r && L.vis[b * NS + s] === 0;
+        const blocked = s < NS && (s + 1) * LOS.step <= r && L.need[b * NS + s] > LOS.target * 10;
         if (blocked && s0 < 0) s0 = s;
         if (!blocked && s0 >= 0) { const d0 = (s0 + 0.5) * LOS.step, d1 = (s + 0.5) * LOS.step; c.moveTo(t.x + Math.cos(a0) * d0, t.y + Math.sin(a0) * d0); c.arc(t.x, t.y, d1, a0, a1); c.arc(t.x, t.y, d0, a1, a0, true); c.closePath(); s0 = -1; }
       }

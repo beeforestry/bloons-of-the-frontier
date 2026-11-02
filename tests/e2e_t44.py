@@ -71,7 +71,7 @@ with sync_playwright() as p:
     # ---- 2. Sniper line of sight on Tropical Island (palms)
     load('tropical')
     found = G("""(() => { const g = H.g, B = H.los.blockers(), palms = B.filter(b => b.h >= 8), pts = [];
-      for (let L = 0; L < g.paths.length; L++) for (let f = 0.02; f < 0.95; f += 0.004) { const p = H.lanePoint(L, f); pts.push([L, f, p.x, p.y]); }
+      for (let L = 0; L < g.paths.length; L++) for (let f = 0.06; f < 0.95; f += 0.004) { const p = H.lanePoint(L, f); pts.push([L, f, p.x, p.y]); }
       const segD = (ax, ay, bx, by, px, py) => { const dx = bx - ax, dy = by - ay, t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))); return Math.hypot(ax + dx * t - px, ay + dy * t - py); };
       for (const pm of palms) for (let r = 1; r < g.grid.rows - 1; r++) for (let c = 1; c < g.grid.cols - 1; c++) {
         if (!g.grid.fits(c, r, 1)) continue; const q = g.grid.cellCenter(c, r), d = Math.hypot(q.x - pm.x, q.y - pm.y); if (d < 90 || d > 260) continue;

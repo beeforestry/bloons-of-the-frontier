@@ -10,7 +10,7 @@ import { TargetingMode, type ManualCtl, type TowerData, type TowerTier } from '.
 import { nextId, easeInOut } from '../core/math';
 import { AuraEmitter, BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
 import { pickTargets, canHit } from '../systems/TargetingSystem';
-import { canSee, usesLOS, type LosCache } from '../systems/LineOfSight';
+import { canSee, targetH, usesLOS, type LosCache } from '../systems/LineOfSight';
 import type { Cell } from '../systems/PlacementSystem';
 import type { Game } from '../game/Game';
 import type { Unit } from './Unit';
@@ -347,7 +347,7 @@ export class HypnoTower {
   }
 }
 
-/** t44: Sniper Monkey needs a clear line of sight to ground targets (flyers / aircraft are above cover). */
+/** t44: Sniper Monkey needs a clear line of sight to its target (aircraft fly above cover). */
 function losFilter(g: Game, tw: Tower): ((e: Enemy) => boolean) | undefined {
-  return usesLOS(tw.data.id) ? (e) => !!(e.data.flying || e.data.air) || canSee(g, tw, e) : undefined;
+  return usesLOS(tw.data.id) ? (e) => canSee(g, tw, e, targetH(e)) : undefined;
 }
