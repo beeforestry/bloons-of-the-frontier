@@ -51,7 +51,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0 };
+  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, size: {} as Record<string, number[]> };
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
   private gun = new THREE.Group(); private flash!: THREE.Mesh; private flashT = 0; private kick = 0;
@@ -318,7 +318,7 @@ export class Possess {
     if (t.data.id === 'unsc_tank' || t.data.id === 'unsc_heli') { // t42 real-size vehicles (~8-10 m tank, 11-13 m gunship)
       const root = new THREE.Group(), head = new THREE.Group(), veh = t.data.id === 'unsc_tank' ? 'tank' as const : 'heli' as const; root.add(head);
       const mm = { root, head, veh, tier: t.tier, model: undefined as THREE.Group | undefined };
-      void (veh === 'tank' ? tank(t.tier) : heli(t.tier)).then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; });
+      void (veh === 'tank' ? tank(t.tier) : heli(t.tier)).then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; const z = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()); this.vm.size[veh] = [z.x, z.y, z.z].map((n) => +n.toFixed(2)); });
       root.userData.veh = veh; this.scene.add(root); this.towerModels.set(t, mm); return mm;
     }
     const root = new THREE.Group(), head = new THREE.Group(), fc = new THREE.Color(factionInfo(t.data.faction).color).getHex();
