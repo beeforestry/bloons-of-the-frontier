@@ -146,7 +146,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   canvas.addEventListener('pointermove', (ev) => {
     const l = local(ev), p = r.screenToWorld(l.x, l.y);
     if (ev.pointerType === 'mouse') {
-      view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p) : null; edge = l;
+      view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p, towerById(view.placing).footprint ?? 1) : null; edge = l;
       // energy orbs and credit crates collect on hover (scrap needs infantry to gather it)
       const rr = 30 / Math.max(0.5, r.cam.zoom);
       for (const pk of g.pickups) if (pk.alive && pk.kind !== 'scrap' && Math.abs(pk.x - p.x) < rr && Math.abs(pk.y - p.y) < rr && dist(pk, p) < rr) { pk.collect(g, 1, 'hover'); g.stats.hover++; }
@@ -171,7 +171,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
       else r.pan(-dx, -dy);
     }
     pt.x = l.x; pt.y = l.y;
-    if (ev.pointerType !== 'mouse') { view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p) : null; }
+    if (ev.pointerType !== 'mouse') { view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p, towerById(view.placing).footprint ?? 1) : null; }
   });
   const up = (ev: PointerEvent) => {
     const pt = ptrs.get(ev.pointerId); ptrs.delete(ev.pointerId);
@@ -232,7 +232,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (view.rallyFor) { g.setRally(view.rallyFor, p); view.rallyFor = null; g.sfx('command'); hud.refresh(true); return; }
     if (view.placing) {
       if (towerById(view.placing).kind === 'path') { if (g.placeBarrier(view.placing, p) && !keep) view.placing = null; hud.refresh(true); return; }
-      const cell = g.grid.snap(p);
+      const cell = g.grid.snap(p, towerById(view.placing).footprint ?? 1);
       if (cell && g.placeTower(view.placing, cell)) { if (!keep) view.placing = null; }
       else if (!cell) { g.toast("Can't build there"); g.sfx('error'); }
       hud.refresh(true); return;

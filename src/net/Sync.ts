@@ -495,9 +495,11 @@ export class Sync {
       seen.add(uid);
       let t = this.h2l.get(uid) as Tower | undefined;
       if (!t) {
-        const occ = g.grid.occupant(c, r); if (occ && !this.l2h.has(occ)) { g.grid.release(c, r); }
+        const fp = towerById(id).footprint ?? 1;
+        for (const q of g.grid.area(c, r, fp)) { const occ = g.grid.occupant(q.c, q.r); if (occ && !this.l2h.has(occ)) g.grid.release(q.c, q.r); }
         t = new Tower(towerById(id), { c, r }, g);
-        g.grid.occupy(t, c, r); g.towers.push(t); this.map(uid, t);
+        for (const q of g.grid.area(c, r, fp)) if (g.grid.isFree(q.c, q.r)) g.grid.occupy(t, q.c, q.r);
+        g.towers.push(t); this.map(uid, t);
         g.fx({ kind: 'dust', x: t.x, y: t.y + 16, r: 26, color: '#e8d8b0', dur: 0.4 });
       }
       if (t.cell.c !== c || t.cell.r !== r) { // moved by Organize Farms
@@ -521,7 +523,7 @@ export class Sync {
       if (t.farm) t.farm.crates = crates;
       if (!(t.manual && pby === this.localPid)) { t.possessedBy = pby ?? -1; if (pby >= 0 && aim != null) t.aim = aim; }
     }
-    for (const t of [...g.towers]) { const u = this.l2h.get(t); if (u === undefined || !seen.has(u)) { g.grid.release(t.cell.c, t.cell.r); t.remove(); if (u !== undefined) this.h2l.delete(u); } }
+    for (const t of [...g.towers]) { const u = this.l2h.get(t); if (u === undefined || !seen.has(u)) { g.grid.releaseArea(t.cell.c, t.cell.r, t.data.footprint ?? 1); t.remove(); if (u !== undefined) this.h2l.delete(u); } }
     g.towers = g.towers.filter((t) => t.alive);
   }
   private syncSquads(S: unknown[][]) {

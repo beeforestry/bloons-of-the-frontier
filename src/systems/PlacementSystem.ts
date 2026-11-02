@@ -29,13 +29,13 @@ export class PlacementSystem<T extends Occupant = Occupant> {
   cellCenter(c: number, r: number): Vec { return { x: this.ox + (c + 0.5) * this.cell, y: this.oy + (r + 0.5) * this.cell }; }
 
   /** Forgiving placement: the hovered cell if free, else the nearest free neighbour within 1 cell of the cursor. */
-  snap(p: Vec): Cell | null {
+  snap(p: Vec, n = 1): Cell | null {
     const base = this.worldToCell(p);
-    if (this.isFree(base.c, base.r)) return base;
+    if (this.fits(base.c, base.r, n)) return base;
     let best: Cell | null = null, bd = Infinity;
     for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++) {
       const c = base.c + dc, r = base.r + dr;
-      if (!this.isFree(c, r)) continue;
+      if (!this.fits(c, r, n)) continue;
       const cc = this.cellCenter(c, r), d = Math.hypot(cc.x - p.x, cc.y - p.y);
       if (d < bd && d < this.cell * 0.95) { bd = d; best = { c, r }; }
     }
@@ -54,6 +54,11 @@ export class PlacementSystem<T extends Occupant = Occupant> {
   unblock(c: number, r: number) { const i = this.idx(c, r); if (this.blocked.delete(i)) this.buildable[i] = true; }
   isBlocked(c: number, r: number) { return this.inBounds(c, r) && this.blocked.has(this.idx(c, r)); }
   release(c: number, r: number) { if (this.inBounds(c, r)) this.occ[this.idx(c, r)] = null; }
+  /** Cells of an n x n footprint centred on (c, r) (n odd; big vehicles use 3). */
+  area(c: number, r: number, n = 1): Cell[] { const h = (n - 1) >> 1, out: Cell[] = []; for (let dc = -h; dc <= h; dc++) for (let dr = -h; dr <= h; dr++) out.push({ c: c + dc, r: r + dr }); return out; }
+  fits(c: number, r: number, n = 1) { return this.area(c, r, n).every((q) => this.isFree(q.c, q.r)); }
+  occupyArea(t: T, c: number, r: number, n = 1) { for (const q of this.area(c, r, n)) this.occupy(t, q.c, q.r); }
+  releaseArea(c: number, r: number, n = 1) { for (const q of this.area(c, r, n)) this.release(q.c, q.r); }
   /** Count of free buildable cells (HUD "space left" + Organize Farms report). */
   freeCount() { let n = 0; for (let i = 0; i < this.occ.length; i++) if (this.buildable[i] && !this.occ[i]) n++; return n; }
   /** Size of the largest 4-connected region of free cells: the real "usable space" metric. */

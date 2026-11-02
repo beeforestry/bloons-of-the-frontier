@@ -886,7 +886,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ player actions
-  canPlace(id: string, cell: Cell | null) { return !!cell && this.grid.isFree(cell.c, cell.r) && this.res.canAfford({ credits: towerById(id).tiers[0].cost }); }
+  canPlace(id: string, cell: Cell | null) { return !!cell && this.grid.fits(cell.c, cell.r, towerById(id).footprint ?? 1) && this.res.canAfford({ credits: towerById(id).tiers[0].cost }); }
   /** Path objects go ON the road: returns the snapped road point or null. */
   roadSpot(p: Vec): (Vec & { lane: number }) | null {
     const nl = this.nearestLane(p);
@@ -910,11 +910,12 @@ export class Game {
   placeTower(id: string, cell: Cell): Tower | null {
     const data = towerById(id);
     if (data.kind === 'path') return null;
-    if (!this.grid.isFree(cell.c, cell.r)) return null;
+    const fp = data.footprint ?? 1;
+    if (!this.grid.fits(cell.c, cell.r, fp)) { if (fp > 1) this.toast(`${data.name} needs a clear ${fp}x${fp} pad`, '#ff8a7a'); return null; }
     if (!this.res.spend({ credits: data.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
     const t = new Tower(data, cell, this);
     t.owner = this.actingPid;
-    this.grid.occupy(t, cell.c, cell.r);
+    this.grid.occupyArea(t, cell.c, cell.r, fp);
     this.towers.push(t);
     if (data.fixedLane) {
       const nl = this.nearestLane(t), q = this.paths[nl.lane].at(nl.d);
@@ -928,7 +929,7 @@ export class Game {
   sellTower(t: Tower) {
     if (!t.alive) return;
     this.res.add(t.sellValue);
-    this.grid.release(t.cell.c, t.cell.r);
+    this.grid.releaseArea(t.cell.c, t.cell.r, t.data.footprint ?? 1);
     t.remove();
     this.towers = this.towers.filter((x) => x !== t);
     this.fx({ kind: 'text', x: t.x, y: t.y - 20, text: `+${t.sellValue}`, color: '#ffe14d', dur: 1 });

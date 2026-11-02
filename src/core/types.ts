@@ -181,6 +181,10 @@ export interface TowerData {
   bankCrates?: boolean;
   /** Player-triggered tower ability. */
   ability?: AbilityId;
+  /** Footprint in grid cells per side (odd; default 1). Big vehicles (Tank/Gunship) use 3 = 3x3 cells. */
+  footprint?: number;
+  /** Hovering aircraft tower (drawn airborne, shadow on the ground). */
+  airborne?: boolean;
   /** tiers[0] is the base tower; tiers[1..] are upgrades. */
   tiers: TowerTier[];
 }

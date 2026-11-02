@@ -278,6 +278,34 @@ export const TOWERS: TowerData[] = [
         combat: { damage: 2.57, fireRate: 2.2, range: 255, pierce: 2, splash: 50, shots: 3, projectileSpeed: 1000 } },
     ],
   },
+  // ------------------------------------------------- UNSC heavy vehicles (t42)
+  // Real-size vehicles on a 3x3-cell pad (7.2 m): ~8 m tank, ~11 m gunship. Balanced to the DPS/100c curve (balance/static.md).
+  {
+    id: 'unsc_tank', name: 'M808 Battle Tank', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_tank', footprint: 3,
+    desc: 'Heavy armour on a 3x3 pad. Slow, crushing high-explosive shells with big splash. Ground targets only.', damageType: 'explosive', projectile: 'shell',
+    hitsAir: false, defaultTargeting: TargetingMode.Strong,
+    tiers: [
+      { name: 'Light Tank', cost: 1100, blurb: 'Desert-tan light tank, 90 mm gun.', visual: { level: 0, scale: 1 }, maxHp: 600,
+        combat: { damage: 7, fireRate: 0.5, range: 230, pierce: 3, splash: 45, projectileSpeed: 620 } },
+      { name: 'Main Battle Tank', cost: 950, blurb: 'Olive MBT: 120 mm, roof MG, more armour.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 800,
+        combat: { damage: 11, fireRate: 0.6, range: 250, pierce: 4, splash: 55, projectileSpeed: 680 } },
+      { name: 'Siege Tank', cost: 2200, blurb: 'Heavy siege gun, reactive armour, shreds plating.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 1050,
+        combat: { damage: 20, fireRate: 0.75, range: 275, pierce: 5, splash: 65, armorShred: 1, projectileSpeed: 740 } },
+    ],
+  },
+  {
+    id: 'unsc_heli', name: 'AH-9 Gunship', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_heli', footprint: 3, airborne: true,
+    desc: 'Hovering attack helicopter on a 3x3 helipad. Chin gun hits ground AND air (incl. Gargoyles).', damageType: 'ballistic', projectile: 'bullet',
+    antiAir: true,
+    tiers: [
+      { name: 'Scout Gunship', cost: 900, blurb: 'Chin cannon.', visual: { level: 0, scale: 1 }, maxHp: 380,
+        combat: { damage: 2, fireRate: 5, range: 200, pierce: 1, projectileSpeed: 1000 } },
+      { name: 'Attack Gunship', cost: 800, blurb: 'Stub wings + rocket pods, twin fire.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 480,
+        combat: { damage: 2, fireRate: 6, range: 220, pierce: 1, shots: 2, projectileSpeed: 1050 } },
+      { name: 'Hellfire Gunship', cost: 1900, blurb: 'Hellfire rails, heavy rounds, pierce 2.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 600,
+        combat: { damage: 3, fireRate: 7, range: 245, pierce: 2, shots: 2, projectileSpeed: 1100 } },
+    ],
+  },
   // ------------------------------------------------------------ FRONTIER (t24/25)
   {
     id: 'stone_wall', name: 'Stone Wall', faction: Faction.Frontier, kind: 'cover', sprite: 'stone_wall',
