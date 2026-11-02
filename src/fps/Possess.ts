@@ -139,7 +139,7 @@ export class Possess {
     for (const [k, x, y, size] of T.props) {
       let m = mats.get(k);
       if (!m) { const t = loader.load(assetUrl(`assets/maps/tropical/${k}.png`)); t.colorSpace = THREE.SRGBColorSpace; m = new THREE.SpriteMaterial({ map: t, alphaTest: 0.4 }); mats.set(k, m); }
-      const sp = new THREE.Sprite(m), s = size * S * 1.25; sp.center.set(0.5, 0.04); sp.scale.set(s, s, 1);
+      const sp = new THREE.Sprite(m), s = size * S * (k.startsWith('palm') ? 1.15 : k === 'prflag' ? 0.9 : 0.6); sp.center.set(0.5, 0.04); sp.scale.set(s, s, 1);
       sp.position.set(x * S, groundH(g.map, x, y) - 0.1, y * S); sp.userData.prop = k; scene.add(sp);
     }
   }
