@@ -1,4 +1,5 @@
 // Entry point: boot assets, map select, input handling, main loop, test hooks.
+import { canSee, blockers as losBlockers } from './systems/LineOfSight';
 import './style.css';
 import { Game } from './game/Game';
 import { Renderer, dmgTextPx, type ViewState } from './render/Renderer';
@@ -12,7 +13,7 @@ import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/ty
 import { Sfx } from './audio/Sfx';
 import type { Squad } from './entities/Unit';
 import type { Garrisonable } from './entities/Garrison';
-import { towerById } from './data/towers';
+import { towerById, TOWERS } from './data/towers';
 import { DIFFICULTIES, difficultyById, type DifficultyId } from './data/difficulty';
 import { Tutorial, TUTORIAL_KEY } from './ui/Tutorial';
 import { ENEMIES } from './data/enemies';
@@ -408,6 +409,8 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     panel: () => ({ hidden: document.body.classList.contains('panel-hidden'), sideW: document.getElementById('side')!.getBoundingClientRect().width, stored: LS.get('bof.panelHidden') }),
     togglePanel,
     voice: () => ({ on: voiceOn, log: [...voiceLog] }),
+    towerList: () => TOWERS.filter((t) => t.kind !== 'path').map((t) => [t.id, t.footprint ?? 1, t.tiers.length]),
+    los: { canSee: (i: number, x: number, y: number) => canSee(g, g.towers[i], { x, y }), blockers: () => losBlockers(g) },
     diff: () => ({ ...g.diff, total: g.waves.total, freeplay: g.waves.freeplay, dartCost: towerById('dart_monkey').tiers[0].cost }),
     skipTo: (n: number) => g.waves.skipTo(n),
     freeplay: () => g.startFreeplay(),
