@@ -78,6 +78,11 @@ SIZE = dict(garita=150, lighthouse=330, rampart=250, cannon=110, palm2=200, sear
             oak=200, pine=150, hedge=110, rose=100, boulders=120, mossrock=86, fence=120, stump=96,
             palm=190, rtree=210, fern=120, monstera=120, vinerock=116, log=130, bamboo=120, redflower=100,
             wtower=180, wall=220, brokenwall=160, rubble=110, banner=120, cart=130, barrels=116, deadtree=150)
+import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tropical
+# t40 user assets (file names are swapped: asset_palm_tree.jpg is a rock pile, asset_rock_cluster.jpg a flowering bush)
+DECO['trock'] = tropical.cutout('asset_palm_tree.jpg'); DECO['tbush'] = tropical.cutout('asset_rock_cluster.jpg')
+SIZE.update(trock=130, tbush=110)
 
 def poly_mask(polys, seed, blur=14, rough=0.55):
     m = Image.new('L', (W, H), 0); d = ImageDraw.Draw(m)
@@ -156,6 +161,11 @@ def compose(M):
     wear = line_mask(lanes, pw * 0.35, M['seed'] + 7).point(lambda v: v * 0.25)
     g = Image.composite(ImageEnhance.Brightness(g).enhance(1.15), g, wear)
     if M.get('post'): g = M['post'](M, g, lanes)
+    if M.get('terrain'):  # 3D ground for Possess: the painted map without the stamped props (they become billboards)
+        os.makedirs(tropical.OUT, exist_ok=True)
+        g.resize((W // 2, H // 2), Image.LANCZOS).save(f'{tropical.OUT}/ground.jpg', quality=82, optimize=True)
+        for k in set(M['deco']) | {f[0] for f in M.get('fixed', [])}:
+            s_ = DECO[k].copy(); s_.thumbnail((256, 256), Image.LANCZOS); s_.save(f'{tropical.OUT}/{k}.png', optimize=True)
     # ---- decorations
     blocked = []  # (x, y, r)
     def clear(x, y, r):
@@ -187,6 +197,7 @@ def compose(M):
         if clear(x, y, r): items.append((key, x, y, sc)); blocked.append((x, y, r))
     for key, x, y, sc in sorted(items, key=lambda t: t[2]):
         g, _ = stamp(g, key, x, y, sc, rnd.random() < 0.5)
+    props = [[k, round(x), round(y), round(SIZE[k] * sc)] for (k, x, y, sc) in list(M.get('fixed', [])) + items]
     # vignette
     v = Image.new('L', (W, H), 0); d = ImageDraw.Draw(v); d.rectangle([60, 60, W - 60, H - 60], fill=255)
     v = v.filter(ImageFilter.GaussianBlur(90))
@@ -224,7 +235,8 @@ def compose(M):
     return dict(id=M['id'], name=M['name'], image=f'assets/maps/{M["id"]}.jpg', width=W, height=H, pathWidth=pw,
                 waypoints=lanes[0], lanes=lanes, hq=hq, pads=pads, rally=M['rally'],
                 grid=dict(cell=CELL, originX=0, originY=0, cols=COLS, rows=ROWS, buildable=rows),
-                **({'envs': M['envs']} if M.get('envs') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}))
+                **({'envs': M['envs']} if M.get('envs') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}),
+                **({'terrain': dict(M['terrain'](M, W, H, lanes, pw), ground='assets/maps/tropical/ground.jpg', props=props)} if M.get('terrain') else {}))
 
 HQ_G = [1980, 744]
 import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -277,6 +289,16 @@ MAPS = [
              [[-80, 1250], [300, 1240], [560, 1170], [760, 1060], [900, 950], [1010, 870], [1100, 825], [1230, 822], [1330, 765], [1450, 735], [1530, 800], [1590, 830]],
              [[640, 1570], [700, 1450], [900, 1380], [1180, 1345], [1380, 1268], [1480, 1150], [1480, 1010], [1500, 890], [1530, 800], [1590, 830]],
          ]),
+    # Tropical Island (t40u): user's terrain/heightmap/grass assets; one long winding lane from the
+    # west landing dock (balloon) to the HQ by the east dock (flag).
+    dict(id='tropical', name='Tropical Island', seed=71, ground='grass', road='dirt', pathWidth=58, decoCount=34, noPlaza=True,
+         painter=tropical.paint, post=tropical.post, terrain=tropical.heightfield, dockIn=250,
+         deco=['palm', 'palm2', 'palm2', 'trock', 'tbush', 'tbush'],
+         hq=[1830, 770], pads=[[1640, 560], [1820, 560], [1660, 990], [1830, 990], [1960, 640], [1960, 900]], rally=[1600, 770],
+         fixed=[['prflag', 2120, 700, 0.8], ['palm2', 330, 640, 1.0], ['palm', 300, 1010, 1.0], ['trock', 1150, 330, 1.0], ['trock', 760, 1200, 1.0],
+                ['tbush', 1000, 820, 1.0], ['palm2', 1500, 1180, 1.0]],
+         lanes=[[[-80, 820], [250, 820], [400, 790], [470, 560], [650, 420], [850, 470], [980, 640], [900, 900], [1050, 1120], [1300, 1100],
+                 [1340, 880], [1250, 620], [1400, 420], [1650, 470], [1720, 620], [1700, 770]]]),
 ]
 os.makedirs('/tmp/chk', exist_ok=True)
 # `--only morro` re-composes just that map and merges it into the existing JSON

@@ -17,7 +17,18 @@ export interface MapDef {
   envs?: [string, number, number][];
   /** Theme tag ('morro' = coastal fortress). */
   flavor?: string;
+  /** 3D heightfield + prop billboards for Possess (Tropical Island). */
+  terrain?: TerrainDef;
   grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[] };
+}
+export interface TerrainDef {
+  cols: number; rows: number; off: number; scale: number; water: number;
+  /** base64 uint8 heights: metres = off + byte * scale. */
+  data: string;
+  /** Prop-free ground image for the 3D mesh. */
+  ground: string;
+  /** [spriteKey, x, y, sizePx] — same spots as the painted 2D decorations. */
+  props: [string, number, number, number][];
 }
 export const MAPS: MapDef[] = raw as unknown as MapDef[];
 export const toVec = ([x, y]: [number, number]): Vec => ({ x, y });

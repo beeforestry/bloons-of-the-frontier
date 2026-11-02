@@ -16,6 +16,7 @@ import { ABILITIES } from '../data/abilities';
 import { PCOLORS } from '../core/players';
 import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
+import { groundH, heights, standH } from '../data/terrain';
 
 /** Metres per map pixel (garden ~110 x 74 m). */
 export const S = 0.05;
@@ -44,7 +45,7 @@ export class Possess {
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
   private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group }>();
-  private bits: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
+  private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
   private gun = new THREE.Group(); private flash!: THREE.Mesh; private flashT = 0; private kick = 0;
   private tracers: { line: THREE.Line; life: number }[] = []; private ring!: THREE.Mesh;
@@ -79,6 +80,8 @@ export class Possess {
     scene.background = new THREE.Color(0x9fd3f0); scene.fog = new THREE.Fog(0x9fd3f0, 55, 170);
     scene.add(new THREE.HemisphereLight(0xdff2ff, 0x4a6a2a, 1.7));
     const sun = new THREE.DirectionalLight(0xfff1d6, 1.7); sun.position.set(-40, 80, 30); scene.add(sun);
+    const T = g.map.terrain;
+    if (T) { this.buildTerrain(W, D); } else {
     // floor: the map image itself (lanes, paths and decor are painted into it)
     const tex = new THREE.TextureLoader().load(assetUrl(g.map.image)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2).translate(W / 2, 0, D / 2), new THREE.MeshLambertMaterial({ map: tex }));
@@ -94,12 +97,14 @@ export class Possess {
     const crown = new THREE.InstancedMesh(new THREE.ConeGeometry(1.9, 4.6, 7).translate(0, 4.2, 0), lam(0x2f7a35), spots.length);
     spots.forEach((s, i) => { this.dummy.position.copy(s); this.dummy.rotation.set(0, rnd() * 6, 0); this.dummy.scale.setScalar(0.9 + rnd() * 0.8); this.dummy.updateMatrix(); trunk.setMatrixAt(i, this.dummy.matrix); crown.setMatrixAt(i, this.dummy.matrix); crown.setColorAt(i, this.tmpC.setHSL(0.28 + rnd() * 0.08, 0.45, 0.25 + rnd() * 0.12)); });
     scene.add(trunk, crown);
+    }
+    const gy = (x: number, y: number) => standH(g.map, x, y);
     // obstacles (rocks / logs) and garrisonable structures as extruded blocks
     for (const o of g.obstacles) if (o.alive) {
       const m = o.kind === 'rock' ? new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0).scale(1.2, 0.8, 1.1), lam(0x7d7f86)) : new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 3.2, 8).rotateZ(Math.PI / 2), lam(0x7a5230));
-      m.position.set(o.x * S, o.kind === 'rock' ? 0.7 : 0.4, o.y * S); m.rotation.y = -o.ang; m.userData.obs = o; scene.add(m);
+      m.position.set(o.x * S, gy(o.x, o.y) + (o.kind === 'rock' ? 0.7 : 0.4), o.y * S); m.rotation.y = -o.ang; m.userData.obs = o; scene.add(m);
     }
-    for (const e of g.envs) { const b = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 2.6), lam(0x9a8a6a)); at(b, e.x * S, 0.9, e.y * S); scene.add(b); }
+    for (const e of g.envs) { const b = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 2.6), lam(0x9a8a6a)); at(b, e.x * S, gy(e.x, e.y) + 0.9, e.y * S); scene.add(b); }
     // buildings (HQ keep + pads)
     const stone = lam(0x8b8f99), roof = lam(0x3a6fd0);
     for (const b of g.buildings) if (b.alive) {
@@ -110,11 +115,33 @@ export class Possess {
         grp.add(at(new THREE.Mesh(new THREE.ConeGeometry(2, 2.5, 8), roof), 0, 10.2, 0));
         grp.add(at(new THREE.Mesh(new THREE.PlaneGeometry(2, 1.2), new THREE.MeshLambertMaterial({ color: 0xffd84a, side: THREE.DoubleSide })), 1, 12, 0));
       } else { grp.add(at(new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.4, 3.4), stone), 0, 1.2, 0)); grp.add(at(new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.4, 4).rotateY(Math.PI / 4), roof), 0, 3.1, 0)); }
-      at(grp, b.x * S, 0, b.y * S); scene.add(grp);
+      at(grp, b.x * S, gy(b.x, b.y), b.y * S); scene.add(grp);
     }
     // range ring on the ground around the possessed entity
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fe8ff, transparent: true, opacity: 0.55, depthWrite: false }));
     this.ring.position.y = 0.04; scene.add(this.ring);
+  }
+
+  /** Tropical Island: heightfield mesh (shared groundH), sea plane, prop billboards at the 2D decor spots. */
+  private buildTerrain(W: number, D: number) {
+    const { scene, g } = this, T = g.map.terrain!, h = heights(T);
+    scene.background = new THREE.Color(0x8fd0f2); scene.fog = new THREE.Fog(0x8fd0f2, 70, 200);
+    const geo = new THREE.PlaneGeometry(W, D, T.cols - 1, T.rows - 1).rotateX(-Math.PI / 2).translate(W / 2, 0, D / 2);
+    const pos = geo.attributes.position as THREE.BufferAttribute; // PlaneGeometry rows run top (z=0) -> bottom after rotateX
+    for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
+    geo.computeVertexNormals();
+    const tex = new THREE.TextureLoader().load(assetUrl(T.ground)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+    const floor = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex })); floor.name = 'floor'; scene.add(floor);
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x2f9fc0, transparent: true, opacity: 0.72 }));
+    sea.position.set(W / 2, T.water, D / 2); sea.name = 'sea'; scene.add(sea);
+    const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), lam(0x1d5f8a)); sea2.position.set(W / 2, -1.7, D / 2); scene.add(sea2);
+    const mats = new Map<string, THREE.SpriteMaterial>(), loader = new THREE.TextureLoader();
+    for (const [k, x, y, size] of T.props) {
+      let m = mats.get(k);
+      if (!m) { const t = loader.load(assetUrl(`assets/maps/tropical/${k}.png`)); t.colorSpace = THREE.SRGBColorSpace; m = new THREE.SpriteMaterial({ map: t, alphaTest: 0.4 }); mats.set(k, m); }
+      const sp = new THREE.Sprite(m), s = size * S * 1.25; sp.center.set(0.5, 0.04); sp.scale.set(s, s, 1);
+      sp.position.set(x * S, groundH(g.map, x, y) - 0.1, y * S); sp.userData.prop = k; scene.add(sp);
+    }
   }
 
   private buildGun() {
@@ -276,8 +303,9 @@ export class Possess {
   /** Eye point (metres) of the possessed entity. */
   private eye(): THREE.Vector3 {
     const o = this.obj;
-    if (o instanceof Tower) return this.v.set(o.x * S, 2.7 + o.tier * 0.15, o.y * S);
-    return this.v.set(o.x * S, o.squad.data.vehicle ? 2.4 : 1.65, o.y * S);
+    const gh = standH(this.g.map, o.x, o.y);
+    if (o instanceof Tower) return this.v.set(o.x * S, gh + 2.7 + o.tier * 0.15, o.y * S);
+    return this.v.set(o.x * S, gh + (o.squad.data.vehicle ? 2.4 : 1.65), o.y * S);
   }
   /** Returns false once possession ended. */
   tick(dt: number): boolean {
@@ -292,7 +320,7 @@ export class Possess {
     const range = this.rangePx() * S * 1.3;
     for (const e of g.enemies) {
       if (!e.alive) continue;
-      const c = this.v2.set(e.x * S, enemyY(e), e.y * S), r = enemyR(e) * (e.data.boss || e.data.id === 'moab' ? 2.2 : 1.25);
+      const c = this.v2.set(e.x * S, this.ey(e), e.y * S), r = enemyR(e) * (e.data.boss || e.data.id === 'moab' ? 2.2 : 1.25);
       const t = c.clone().sub(this.ray.ray.origin).dot(this.ray.ray.direction);
       if (t <= 0 || t > range + r || t >= bt) continue;
       if (this.ray.ray.distanceSqToPoint(c) < r * r) { bt = t; best = e; }
@@ -300,7 +328,7 @@ export class Possess {
     const d = this.ray.ray.direction;
     let aim = Math.atan2(d.z, d.x);
     if (best) aim = Math.atan2(best.y - o.y, best.x - o.x);
-    else if (d.y < -0.02) { const t = -eye.y / d.y; aim = Math.atan2(eye.z + d.z * t - o.y * S, eye.x + d.x * t - o.x * S); }
+    else if (d.y < -0.02) { const t = -(eye.y - standH(g.map, o.x, o.y)) / d.y; aim = Math.atan2(eye.z + d.z * t - o.y * S, eye.x + d.x * t - o.x * S); }
     this.el.cross.classList.toggle('on', !!best);
     // movement (troops): camera-relative WASD / stick -> world axes (map px)
     let fx = 0, sx = 0;
@@ -320,7 +348,7 @@ export class Possess {
     if (this.lastShot < 0) this.lastShot = shotNo;
     if (shotNo !== this.lastShot) {
       this.lastShot = shotNo; this.shots++; this.flashT = 0.06; this.kick = 1;
-      const end = best ? new THREE.Vector3(best.x * S, enemyY(best), best.y * S) : eye.clone().addScaledVector(d, Math.min(range, 40));
+      const end = best ? new THREE.Vector3(best.x * S, this.ey(best), best.y * S) : eye.clone().addScaledVector(d, Math.min(range, 40));
       this.tracer(this.gun.localToWorld(this.flash.position.clone()), end);
       if (best) { this.hits++; this.hitT = 0.15; }
     }
@@ -346,7 +374,7 @@ export class Possess {
     let nb = 0, ng = 0; const live = new Set<Enemy>();
     for (const e of g.enemies) {
       if (!e.alive) continue; live.add(e);
-      const x = e.x * S, z = e.y * S, y = enemyY(e), id = e.data.id;
+      const gh = standH(g.map, e.x, e.y), x = e.x * S, z = e.y * S, y = enemyY(e) + gh, id = e.data.id;
       if (e.data.boss || id === 'moab' || e.data.air) {
         const m = this.bossModel(e), k = Math.max(1, e.data.radius * S * 0.9);
         m.position.set(x, y, z); m.rotation.set(0, -e.ang, 0); m.scale.setScalar(k);
@@ -361,9 +389,9 @@ export class Possess {
       } else {
         if (ng >= 300) continue;
         const k = Math.max(0.6, e.data.radius * S * 1.6);
-        D.position.set(x, 0, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k); D.updateMatrix();
+        D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k); D.updateMatrix();
         this.bugMesh.setMatrixAt(ng, D.matrix); const c = BUG_COL[id] ?? 0x7a4a2a; this.bugMesh.setColorAt(ng++, this.tmpC.setHex(c));
-        this.seen.set(e, { x, y: 0.5, z, c });
+        this.seen.set(e, { x, y: gh + 0.5, z, c });
       }
     }
     // popped / killed since last frame -> burst of bits
@@ -376,7 +404,7 @@ export class Possess {
     const tl = new Set<Tower>();
     for (const t of g.towers) {
       if (!t.alive) continue; tl.add(t); const m = this.towerModel(t);
-      m.root.visible = t !== me; m.root.position.set(t.x * S, 0, t.y * S); m.root.scale.setScalar(1 + t.tier * 0.08); m.head.rotation.y = -t.aim;
+      m.root.visible = t !== me; m.root.position.set(t.x * S, standH(g.map, t.x, t.y), t.y * S); m.root.scale.setScalar(1 + t.tier * 0.08); m.head.rotation.y = -t.aim;
     }
     for (const [t, m] of this.towerModels) if (!tl.has(t)) { this.scene.remove(m.root); this.towerModels.delete(t); }
     // troops (instanced), coloured by faction / co-op owner
@@ -384,7 +412,7 @@ export class Possess {
     for (const u of g.units) {
       if (!u.alive || u.garrison || u === me || nu >= 300) continue;
       if ((u.x - me.x) ** 2 + (u.y - me.y) ** 2 < 26 * 26) continue; // don't block the camera
-      D.position.set(u.x * S, 0, u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(u.squad.data.vehicle ? 1.6 : 1); D.updateMatrix();
+      D.position.set(u.x * S, standH(g.map, u.x, u.y), u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(u.squad.data.vehicle ? 1.6 : 1); D.updateMatrix();
       this.unitMesh.setMatrixAt(nu, D.matrix);
       const col = g.net !== 'solo' && g.mode === 'coop' ? PCOLORS[u.squad.owner] ?? '#fff' : factionInfo(u.squad.data.faction).color;
       this.unitMesh.setColorAt(nu++, this.tmpC.set(col));
@@ -392,12 +420,12 @@ export class Possess {
     this.unitMesh.count = nu; this.unitMesh.instanceMatrix.needsUpdate = true; if (this.unitMesh.instanceColor) this.unitMesh.instanceColor.needsUpdate = true;
     // projectiles
     let np = 0;
-    for (const p of g.projectiles) { if (!p.alive || np >= 500) continue; D.position.set(p.x * S, 1.6, p.y * S); D.rotation.set(0, 0, 0); D.scale.setScalar(1); D.updateMatrix(); this.shotMesh.setMatrixAt(np++, D.matrix); }
+    for (const p of g.projectiles) { if (!p.alive || np >= 500) continue; D.position.set(p.x * S, standH(g.map, p.x, p.y) + 1.6, p.y * S); D.rotation.set(0, 0, 0); D.scale.setScalar(1); D.updateMatrix(); this.shotMesh.setMatrixAt(np++, D.matrix); }
     this.shotMesh.count = np; this.shotMesh.instanceMatrix.needsUpdate = true;
     // particles
     let nbits = 0;
     for (const b of this.bits) {
-      if (b.life <= 0) continue; b.life -= dt; b.vy -= 14 * dt; b.x += b.vx * dt; b.y = Math.max(0.05, b.y + b.vy * dt); b.z += b.vz * dt;
+      if (b.life <= 0) continue; b.life -= dt; b.vy -= 14 * dt; b.x += b.vx * dt; b.y = Math.max(b.floor, b.y + b.vy * dt); b.z += b.vz * dt;
       D.position.set(b.x, b.y, b.z); D.rotation.set(b.life * 9, b.life * 7, 0); D.scale.setScalar(Math.max(0.1, b.life * 2)); D.updateMatrix();
       this.bitMesh.setMatrixAt(nbits, D.matrix); this.bitMesh.setColorAt(nbits++, b.c);
     }
@@ -405,10 +433,10 @@ export class Possess {
     this.bitMesh.count = nbits; this.bitMesh.instanceMatrix.needsUpdate = true; if (this.bitMesh.instanceColor) this.bitMesh.instanceColor.needsUpdate = true;
     for (const tr of this.tracers) if (tr.life > 0) { tr.life -= dt; if (tr.life <= 0) tr.line.visible = false; }
     // range ring
-    const r = this.rangePx() * S; this.ring.position.x = me.x * S; this.ring.position.z = me.y * S; this.ring.scale.set(r, 1, r);
+    const r = this.rangePx() * S; this.ring.position.set(me.x * S, standH(g.map, me.x, me.y) + 0.06, me.y * S); this.ring.scale.set(r, 1, r);
   }
   private burst(x: number, y: number, z: number, color: number, n: number) {
-    for (let i = 0; i < n; i++) { if (this.bits.length > 480) break; const a = Math.random() * 6.283, s = 2 + Math.random() * 4; this.bits.push({ x, y, z, vx: Math.cos(a) * s, vy: 2 + Math.random() * 4, vz: Math.sin(a) * s, life: 0.5 + Math.random() * 0.3, c: new THREE.Color(color) }); }
+    for (let i = 0; i < n; i++) { if (this.bits.length > 480) break; const a = Math.random() * 6.283, s = 2 + Math.random() * 4; this.bits.push({ floor: standH(this.g.map, x / S, z / S) + 0.05, x, y, z, vx: Math.cos(a) * s, vy: 2 + Math.random() * 4, vz: Math.sin(a) * s, life: 0.5 + Math.random() * 0.3, c: new THREE.Color(color) }); }
   }
   private hud(dt: number) {
     const g = this.g, o = this.obj, w = g.waves;
@@ -449,8 +477,10 @@ export class Possess {
   aimNearest(): boolean {
     const o = this.obj, r = this.rangePx() * 1.2;
     const e = this.g.enemies.filter((x) => x.alive && (x.x - o.x) ** 2 + (x.y - o.y) ** 2 < r * r).sort((a, b) => (a.x - o.x) ** 2 + (a.y - o.y) ** 2 - ((b.x - o.x) ** 2 + (b.y - o.y) ** 2))[0];
-    if (!e) return false; this.aimAt(e.x, e.y, enemyY(e)); return true;
+    if (!e) return false; this.aimAt(e.x, e.y, this.ey(e)); return true;
   }
+  /** Enemy centre height including the ground under it. */
+  private ey(e: Enemy) { return enemyY(e) + standH(this.g.map, e.x, e.y); }
   setFire(on: boolean) { this.firing = on; }
   setMove(fwd: number, side: number) { this.joy.x = side; this.joy.y = -fwd; }
   state() {
