@@ -18,6 +18,7 @@ import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, prop, gun, hand, gunFor } from './military';
+import { towerMesh } from './towers3d';
 
 /** Metres per map pixel (garden ~110 x 74 m). */
 export const S = 0.05;
@@ -46,12 +47,12 @@ export class Possess {
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
-  private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli'; tier?: number; model?: THREE.Group }>();
+  private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli'; tier?: number; model?: THREE.Group; base?: number }>();
   private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number }>();
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, size: {} as Record<string, number[]> };
+  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
   private gun = new THREE.Group(); private flash!: THREE.Mesh; private flashT = 0; private kick = 0;
@@ -313,7 +314,7 @@ export class Possess {
   }
   private towerModel(t: Tower) {
     let m = this.towerModels.get(t);
-    if (m && m.veh && m.tier !== t.tier) { this.scene.remove(m.root); this.towerModels.delete(t); m = undefined; }
+    if (m && m.tier !== t.tier) { this.scene.remove(m.root); this.towerModels.delete(t); m = undefined; }
     if (m) return m;
     if (t.data.id === 'unsc_tank' || t.data.id === 'unsc_heli') { // t42 real-size vehicles (~8-10 m tank, 11-13 m gunship)
       const root = new THREE.Group(), head = new THREE.Group(), veh = t.data.id === 'unsc_tank' ? 'tank' as const : 'heli' as const; root.add(head);
@@ -321,14 +322,11 @@ export class Possess {
       void (veh === 'tank' ? tank(t.tier) : heli(t.tier)).then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; const z = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()); this.vm.size[veh] = [z.x, z.y, z.z].map((n) => +n.toFixed(2)); });
       root.userData.veh = veh; this.scene.add(root); this.towerModels.set(t, mm); return mm;
     }
-    const root = new THREE.Group(), head = new THREE.Group(), fc = new THREE.Color(factionInfo(t.data.faction).color).getHex();
-    root.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.5, 10), lam(0x6d5a44)), 0, 0.25, 0));
-    root.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.6, 1.3, 8), lam(fc)), 0, 1.1, 0));
-    head.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.9), lam(fc)));
-    head.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.2, 6).rotateZ(Math.PI / 2), lam(0x22262a)), 0.9, 0, 0));
-    head.position.y = 2.0; root.add(head);
-    if (t.data.id === 'unsc_autoturret' || t.data.id === 'unsc_flak') void gun('rifle').then((mg) => { mg.scale.setScalar(1.5); mg.rotation.y = -Math.PI / 2; mg.position.set(0.3, 0.32, 0); head.add(mg); });
-    this.scene.add(root); m = { root, head }; this.towerModels.set(t, m); return m;
+    const tm = towerMesh(t.data.id, t.tier); // t44: per-tower, per-tier procedural model (merged + cached geometry)
+    if (tm) { this.vm.towers3d[tm.root.userData.tower3d] = (this.vm.towers3d[tm.root.userData.tower3d] ?? 0) + 1; this.scene.add(tm.root); m = { root: tm.root, head: tm.head, tier: t.tier, base: tm.root.scale.x }; this.towerModels.set(t, m); return m; }
+    const root = new THREE.Group(), head = new THREE.Group(); root.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.5, 10), lam(0x6d5a44)), 0, 0.25, 0));
+    head.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.9), lam(new THREE.Color(factionInfo(t.data.faction).color).getHex()))); head.position.y = 2.0; root.add(head);
+    this.scene.add(root); m = { root, head, tier: t.tier }; this.towerModels.set(t, m); return m;
   }
 
   // ------------------------------------------------------------------ HUD + input
@@ -540,7 +538,7 @@ export class Possess {
       if (!t.alive) continue; tl.add(t); const m = this.towerModel(t);
       m.root.visible = t !== me; m.root.position.set(t.x * S, standH(g.map, t.x, t.y), t.y * S); m.head.rotation.y = -t.aim;
       if (m.veh === 'heli') { m.root.position.y += 6 + Math.sin(performance.now() / 640 + t.uid) * 0.3; const md = m.model?.userData; if (md) { (md.rotor as THREE.Object3D).rotation.y += dt * 24; (md.tail as THREE.Object3D).rotation.z += dt * 40; } }
-      else if (!m.veh) m.root.scale.setScalar(1 + t.tier * 0.08);
+      else if (!m.veh) m.root.scale.setScalar((m.base ?? 1) * (t.t.visual.scale ?? 1));
     }
     for (const [t, m] of this.towerModels) if (!tl.has(t)) { this.scene.remove(m.root); this.towerModels.delete(t); }
     // troops (instanced), coloured by faction / co-op owner
