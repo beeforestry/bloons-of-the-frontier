@@ -110,7 +110,7 @@ export function decoTo3D(key: string, sizePx: number): { k: FloraKind; h: number
     case 'palm2': return { k: 'palm_tall', h: m * 1.25 };
     case 'bpalm': return { k: 'palm', h: m * 1.2, burnt: true };
     case 'bpalm2': return { k: 'palm_bend', h: m * 1.1, burnt: true };
-    case 'deadtree': return { k: 'tree', h: m * 1.2, burnt: true };
+    case 'deadtree': case 'deadtree2': return { k: 'tree', h: m * 1.2, burnt: true };
     case 'hedge': case 'monstera': case 'bamboo': return { k: 'bush_big', h: m * 0.32 };
     case 'rose': case 'fern': case 'redflower': case 'tbush': return { k: 'bush', h: m * 0.24 };
     case 'boulders': case 'vinerock': case 'searocks': case 'trock': return { k: (sizePx * 7) % 3 < 1.5 ? 'rock_big' : 'rock', h: m * 0.22 };

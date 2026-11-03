@@ -20,3 +20,12 @@ GLBs converted/optimised to `public/assets/military/`; 2D sheets rendered from t
 | cobble.webp | Cobblestone Floor 08 — https://polyhaven.com/a/cobblestone_floor_08 | Rob Tuytel |
 | rock.webp | Aerial Rocks 02 — https://polyhaven.com/a/aerial_rocks_02 | Rob Tuytel |
 | water_n.webp | Procedural tileable water normal map (our own, generated with numpy) | — |
+
+## t50 — 3D nature props + warzone ground (all CC0)
+| asset | source | author |
+|---|---|---|
+| public/assets/flora/*.glb (palms, oak, pine, trees, bushes, rocks, stumps, log) | Nature Kit 2.1 — https://opengameart.org/content/nature-kit (kenney.nl) | Kenney |
+| tex/burned.webp | Burned Ground 01 — https://polyhaven.com/a/burned_ground_01 | Rob Tuytel |
+| tex/mud.webp | Brown Mud — https://polyhaven.com/a/brown_mud | Rob Tuytel |
+| tex/dryground.webp | Dry Ground 01 — https://polyhaven.com/a/dry_ground_01 | Rob Tuytel |
+Burnt/dead plant variants are recoloured + reshaped Nature Kit models; wrecks are the existing military renders/GLBs, charred.
