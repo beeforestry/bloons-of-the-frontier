@@ -45,9 +45,9 @@
 | tower | sniper_monkey | 1 | 450 | 4.1 | 0.92 | 24.4 | 4000 | 0 |
 | tower | sniper_monkey | 2 | 905 | 10.4 | 1.15 | 15.5 | 4000 | 0 |
 | tower | sniper_monkey | 3 | 2045 | 29.5 | 1.44 | 8.3 | 4000 | 0 |
-| tower | glue_slinger | 1 | 270 | 2.3 | 0.84 | 40.7 | 150 | 0 |
-| tower | glue_slinger | 2 | 570 | 7 | 1.22 | 24.6 | 160 | 0 |
-| tower | glue_slinger | 3 | 1315 | 17.2 | 1.31 | 12.9 | 175 | 0 |
+| tower | glue_slinger | 1 | 270 | 3.2 | 1.2 | 40.7 | 150 | 0 |
+| tower | glue_slinger | 2 | 570 | 7.6 | 1.33 | 24.6 | 175 | 0 |
+| tower | glue_slinger | 3 | 1315 | 20 | 1.52 | 12.9 | 205 | 0 |
 | tower | banana_drop | 1 | 420 | 0 | 0 | 26.2 | 0 | 1.8 |
 | tower | banana_drop | 2 | 900 | 0 | 0 | 15.6 | 0 | 3.75 |
 | tower | banana_drop | 3 | 1880 | 0 | 0 | 9 | 0 | 7.6 |

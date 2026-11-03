@@ -545,8 +545,8 @@
   "tier": 1,
   "name": "Glue Slinger",
   "cost": 270,
-  "dps": 2.3,
-  "dpsPer100": 0.84,
+  "dps": 3.2,
+  "dpsPer100": 1.2,
   "hpPer100": 40.7,
   "range": 150,
   "util": 0
@@ -557,10 +557,10 @@
   "tier": 2,
   "name": "Corrosive Glue",
   "cost": 570,
-  "dps": 7,
-  "dpsPer100": 1.22,
+  "dps": 7.6,
+  "dpsPer100": 1.33,
   "hpPer100": 24.6,
-  "range": 160,
+  "range": 175,
   "util": 0
  },
  {
@@ -569,10 +569,10 @@
   "tier": 3,
   "name": "Bloon Dissolver",
   "cost": 1315,
-  "dps": 17.2,
-  "dpsPer100": 1.31,
+  "dps": 20,
+  "dpsPer100": 1.52,
   "hpPer100": 12.9,
-  "range": 175,
+  "range": 205,
   "util": 0
  },
  {
