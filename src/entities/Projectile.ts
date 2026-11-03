@@ -7,7 +7,9 @@ import type { Enemy } from './Enemy';
 
 export interface ProjectileOpts {
   kind: ProjectileKind; x: number; y: number; angle: number; speed: number; damage: number; type: DamageType;
-  pierce: number; splash?: number; slow?: number; homing?: Enemy | null; lob?: { tx: number; ty: number; dur: number };
+  pierce: number; splash?: number; slow?: number; homing?: Enemy | null; lob?: { tx: number; ty: number; dur: number; arc?: number };
+  /** t45 acid: lingering corrosive puddle left where it bursts. */
+  pool?: { r: number; dur: number; dps: number };
   hitsAir?: boolean; hitsGround?: boolean; scale?: number; hit?: HitOpts;
 }
 
@@ -47,8 +49,8 @@ export class Projectile {
       this.lobT += dt / o.lob.dur;
       const t = Math.min(1, this.lobT);
       this.x = this.sx + (o.lob.tx - this.sx) * t; this.y = this.sy + (o.lob.ty - this.sy) * t;
-      this.height = Math.sin(t * Math.PI) * 90;
-      if (t >= 1) { this.alive = false; g.splash(this.x, this.y, o.splash ?? 40, o.damage, o.type, this.origin, o.kind === 'melon' ? 'boom_fire' : 'boom', o.hit, o.slow); }
+      this.height = Math.sin(t * Math.PI) * (o.lob.arc ?? 90);
+      if (t >= 1) { this.alive = false; g.splash(this.x, this.y, o.splash ?? 40, o.damage, o.type, this.origin, o.kind === 'melon' ? 'boom_fire' : o.kind.startsWith('acid') ? 'acid' : 'boom', o.hit, o.slow); if (o.pool) g.acidPool(this.x, this.y, o.pool, o.slow, o.type, o.hit); }
       return;
     }
     if (o.homing && o.homing.alive) {
@@ -66,7 +68,7 @@ export class Projectile {
       if (!canHit(e, { hitsAir: o.hitsAir, hitsGround: o.hitsGround, antiAir: o.hit?.antiAir })) continue;
       if (dist2(e, this) > (e.data.radius + 6) ** 2) continue;
       this.hit.add(e);
-      if (o.splash) { this.alive = false; g.splash(this.x, this.y, o.splash, o.damage, o.type, this.origin, o.kind === 'flak' ? 'boom_fire' : 'boom', o.hit, o.slow); return; }
+      if (o.splash) { this.alive = false; g.splash(this.x, this.y, o.splash, o.damage, o.type, this.origin, o.kind === 'flak' ? 'boom_fire' : o.kind.startsWith('acid') ? 'acid' : 'boom', o.hit, o.slow); if (o.pool) g.acidPool(this.x, this.y, o.pool, o.slow, o.type, o.hit); return; }
       e.takeDamage(g, o.damage, o.type, this.origin, o.hit);
       if (o.slow) { e.slowAmt = Math.max(e.slowAmt, o.slow); e.slowT = 1.6; e.markSlow(g); }
       if (--this.pierce <= 0) { this.alive = false; return; }

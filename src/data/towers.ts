@@ -201,14 +201,14 @@ export const TOWERS: TowerData[] = [
   },
   {
     id: 'glue_slinger', name: 'Corrosive Glue Slinger', faction: Faction.Primates, kind: 'combat', sprite: 'glue_slinger',
-    desc: 'Glue globs slow by 40% and corrode armor (Ironbacks lose plating).', damageType: 'sharp', projectile: 'glue',
+    desc: 'Acid that slows by 40% and corrodes armor (Ironbacks lose plating). Slingshot vials → acid sprayer → hazmat canister cannon; every burst splashes and leaves a corrosive puddle.', damageType: 'sharp', projectile: 'glue',
     tiers: [
-      { name: 'Glue Slinger', cost: 270, blurb: '40% slow, corrodes armor.', visual: { level: 0, scale: 1 }, maxHp: 110,
-        combat: { damage: 1.13, fireRate: 1.32, range: 150, pierce: 2, slow: 0.4, armorShred: 0.12, projectileSpeed: 460 } },
-      { name: 'Corrosive Glue', cost: 300, blurb: 'Stronger acid, splash.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
-        combat: { damage: 1.82, fireRate: 1.32, range: 160, pierce: 3, slow: 0.45, armorShred: 0.2, splash: 30, projectileSpeed: 500 } },
-      { name: 'Bloon Dissolver', cost: 745, blurb: 'Melts plating fast.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
-        combat: { damage: 2.92, fireRate: 1.54, range: 175, pierce: 4, slow: 0.5, armorShred: 0.3, splash: 40, projectileSpeed: 540 } },
+      { name: 'Glue Slinger', cost: 270, blurb: 'Slingshots acid vials: small splash + puddle, 40% slow.', visual: { level: 0, scale: 1 }, maxHp: 110,
+        combat: { damage: 1.13, fireRate: 1.32, range: 150, pierce: 2, slow: 0.4, armorShred: 0.12, splash: 26, projectileSpeed: 460 } },
+      { name: 'Corrosive Glue', cost: 300, blurb: 'Acid sprayer: 3-jet stream, wider splash, more range.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
+        combat: { damage: 1.82, fireRate: 1.32, range: 175, pierce: 3, slow: 0.45, armorShred: 0.2, splash: 38, projectileSpeed: 620 } },
+      { name: 'Bloon Dissolver', cost: 745, blurb: 'Hazmat cannon: acid canisters, big splash + pool.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
+        combat: { damage: 2.92, fireRate: 1.54, range: 205, pierce: 4, slow: 0.5, armorShred: 0.3, splash: 56, projectileSpeed: 660 } },
     ],
   },
   {

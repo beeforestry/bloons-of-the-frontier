@@ -150,7 +150,7 @@ export interface TowerTier {
 }
 
 export type TowerKind = 'combat' | 'cover' | 'farm' | 'support' | 'path' | 'hypno';
-export type ProjectileKind = 'dart' | 'pea' | 'gpea' | 'shuriken' | 'magic' | 'melon' | 'star' | 'bullet' | 'laser' | 'rail' | 'ice' | 'glue' | 'flak' | 'seed' | 'boomerang' | 'tesla' | 'arrow' | 'shell';
+export type ProjectileKind = 'dart' | 'pea' | 'gpea' | 'shuriken' | 'magic' | 'melon' | 'star' | 'bullet' | 'laser' | 'rail' | 'ice' | 'glue' | 'acid_vial' | 'acid_spray' | 'acid_can' | 'flak' | 'seed' | 'boomerang' | 'tesla' | 'arrow' | 'shell';
 
 export interface TowerData {
   id: string;

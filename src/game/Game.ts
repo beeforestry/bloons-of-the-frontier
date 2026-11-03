@@ -688,6 +688,7 @@ export class Game {
     if (shotNo % 3 === 0) this.sfx('fire', tw.x, tw.y);
     const tgt = targets[0];
     const special = c.specialRate && shotNo % Math.round(1 / c.specialRate) === 0;
+    if (kind === 'glue') { this.fireAcid(tw, tgt, c, muzzle, dmg0, type, hit); return; }
     if (kind === 'melon') {
       this.projectiles.push(new Projectile({ kind, x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg0, type: 'fire', pierce: 1, splash: c.splash, hit,
         lob: { tx: tgt.x + Math.cos(tgt.ang) * tgt.data.speed * 0.5, ty: tgt.y + Math.sin(tgt.ang) * tgt.data.speed * 0.5, dur: 0.75 } }));
@@ -700,7 +701,7 @@ export class Game {
       this.projectiles.push(new Projectile({
         kind: special ? 'gpea' : kind, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: c.projectileSpeed ?? 600,
         damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? 2 : 1), type: special ? 'explosive' : type, pierce: c.pierce,
-        splash: special ? c.splash : kind === 'magic' || kind === 'flak' || kind === 'glue' ? c.splash : undefined, slow: c.slow,
+        splash: special ? c.splash : kind === 'magic' || kind === 'flak' ? c.splash : undefined, slow: c.slow,
         homing: kind === 'magic' ? tgt : null, scale: special ? 1.8 : tw.data.id === 'arcane_obelisk' ? 2 : 1, hit,
         hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround,
       }));
@@ -814,7 +815,35 @@ export class Game {
     }
     return 1;
   }
-  splash(x: number, y: number, r: number, dmg: number, type: DamageType, from?: Vec, look: 'boom' | 'boom_fire' = 'boom', hit?: HitOpts, slow?: number) {
+  /** t45: lingering acid puddles (Glue Slinger) - corrode + slow whatever crosses them, ticking every 0.5 s. */
+  acidPools: { x: number; y: number; r: number; t: number; dur: number; dps: number; slow?: number; type: DamageType; hit?: HitOpts; acc: number }[] = [];
+  acidPool(x: number, y: number, p: { r: number; dur: number; dps: number }, slow: number | undefined, type: DamageType, hit?: HitOpts) {
+    if (this.acidPools.length > 40) this.acidPools.shift();
+    this.acidPools.push({ x, y, r: p.r, t: 0, dur: p.dur, dps: p.dps, slow, type, hit: hit ? { ...hit, crit: false } : undefined, acc: 0 });
+  }
+  private tickPools(dt: number) {
+    for (const p of this.acidPools) {
+      p.t += dt; p.acc += dt; if (p.acc < 0.5) continue; p.acc -= 0.5;
+      for (const e of this.enemies) if (e.alive && !e.data.air && dist2(e, p) <= (p.r + e.data.radius * 0.5) ** 2) {
+        e.takeDamage(this, p.dps * 0.5, p.type, p, p.hit);
+        if (p.slow && !e.data.boss) { e.slowAmt = Math.max(e.slowAmt, p.slow * 0.75); e.slowT = Math.max(e.slowT, 0.6); e.markSlow(this); }
+      }
+    }
+    this.acidPools = this.acidPools.filter((p) => p.t < p.dur);
+  }
+  /** t45 Glue Slinger delivery per tier, matching the sprite: T1 slingshot-lobbed glass vial, T2 hand sprayer stream, T3 hazmat cannon canister. */
+  private fireAcid(tw: Tower, tgt: Enemy, c: CombatStats, muzzle: Vec, dmg: number, type: DamageType, hit: HitOpts) {
+    const lead = (s: number) => ({ x: tgt.x + Math.cos(tgt.ang) * tgt.data.speed * s, y: tgt.y + Math.sin(tgt.ang) * tgt.data.speed * s });
+    const base = { x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg, type, pierce: 1, splash: c.splash, slow: c.slow, hit, hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround };
+    if (tw.tier === 0) { const p = lead(0.4); this.projectiles.push(new Projectile({ ...base, kind: 'acid_vial', lob: { tx: p.x, ty: p.y, dur: 0.55, arc: 70 }, pool: { r: (c.splash ?? 28) * 0.75, dur: 2, dps: dmg * 0.3 } })); return; }
+    if (tw.tier === 1) {
+      const a = Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x), sp = c.projectileSpeed ?? 500;
+      for (let i = 0; i < 3; i++) { const pr = new Projectile({ ...base, kind: 'acid_spray', angle: a + (i - 1) * 0.05, speed: sp * (1 - i * 0.07), damage: dmg / 3, pool: i === 0 ? { r: (c.splash ?? 40) * 0.6, dur: 2.5, dps: dmg * 0.3 } : undefined }); pr.life = (c.range * 1.25) / (sp * (1 - i * 0.07)); this.projectiles.push(pr); }
+      return;
+    }
+    const p = lead(0.3); this.projectiles.push(new Projectile({ ...base, kind: 'acid_can', lob: { tx: p.x, ty: p.y, dur: 0.48, arc: 42 }, pool: { r: (c.splash ?? 60) * 0.8, dur: 3, dps: dmg * 0.3 } }));
+  }
+  splash(x: number, y: number, r: number, dmg: number, type: DamageType, from?: Vec, look: 'boom' | 'boom_fire' | 'acid' = 'boom', hit?: HitOpts, slow?: number) {
     if (type === 'explosive' || type === 'fire') r *= this.comboMul(x, y, r);
     for (const e of this.enemies) if (e.alive && dist2(e, { x, y }) <= (r + e.data.radius) ** 2) {
       e.takeDamage(this, dmg, type, from, hit);
@@ -825,7 +854,8 @@ export class Game {
       if (r >= 70) { this.shake(r / 14, true); this.shock(x, y, r * 1.4, 0.4); }
       if (r >= 45) this.sfx('explosion', x, y);
     }
-    this.fx({ kind: look, x, y, r, dur: 0.35 });
+    if (look === 'acid') { this.fx({ kind: 'dust', x, y, r, color: '#8fe03a', dur: 0.5 }); this.fx({ kind: 'ring', x, y, r, color: '#b6ff4a', dur: 0.4 }); }
+    else this.fx({ kind: look, x, y, r, dur: 0.35 });
   }
   unitAttack(u: Unit, tgt: Enemy, t: UnitTier, mul = 1) {
     const w = t.weapon, crit = Math.random() < 0.08, dmg = mul * t.stats.damage * u.dmgMul * (crit ? 2 : 1) * (this.armory.has('servos') ? 1 + ARMORY_FX.servosDmg : 1);
@@ -1237,6 +1267,7 @@ export class Game {
     for (const e of this.enemies) if (e.alive) e.update(this, dt);
     for (const a of this.allies) if (a.alive) a.updateAlly(this, dt);
     for (const p of this.projectiles) { this.curOwner = p.owner; p.update(this, dt); }
+    this.tickPools(dt);
     this.curOwner = -1;
     for (const p of this.pickups) p.update(this, dt);
     for (const a of this.acids) {
