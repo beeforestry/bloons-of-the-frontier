@@ -14,7 +14,7 @@ import type { TierVisual } from '../core/types';
 import type { Cell } from '../systems/PlacementSystem';
 import { TOWERS, towerById } from '../data/towers';
 const TOWER_BY_SPRITE = (k: string) => TOWERS.find((t) => t.sprite === k);
-import { IMG, HEAD_PIVOT, MIL, body, flashOf, head, tintOf, type Img } from './sprites';
+import { IMG, HEAD_PIVOT, MIL, body, flashOf, head, tintOf, clearSpriteCaches, type Img } from './sprites';
 import { Faction } from '../core/types';
 import { Particles, PK, QUALITY_CAPS } from './Particles';
 import type { Barrier, EnvStructure, Obstacle } from '../entities/Garrison';
@@ -63,6 +63,11 @@ export class Renderer {
   readonly parts = new Particles();
   /** 0 = full, 1 = reduced, 2 = minimal (set by the FPS governor in main.ts). */
   quality = 0;
+  /** White hit-flash silhouette (plain sprite when Reduce flashing is on). */
+  private fl(im: Img): Img | HTMLCanvasElement { return this.g.reduceFlash ? im : flashOf(im); }
+  /** t48: 2D canvas context loss (GPU reset under heavy load): skip drawing while lost, rebuild caches on restore. */
+  lost = false;
+  private scratch: HTMLCanvasElement | null = null;
   setQuality(q: number) { this.quality = Math.max(0, Math.min(2, q)); this.parts.cap = QUALITY_CAPS[this.quality]; this.g.dmgNumbers = this.quality < 2; }
   private lastT = 0;
   /** View bounds in world px (culling). */
@@ -74,6 +79,8 @@ export class Renderer {
   drawn = { objs: 0, parts: 0 };
   constructor(readonly canvas: HTMLCanvasElement, readonly g: Game) {
     this.ctx = canvas.getContext('2d')!;
+    canvas.addEventListener('contextlost', (e) => { e.preventDefault(); this.lost = true; console.warn('[render] 2D canvas context lost'); });
+    canvas.addEventListener('contextrestored', () => { this.lost = false; clearSpriteCaches(); this.roadCol = ''; });
     this.resize();
     this.cam.zoom = this.minZoom; this.clamp();
   }
@@ -158,7 +165,8 @@ export class Renderer {
     const { ctx: c, g } = this;
     const now = performance.now(), rdt = this.lastT ? Math.min(0.1, (now - this.lastT) / 1000) : 0.016; this.lastT = now;
     const gdt = g.paused ? 0 : rdt * g.speed;
-    c.setTransform(1, 0, 0, 1, 0, 0);
+    if (this.lost) return;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
     c.fillStyle = '#141a14'; c.fillRect(0, 0, this.canvas.width, this.canvas.height);
     const z = this.cam.zoom * this.dpr;
     const sh = g.shakeAmt / this.cam.zoom, sx = sh ? (Math.random() * 2 - 1) * sh : 0, sy = sh ? (Math.random() * 2 - 1) * sh : 0;
@@ -260,18 +268,26 @@ export class Renderer {
   private shockwaves() {
     const c = this.ctx, g = this.g;
     if (!g.shocks.length) return;
-    const z = this.cam.zoom * this.dpr;
-    for (const s of g.shocks) {
+    const z = this.cam.zoom * this.dpr, refr = this.quality < 2 && !g.reduceFlash, first = g.shocks.length - 3;
+    let snap: HTMLCanvasElement | null = null;
+    if (refr) {
+      const W = this.canvas.width >> 1, H = this.canvas.height >> 1;
+      snap = this.scratch ??= document.createElement('canvas');
+      if (snap.width !== W || snap.height !== H) { snap.width = W; snap.height = H; }
+      const sc = snap.getContext('2d')!; sc.globalCompositeOperation = 'copy'; sc.drawImage(this.canvas, 0, 0, W, H);
+    }
+    for (let i = 0; i < g.shocks.length; i++) {
+      const s = g.shocks[i];
       const k = s.t / s.dur, r = s.r * (0.15 + 0.85 * Math.sqrt(k)), w = Math.max(10, s.r * 0.18) * (1 - k * 0.5);
-      if (this.quality < 2) {
+      if (snap && i >= first) {
         const p = this.worldToScreen(s.x, s.y), cx = p.x * this.dpr, cy = p.y * this.dpr, R = r * z, W = w * z, m = 1.06 - 0.04 * k;
         c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
         c.beginPath(); c.arc(cx, cy, R + W, 0, 6.283); c.arc(cx, cy, Math.max(1, R - W), 0, 6.283, true); c.clip();
         c.globalAlpha = 0.9 * (1 - k);
-        c.drawImage(this.canvas, cx - cx * m, cy - cy * m, this.canvas.width * m, this.canvas.height * m);
+        c.drawImage(snap, cx - cx * m, cy - cy * m, this.canvas.width * m, this.canvas.height * m);
         c.restore();
       }
-      c.globalAlpha = 0.7 * (1 - k); c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = (g.reduceFlash ? 0.3 : 0.7) * (1 - k); c.globalCompositeOperation = 'lighter';
       this.ringAt(s.x, s.y, r, '#fff3d0', Math.max(2, w * 0.35));
       c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
     }
@@ -387,21 +403,21 @@ export class Renderer {
       const rock = IMG.obs_rock ?? body('obs_rock'), log = IMG.obs_log ?? body('obs_log');
       this.shadowAt(o.x + 4, o.y + 18, 70, 18, 0.45);
       const fl = o.hitFlash > 0;
-      if (log) { const [w, h] = this.fitWH(log, 130); this.feet(fl ? flashOf(log) : log, o.x + 6, o.y + 30, w, h, true); }
-      if (rock) { const [w, h] = this.fitWH(rock, 104); this.feet(fl ? flashOf(rock) : rock, o.x - 24, o.y + 22, w, h, false); const [w2, h2] = this.fitWH(rock, 76); this.feet(fl ? flashOf(rock) : rock, o.x + 34, o.y + 16, w2, h2, true); }
+      if (log) { const [w, h] = this.fitWH(log, 130); this.feet(fl ? this.fl(log) : log, o.x + 6, o.y + 30, w, h, true); }
+      if (rock) { const [w, h] = this.fitWH(rock, 104); this.feet(fl ? this.fl(rock) : rock, o.x - 24, o.y + 22, w, h, false); const [w2, h2] = this.fitWH(rock, 76); this.feet(fl ? this.fl(rock) : rock, o.x + 34, o.y + 16, w2, h2, true); }
       if (o.hp < o.maxHp) this.bar(o.x, o.y - 60, 60, o.hp / o.maxHp, '#c9a36a', o.uid);
       return;
     }
     const im = IMG[o.sprite] ?? body(o.sprite), sz = o.kind === 'log' ? 110 : 84;
     this.shadowAt(o.x + 4, o.y + 14, sz * 0.45, sz * 0.14, 0.4);
-    if (im) { const [w, h] = this.fitWH(im, sz); this.feet(o.hitFlash > 0 ? flashOf(im) : im, o.x, o.y + 22, w, h, o.ang > 1.5); }
+    if (im) { const [w, h] = this.fitWH(im, sz); this.feet(o.hitFlash > 0 ? this.fl(im) : im, o.x, o.y + 22, w, h, o.ang > 1.5); }
     if (o.hp < o.maxHp) this.bar(o.x, o.y - sz * 0.45, 46, o.hp / o.maxHp, '#c9a36a', o.uid);
   }
   private barrier(b: Barrier) {
     const c = this.ctx, im = body(b.data.sprite, 0), pod = b.isPod;
     const sz = pod ? 50 : 62, fuse = b.fuse > 0 ? 1 + Math.sin(this.g.time * 40) * 0.08 : 1;
     this.shadowAt(b.x + 3, b.y + 12, sz * 0.4, sz * 0.13, 0.42);
-    if (im) { const [w, h] = this.fitWH(im, sz); this.feet(b.hitFlash > 0 ? flashOf(im) : im, b.x, b.y + 16, w, h, false, fuse, fuse); }
+    if (im) { const [w, h] = this.fitWH(im, sz); this.feet(b.hitFlash > 0 ? this.fl(im) : im, b.x, b.y + 16, w, h, false, fuse, fuse); }
     if (b.fuse > 0) { this.additive(IMG.fx_spark, b.x + 8, b.y - sz * 0.7, 26, this.g.time * 9, 0.9); c.globalAlpha = 0.4; this.ringAt(b.x, b.y, b.b.blastRadius!, '#ff7040', 2); c.globalAlpha = 1; }
     if (!pod && b.hp < b.maxHp) this.bar(b.x, b.y - sz * 0.75, 40, b.hp / b.maxHp, '#e3b35a', b.uid);
   }
@@ -516,7 +532,7 @@ export class Renderer {
         if (sc) { const [sw, sh] = this.fitWH(sc, sz * 0.9); this.feet(sc, b.x, footY + 4, sw, sh); }
       } else {
         const breathe = 1 + Math.sin(g.time * 1.6 + b.uid) * 0.006;
-        this.feet(b.hitFlash > 0 ? flashOf(im) : im, b.x, footY, w, h, false, 1, breathe);
+        this.feet(b.hitFlash > 0 ? this.fl(im) : im, b.x, footY, w, h, false, 1, breathe);
         if (b.build && IMG.pad_build) { c.globalAlpha = 0.75; const [sw, sh] = this.fitWH(IMG.pad_build, sz * 0.8); this.feet(IMG.pad_build, b.x + sz * 0.18, footY + 6, sw * 0.6, sh * 0.6); c.globalAlpha = 1; }
         if (b.recoil > 0.5) this.additive(IMG.fx_muzzle, b.x + Math.cos(b.aim) * 34, b.y - 70 + Math.sin(b.aim) * 10, 30 + tier * 8, b.aim, b.recoil);
         if (b.data.id === 'reactor') this.additive(IMG.fx_magic ?? IMG.fx_spark, b.x, footY - h * 0.62, 40 + tier * 14, g.time, 0.3 + 0.2 * Math.sin(g.time * 3));
@@ -623,7 +639,7 @@ export class Renderer {
     const hover = td?.id === 'super_monkey' ? Math.sin(time * 2.4) * 3 - 6 : 0;
     const breathe = 1 + Math.sin(time * 2.1) * 0.012;
     const [w, h] = this.fitWH(im, hd ? sz * 0.92 : sz);
-    const img = flash ? flashOf(im) : im;
+    const img = flash ? this.fl(im) : im;
     if (hd) { // static base + rotating head with barrel recoil
       this.feet(img, x, footY, w, h);
       const [hw, hh] = this.fitWH(hd, sz * (key.includes('rail') ? 1.05 : 0.9));
@@ -886,7 +902,7 @@ export class Renderer {
       const rot = Math.sin(stride) * 0.04 + (fighting ? Math.sin(time * 14) * 0.06 : 0);
       this.shadowAt(e.x, footY - 2, w * 0.45, Math.max(4, h * 0.14), 0.38);
       this.feet(im, e.x, footY - bob, w, h, flip, sx, sy, rot);
-      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; this.feet(flashOf(im), e.x, footY - bob, w, h, flip, sx, sy, rot); c.globalAlpha = 1; }
+      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; this.feet(this.fl(im), e.x, footY - bob, w, h, flip, sx, sy, rot); c.globalAlpha = 1; }
     } else {
       const moab = d.boss;
       [w, h] = this.fitWH(im, moab ? d.size : d.size * 1.1);
@@ -894,7 +910,7 @@ export class Renderer {
       this.shadowAt(e.x, e.y + h * 0.55 + 10, w * 0.32, w * 0.1, 0.22);
       c.save(); c.translate(e.x, e.y + bob); c.rotate(sway); if (moab && flip) c.scale(-1, 1);
       c.drawImage(im, -w / 2, -h / 2, w, h);
-      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; c.drawImage(flashOf(im), -w / 2, -h / 2, w, h); }
+      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; c.drawImage(this.fl(im), -w / 2, -h / 2, w, h); }
       c.restore();
       footY = e.y;
     }

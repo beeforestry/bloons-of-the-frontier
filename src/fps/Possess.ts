@@ -55,6 +55,7 @@ export class Possess {
   /** t42 test hooks: what the first-person view actually loaded. */
   vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
   private seaN: THREE.Texture | null = null;
+  private ctxLost = false;
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
   private gun = new THREE.Group(); private flash!: THREE.Mesh; private flashT = 0; private kick = 0;
@@ -71,6 +72,9 @@ export class Possess {
     this.pr = Math.min(devicePixelRatio, this.touch ? 1.25 : 1.75); this.renderer.setPixelRatio(this.pr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.domElement.className = 'p3d';
     this.root.appendChild(this.renderer.domElement);
+    // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
+    this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
+    this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; });
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, 420); this.camera.rotation.order = 'YXZ';
     this.buildWorld(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
     // face the nearest enemy (or the HQ's lanes) on entry
@@ -425,6 +429,7 @@ export class Possess {
     groundTime.value += dt; if (this.seaN) { this.seaN.offset.x += dt * 0.0026; this.seaN.offset.y += dt * 0.0017; }
     this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
     if (!this.tick(dt)) return;
+    if (this.ctxLost) { this.raf = requestAnimationFrame(this.loop); return; }
     // two passes: world, then the viewmodel (layer 1) over a cleared depth buffer so walls never clip the gun/hands
     const r = this.renderer, c = this.camera; c.layers.set(0); r.autoClear = true; r.render(this.scene, c);
     const bg = this.scene.background; this.scene.background = null;

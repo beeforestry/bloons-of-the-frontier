@@ -77,6 +77,8 @@ export function tintOf(im: Img, col: string, k = 0.55): HTMLCanvasElement {
 }
 /** White silhouette for hit flashes. */
 const flashCache = new Map<Img, HTMLCanvasElement>();
+/** After a GPU reset the cached offscreen canvases come back blank: rebuild them lazily. */
+export function clearSpriteCaches() { tintCache.clear(); flashCache.clear(); }
 export function flashOf(im: Img): HTMLCanvasElement {
   let c = flashCache.get(im);
   if (!c) {

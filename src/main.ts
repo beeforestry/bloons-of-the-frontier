@@ -360,6 +360,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   let last = performance.now(), lastFrame = last;
   // MP host in a background tab: rAF pauses, so keep the authoritative sim + snapshots ticking.
   if (sync?.isHost) setInterval(() => { const now = performance.now(); if (now - lastFrame > 300) { lastFrame = now; g.update(0.1); sync.update(0.1); } }, 100);
+  let frameErrT = 0;
   function frame(now: number) {
     const raw = (now - last) / 1000, dt = Math.min(0.1, raw); last = now;
     fps.acc += raw; fps.n++; fps.t += raw;
@@ -373,6 +374,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
       if (view.showFps && fpsEl) fpsEl.textContent = `${fps.cur.toFixed(0)} FPS · Q${r.quality} · ${r.drawn.parts} parts · ${g.enemies.length} foes · ${r.drawn.objs} drawn`;
     }
     lastFrame = now;
+    try {
     g.update(dt);
     pauseMenu.update();
     sync?.update(dt);
@@ -392,6 +394,10 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (px || py) r.pan(px, py);
     if (!document.body.classList.contains('possess-on')) r.draw(view); // the 3D view covers the screen while possessed
     mmT -= dt; if (mmT <= 0) { mmT = 0.1; drawMinimap(); }
+    } catch (e) { // t48: one bad frame must never kill the loop or leave a half-cleared canvas
+      if (now - frameErrT > 1000) { frameErrT = now; console.error('[frame]', e); }
+      try { const cx = r.ctx as CanvasRenderingContext2D & { reset?: () => void }; if (cx.reset) cx.reset(); else for (let i = 0; i < 32; i++) cx.restore(); r.ctx.setTransform(1, 0, 0, 1, 0, 0); r.ctx.globalAlpha = 1; r.ctx.globalCompositeOperation = 'source-over'; } catch { /* */ }
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

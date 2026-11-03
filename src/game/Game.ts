@@ -122,6 +122,8 @@ export class Game {
   shakeAmt = 0;
   /** Screen-shake setting multiplier (Settings: Full 1 / Reduced 0.4 / Off 0). */
   shakeScale = 1;
+  /** Settings: Reduce flashing (t48). */
+  reduceFlash = false;
   /** Real (unscaled) seconds the camera has been shaking without a break, plus a cooldown
    *  that ignores new shakes after a long run, so sustained retriggers can never lock it on. */
   private shakeRun = 0;
