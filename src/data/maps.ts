@@ -17,6 +17,8 @@ export interface MapDef {
   envs?: [string, number, number][];
   /** Theme tag ('morro' = coastal fortress). */
   flavor?: string;
+  /** t50: painted decoration spots [spriteKey, x, y, sizePx] (3D plants/rocks in first person). */
+  deco?: [string, number, number, number][];
   /** 3D heightfield + prop billboards for Possess (Tropical Island). */
   terrain?: TerrainDef;
   grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[] };

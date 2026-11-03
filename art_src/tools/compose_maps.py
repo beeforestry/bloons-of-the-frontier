@@ -83,6 +83,7 @@ import tropical
 # t40 user assets (file names are swapped: asset_palm_tree.jpg is a rock pile, asset_rock_cluster.jpg a flowering bush)
 DECO['trock'] = tropical.cutout('asset_palm_tree.jpg'); DECO['tbush'] = tropical.cutout('asset_rock_cluster.jpg')
 SIZE.update(trock=130, tbush=110)
+SIZE.update(tropical.war_sprites(DECO))  # t50 warzone (burnt palms, wrecks, bunkers, wire, sandbags)
 
 def poly_mask(polys, seed, blur=14, rough=0.55):
     m = Image.new('L', (W, H), 0); d = ImageDraw.Draw(m)
@@ -164,7 +165,7 @@ def compose(M):
     if M.get('terrain'):  # 3D ground for Possess: the painted map without the stamped props (they become billboards)
         os.makedirs(tropical.OUT, exist_ok=True)
         g.resize((W // 2, H // 2), Image.LANCZOS).save(f'{tropical.OUT}/ground.jpg', quality=82, optimize=True)
-        for k in set(M['deco']) | {f[0] for f in M.get('fixed', [])}:
+        for k in {'prflag'}:  # t50: only the flag stays a billboard; plants/wrecks are 3D models
             s_ = DECO[k].copy(); s_.thumbnail((256, 256), Image.LANCZOS); s_.save(f'{tropical.OUT}/{k}.png', optimize=True)
     # ---- decorations
     blocked = []  # (x, y, r)
@@ -182,6 +183,11 @@ def compose(M):
     for (key, x, y, sc) in M.get('fixed', []):
         g, r = stamp(g, key, x, y, sc); blocked.append((x, y, r))
     items = []
+    for key, n in M.get('must', []):  # t50: guaranteed counts (wrecks, bunkers...), same clearance rules
+        got = t2 = 0
+        while got < n and t2 < 4000:
+            t2 += 1; sc = rnd.uniform(0.9, 1.1); r = SIZE[key] * sc * 0.36; x, y = rnd.uniform(0, W), rnd.uniform(0, H)
+            if clear(x, y, r): items.append((key, x, y, sc)); blocked.append((x, y, r)); got += 1
     tries = 0
     while len(items) < M['decoCount'] and tries < 6000:
         tries += 1
@@ -235,7 +241,7 @@ def compose(M):
     return dict(id=M['id'], name=M['name'], image=f'assets/maps/{M["id"]}.jpg', width=W, height=H, pathWidth=pw,
                 waypoints=lanes[0], lanes=lanes, hq=hq, pads=pads, rally=M['rally'],
                 grid=dict(cell=CELL, originX=0, originY=0, cols=COLS, rows=ROWS, buildable=rows),
-                **({'envs': M['envs']} if M.get('envs') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}),
+                **({'envs': M['envs']} if M.get('envs') else {}), **({'deco': props} if not M.get('terrain') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}),
                 **({'terrain': dict(M['terrain'](M, W, H, lanes, pw), ground='assets/maps/tropical/ground.jpg', props=props)} if M.get('terrain') else {}))
 
 HQ_G = [1980, 744]
@@ -291,12 +297,14 @@ MAPS = [
          ]),
     # Tropical Island (t40u): user's terrain/heightmap/grass assets; one long winding lane from the
     # west landing dock (balloon) to the HQ by the east dock (flag).
-    dict(id='tropical', name='Tropical Island', seed=71, ground='grass', road='dirt', pathWidth=58, decoCount=34, noPlaza=True,
+    # t50: warzone repaint (scorched ground, craters, oil, burnt palms, wrecks, bunkers, wire); same lane/HQ/pads.
+    dict(id='tropical', name='Tropical Island', seed=71, ground='grass', road='dryground', pathWidth=58, decoCount=40, noPlaza=True,
          painter=tropical.paint, post=tropical.post, terrain=tropical.heightfield, dockIn=250,
-         deco=['palm', 'palm2', 'palm2', 'trock', 'tbush', 'tbush'],
+         deco=['bpalm', 'bpalm', 'bpalm2', 'deadtree2', 'trock', 'rubble', 'rubble', 'wire', 'sandbags'],
+         must=[('wtank', 2), ('wtank2', 1), ('wheli', 1), ('bunker', 2), ('sandbags', 2), ('wire', 3)],
          hq=[1830, 770], pads=[[1640, 560], [1820, 560], [1660, 990], [1830, 990], [1960, 640], [1960, 900]], rally=[1600, 770],
-         fixed=[['prflag', 2120, 700, 0.8], ['palm2', 330, 640, 1.0], ['palm', 300, 1010, 1.0], ['trock', 1150, 330, 1.0], ['trock', 760, 1200, 1.0],
-                ['tbush', 1000, 820, 1.0], ['palm2', 1500, 1180, 1.0]],
+         fixed=[['prflag', 2120, 700, 0.8], ['bpalm2', 330, 640, 1.0], ['bpalm', 300, 1010, 1.0], ['trock', 1150, 330, 1.0], ['trock', 760, 1200, 1.0],
+                ['rubble', 1000, 820, 1.0], ['wheli', 1500, 1180, 0.9]],
          lanes=[[[-80, 820], [250, 820], [400, 790], [470, 560], [650, 420], [850, 470], [980, 640], [900, 900], [1050, 1120], [1300, 1100],
                  [1340, 880], [1250, 620], [1400, 420], [1650, 470], [1720, 620], [1700, 770]]]),
 ]

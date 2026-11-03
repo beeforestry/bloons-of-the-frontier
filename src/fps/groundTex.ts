@@ -6,17 +6,21 @@ import * as THREE from 'three';
 import { assetUrl } from '../assetUrl';
 
 const NAMES = ['grass', 'sand', 'dirt', 'cobble', 'rock'] as const;
+// t50 warzone set (Poly Haven CC0): burned_ground_01, dry_ground_01 (cracked), brown_mud — swapped into the same slots
+const WAR: Record<string, string> = { grass: 'burned', sand: 'dryground', dirt: 'burned', cobble: 'mud', rock: 'rock' };
 // linear-space means of each texture (precomputed) -> detail = texel / mean keeps the painted colour on average
 const MEAN: Record<string, [number, number, number]> = {
   grass: [0.3187, 0.236, 0.1057], sand: [0.2268, 0.1742, 0.1096], dirt: [0.1255, 0.0859, 0.049], cobble: [0.3016, 0.276, 0.2305], rock: [0.1719, 0.1232, 0.0515],
+  burned: [0.1567, 0.1166, 0.0834], mud: [0.1152, 0.0963, 0.074], dryground: [0.2392, 0.2004, 0.1477],
 };
 let cache: Record<string, THREE.Texture> | null = null;
 export const groundTime = { value: 0 };
 
-function load(): Record<string, THREE.Texture> {
-  if (cache) return cache;
-  const L = new THREE.TextureLoader(), out: Record<string, THREE.Texture> = {};
-  for (const n of [...NAMES, 'water_n']) {
+function load(war = false): Record<string, THREE.Texture> {
+  if (cache && (!war || cache.burned)) return cache;
+  const L = new THREE.TextureLoader(), out: Record<string, THREE.Texture> = cache ?? {};
+  for (const n of [...NAMES, 'water_n', ...(war ? ['burned', 'mud', 'dryground'] : [])]) {
+    if (out[n]) continue;
     const t = L.load(assetUrl(`assets/tex/${n}.webp`));
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
     if (n !== 'water_n') t.colorSpace = THREE.SRGBColorSpace;
@@ -28,11 +32,11 @@ function load(): Record<string, THREE.Texture> {
 export function waterNormal(): THREE.Texture { return load().water_n; }
 
 /** Patch a Lambert ground material with splat-classified detail. opts.stone boosts grey→cobble (El Morro); opts.slope adds rock on steep terrain. */
-export function detailGround(mat: THREE.MeshLambertMaterial, opts: { stone?: number; slope?: boolean } = {}) {
-  const tx = load();
+export function detailGround(mat: THREE.MeshLambertMaterial, opts: { stone?: number; slope?: boolean; war?: boolean } = {}) {
+  const tx = load(!!opts.war);
   mat.userData.detail = true;
   mat.onBeforeCompile = (sh) => {
-    for (const n of NAMES) { sh.uniforms['t_' + n] = { value: tx[n] }; sh.uniforms['m_' + n] = { value: new THREE.Vector3(...MEAN[n]) }; }
+    for (const n of NAMES) { const src = opts.war ? WAR[n] : n; sh.uniforms['t_' + n] = { value: tx[src] }; sh.uniforms['m_' + n] = { value: new THREE.Vector3(...MEAN[src]) }; }
     sh.uniforms.t_wn = { value: tx.water_n }; sh.uniforms.uTime = groundTime; sh.uniforms.uStone = { value: opts.stone ?? 0.6 };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGW; varying float vGNy;')
@@ -61,7 +65,7 @@ vec3 gdet(sampler2D t, vec3 m, vec2 uv) { vec3 c = texture2D(t, uv).rgb; vec3 r 
   diffuseColor.rgb *= mix(vec3(1.0), det, 0.9);
 }`);
   };
-  mat.customProgramCacheKey = () => 'gdet' + (opts.slope ? 's' : '') + (opts.stone ?? 0.6);
+  mat.customProgramCacheKey = () => 'gdet' + (opts.slope ? 's' : '') + (opts.war ? 'w' : '') + (opts.stone ?? 0.6);
   mat.needsUpdate = true;
   return mat;
 }

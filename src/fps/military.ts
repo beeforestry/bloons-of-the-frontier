@@ -230,3 +230,21 @@ export function gunFor(id: string, vehicle?: boolean): GunKind {
   if (vehicle) return 'rifle';
   return ({ odst: 'rifle', marine: 'rifle', spartan: 'rocket', line_watch: 'shotgun', paladin: 'pistol', ranger: 'sniper', monkey_soldier: 'smg' } as Record<string, GunKind>)[id] ?? 'rifle';
 }
+
+// ---------------------------------------------------------------- t50 burnt wrecks (Tropical warzone)
+/** Burnt-out tank / downed helicopter: same CC0 models, charred + rusted, tilted, rotor gone. */
+export async function wreck(k: 'tank' | 'tank2' | 'heli', seed = 0): Promise<THREE.Group> {
+  const name = k === 'heli' ? 'heli' : k === 'tank2' ? 'tank_2' : 'tank_1';
+  const g = normalise(await raw(name), k === 'heli' ? SIZE.heli[1] : SIZE.tank[1], FRONT[name]);
+  if (k === 'heli') stripTop(g, 0.9);
+  const pal = [0x2b2723, 0x35302a, 0x221f1c, 0x4a3324, 0x5a3b26];
+  let i = seed; recolor(g, () => pal[(i++ * 7 + seed) % pal.length], true);
+  const inner = g.children[0];
+  if (k === 'heli') { inner.rotation.z = 0.42; inner.rotation.x = 0.12; inner.position.y = -0.35; }
+  else {
+    inner.rotation.z = 0.05 + (seed % 3) * 0.03; inner.position.y = -0.18;
+    // blown turret: lift + skew the turret parts
+    inner.traverse((o) => { if (/Turret|Gun/i.test(o.name) && (o as THREE.Mesh).isMesh) { o.rotation.y += 0.6 + seed * 0.2; o.rotation.z += 0.12; } });
+  }
+  g.userData.kind = 'wreck'; return g;
+}

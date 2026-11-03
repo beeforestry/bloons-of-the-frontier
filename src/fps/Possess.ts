@@ -20,6 +20,8 @@ import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, prop, gun, hand, gunFor } from './military';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
+import { floraField, decoTo3D, type FloraItem, type FloraKind } from './flora';
+import { buildWarzone, type WarFx } from './warzone';
 
 /** Metres per map pixel (garden ~110 x 74 m). */
 export const S = 0.05;
@@ -53,8 +55,9 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
+  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
   private seaN: THREE.Texture | null = null;
+  private war: WarFx | null = null;
   private ctxLost = false;
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
@@ -92,15 +95,16 @@ export class Possess {
   private buildWorld() {
     const { scene, g } = this, W = g.map.width * S, D = g.map.height * S;
     // warm late-afternoon light (t42, after the user's FPS reference): soft sky fill + low golden sun, shadows on desktop
-    const hemi = new THREE.HemisphereLight(0xfff0d8, 0x56603a, 1.25); hemi.layers.enableAll(); scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd9a8, 2.4); sun.position.copy(this.sunDir).multiplyScalar(80); scene.add(sun, sun.target); this.sun = sun; sun.layers.enableAll();
+    const war = !!g.map.terrain; // t50: Tropical = warzone (smoky, dimmer, orange sun through haze)
+    const hemi = war ? new THREE.HemisphereLight(0xd8cfc0, 0x3a342c, 1.05) : new THREE.HemisphereLight(0xfff0d8, 0x56603a, 1.25); hemi.layers.enableAll(); scene.add(hemi);
+    const sun = new THREE.DirectionalLight(war ? 0xffb878 : 0xffd9a8, war ? 2.0 : 2.4); sun.position.copy(this.sunDir).multiplyScalar(80); scene.add(sun, sun.target); this.sun = sun; sun.layers.enableAll();
     if (!this.touch) {
       this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
       Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 220 });
     }
-    const T = g.map.terrain;
-    if (T) { this.buildTerrain(W, D); } else {
+    const T = g.map.terrain, flora: FloraItem[] = [];
+    if (T) { this.buildTerrain(W, D, flora); } else {
     // floor: the map image itself (lanes, paths and decor are painted into it)
     const tex = new THREE.TextureLoader().load(assetUrl(g.map.image)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2).translate(W / 2, 0, D / 2), detailGround(new THREE.MeshLambertMaterial({ map: tex }), { stone: g.map.id === 'morro' || g.map.id === 'fortress' ? 1 : 0.5 }));
@@ -111,13 +115,14 @@ export class Possess {
     const stoneWall = g.map.id === 'morro' || g.map.id === 'fortress'; // t46: masonry walls, tiled at ~2.4 m per cobble tile
     const wallFor = (len: number) => { if (!stoneWall) return wallM; const c = groundTex('cobble').clone(); c.repeat.set(len / 2.4, 0.46); c.needsUpdate = true; return new THREE.MeshLambertMaterial({ map: c, color: 0xd8cbb4 }); };
     for (const [x, z, w, d] of [[W / 2, -0.4, W + 1.6, 0.8], [W / 2, D + 0.4, W + 1.6, 0.8], [-0.4, D / 2, 0.8, D], [W + 0.4, D / 2, 0.8, D]]) scene.add(at(new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), wallFor(Math.max(w, d))), x, 0.55, z));
+    // t50: a ring of real 3D trees outside the walls (Kenney Nature Kit), mixed per map theme
     let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const spots: THREE.Vector3[] = [];
-    for (let i = 0; i < 90; i++) { const a = (i / 90) * Math.PI * 2, rr = 1.04 + rnd() * 0.3; spots.push(new THREE.Vector3(W / 2 + Math.cos(a) * W * 0.6 * rr, 0, D / 2 + Math.sin(a) * D * 0.66 * rr)); }
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.35, 2.4, 6).translate(0, 1.2, 0), lam(0x6b4a2a), spots.length);
-    const crown = new THREE.InstancedMesh(new THREE.ConeGeometry(1.9, 4.6, 7).translate(0, 4.2, 0), lam(0x2f7a35), spots.length);
-    spots.forEach((s, i) => { this.dummy.position.copy(s); this.dummy.rotation.set(0, rnd() * 6, 0); this.dummy.scale.setScalar(0.9 + rnd() * 0.8); this.dummy.updateMatrix(); trunk.setMatrixAt(i, this.dummy.matrix); crown.setMatrixAt(i, this.dummy.matrix); crown.setColorAt(i, this.tmpC.setHSL(0.28 + rnd() * 0.08, 0.45, 0.25 + rnd() * 0.12)); });
-    scene.add(trunk, crown);
+    const RING: Record<string, FloraKind[]> = { garden: ['oak', 'tree', 'pine', 'oak', 'tree_detailed'], jungle: ['palm', 'palm_bend', 'tree_detailed', 'palm_tall'], fortress: ['pine', 'pine_round', 'pine', 'tree'], morro: ['palm', 'palm_bend', 'palm_tall'] };
+    const kinds = RING[g.map.id] ?? RING.garden;
+    for (let i = 0; i < 110; i++) {
+      const a = (i / 110) * Math.PI * 2, rr = 1.04 + rnd() * 0.32, k = kinds[Math.floor(rnd() * kinds.length)];
+      flora.push({ k, x: W / 2 + Math.cos(a) * W * 0.6 * rr, y: 0, z: D / 2 + Math.sin(a) * D * 0.66 * rr, h: (k.startsWith('pine') ? 12 : k.startsWith('palm') ? 10 : 9) * (0.8 + rnd() * 0.5), rot: rnd() * 6.28, burnt: g.map.id === 'fortress' && rnd() < 0.3 });
+    }
     }
     this.buildSky(W, D);
     const fl = scene.getObjectByName('floor'); if (fl) fl.receiveShadow = true;
@@ -128,11 +133,11 @@ export class Possess {
       o.position.set(pr.x * S, gy(pr.x, pr.y), pr.y * S); o.rotation.y = (pr.kind === 'tent' ? 0.5 : 0.25) + (pr.flip ? Math.PI : 0);
       o.userData.mil = pr.kind; o.traverse((m) => { m.castShadow = true; m.receiveShadow = true; }); scene.add(o); this.vm.props++;
     }).catch((e) => console.warn('prop load', e));
-    // obstacles (rocks / logs) and garrisonable structures as extruded blocks
-    for (const o of g.obstacles) if (o.alive) {
-      const m = o.kind === 'rock' ? new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0).scale(1.2, 0.8, 1.1), lam(0x7d7f86)) : new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 3.2, 8).rotateZ(Math.PI / 2), lam(0x7a5230));
-      m.position.set(o.x * S, gy(o.x, o.y) + (o.kind === 'rock' ? 0.7 : 0.4), o.y * S); m.rotation.y = -o.ang; m.userData.obs = o; scene.add(m);
-    }
+    // t50: the painted 2D plants/rocks become real 3D models on the same spots (+ obstacle rocks/logs)
+    let fs = 11; const fr = () => ((fs = (fs * 16807) % 2147483647) / 2147483647);
+    for (const [k, x, y, size] of g.map.deco ?? []) { const m = decoTo3D(k, size); if (m) flora.push({ k: m.k, h: m.h * (0.9 + fr() * 0.2), burnt: m.burnt, x: x * S, y: gy(x, y) - 0.05, z: y * S, rot: fr() * 6.28 }); }
+    for (const o of g.obstacles) if (o.alive) flora.push(o.kind === 'rock' ? { k: 'rock_big', h: 1.5, x: o.x * S, y: gy(o.x, o.y) - 0.1, z: o.y * S, rot: -o.ang } : { k: 'log', h: 0.55, x: o.x * S, y: gy(o.x, o.y), z: o.y * S, rot: -o.ang + Math.PI / 2 });
+    void floraField(flora, !this.touch).then((f) => { if (!this.alive) return; scene.add(f); this.vm.flora = flora.length; }).catch((e) => console.warn('flora', e));
     for (const e of g.envs) { const b = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 2.6), lam(0x9a8a6a)); at(b, e.x * S, gy(e.x, e.y) + 0.9, e.y * S); scene.add(b); }
     // buildings (HQ keep + pads)
     const stone = lam(0x8b8f99), roof = lam(0x3a6fd0);
@@ -153,8 +158,9 @@ export class Possess {
 
   /** Gradient sky dome + sun glow + horizon fog + a ring of distant hazy hills (cheap: ~3 draw calls). */
   private buildSky(W: number, D: number) {
-    const { scene } = this, HOR = new THREE.Color(0xdde4df), ZEN = new THREE.Color(0x5f97cf), WARM = new THREE.Color(0xffe2b8), LOW = new THREE.Color(0xa9b5a6);
-    scene.background = HOR.clone(); scene.fog = new THREE.Fog(HOR.getHex(), 40, 185);
+    const war = !!this.g.map.terrain;
+    const { scene } = this, HOR = new THREE.Color(war ? 0x9b9387 : 0xdde4df), ZEN = new THREE.Color(war ? 0x5e646c : 0x5f97cf), WARM = new THREE.Color(war ? 0xe0a060 : 0xffe2b8), LOW = new THREE.Color(war ? 0x6a645a : 0xa9b5a6);
+    scene.background = HOR.clone(); scene.fog = new THREE.Fog(HOR.getHex(), war ? 28 : 40, war ? 150 : 185);
     const sky = new THREE.Group(); sky.name = 'sky';
     const geo = new THREE.SphereGeometry(360, 32, 16), pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), n = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) {
@@ -177,7 +183,7 @@ export class Possess {
     const R0 = Math.max(W, D) * 0.5 + 85;
     for (let ring = 0; ring < 2; ring++) {
       const N = 72, R = R0 + ring * 70, vs: number[] = [], cs: number[] = [], idx: number[] = [];
-      const top = new THREE.Color(ring ? 0xa7b8b6 : 0x7d9580).lerp(HOR, ring ? 0.35 : 0.15), bot = top.clone().lerp(HOR, 0.55);
+      const top = new THREE.Color(war ? (ring ? 0x7c776e : 0x4e4a43) : ring ? 0xa7b8b6 : 0x7d9580).lerp(HOR, ring ? 0.35 : 0.15), bot = top.clone().lerp(HOR, 0.55);
       for (let i = 0; i <= N; i++) {
         const a = (i / N) * Math.PI * 2, h = (12 + 9 * Math.sin(a * 3 + ring * 2) + 6 * Math.sin(a * 7 + 1.3) + 3.5 * Math.sin(a * 17)) * (ring ? 1.7 : 1) + 4;
         const px = W / 2 + Math.cos(a) * R, pz = D / 2 + Math.sin(a) * R * 0.92;
@@ -190,7 +196,7 @@ export class Possess {
     scene.add(hills);
   }
   /** Tropical Island: heightfield mesh (shared groundH), sea plane, prop billboards at the 2D decor spots. */
-  private buildTerrain(W: number, D: number) {
+  private buildTerrain(W: number, D: number, flora: FloraItem[]) {
     const { scene, g } = this, T = g.map.terrain!, h = heights(T);
     scene.background = new THREE.Color(0x8fd0f2); scene.fog = new THREE.Fog(0x8fd0f2, 70, 200);
     const geo = new THREE.PlaneGeometry(W, D, T.cols - 1, T.rows - 1).rotateX(-Math.PI / 2).translate(W / 2, 0, D / 2);
@@ -198,17 +204,21 @@ export class Possess {
     for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
     geo.computeVertexNormals();
     const tex = new THREE.TextureLoader().load(assetUrl(T.ground)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-    const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: 0.4 })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), (() => { const n = waterNormal().clone(); n.repeat.set(900 / 7, 900 / 7); n.needsUpdate = true; this.seaN = n; return new THREE.MeshPhongMaterial({ color: 0x2f9fc0, transparent: true, opacity: 0.76, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6), shininess: 90, specular: 0x9fd8ff }); })());
+    const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: 0.4, war: true })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), (() => { const n = waterNormal().clone(); n.repeat.set(900 / 7, 900 / 7); n.needsUpdate = true; this.seaN = n; return new THREE.MeshPhongMaterial({ color: 0x35514f, transparent: true, opacity: 0.86, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6), shininess: 70, specular: 0x6f7f80 }); })());
     sea.position.set(W / 2, T.water, D / 2); sea.name = 'sea'; scene.add(sea);
-    const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), lam(0x1d5f8a)); sea2.position.set(W / 2, -1.7, D / 2); scene.add(sea2);
-    const mats = new Map<string, THREE.SpriteMaterial>(), loader = new THREE.TextureLoader();
+    const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), lam(0x1c2c2e)); sea2.position.set(W / 2, -1.7, D / 2); scene.add(sea2);
+    // t50 warzone: plants/rocks -> 3D flora (burnt palms, dead trees), wrecks/bunkers/wire/sandbags -> models; flag stays a billboard
+    const gy = (x: number, y: number) => groundH(g.map, x, y);
     for (const [k, x, y, size] of T.props) {
-      let m = mats.get(k);
-      if (!m) { const t = loader.load(assetUrl(`assets/maps/tropical/${k}.png`)); t.colorSpace = THREE.SRGBColorSpace; m = new THREE.SpriteMaterial({ map: t, alphaTest: 0.4 }); mats.set(k, m); }
-      const sp = new THREE.Sprite(m), s = size * S * (k.startsWith('palm') ? 1.15 : k === 'prflag' ? 0.9 : 0.6); sp.center.set(0.5, 0.04); sp.scale.set(s, s, 1);
-      sp.position.set(x * S, groundH(g.map, x, y) - 0.1, y * S); sp.userData.prop = k; scene.add(sp);
+      const m = decoTo3D(k, size);
+      if (m) { flora.push({ k: m.k, h: m.h, burnt: m.burnt, x: x * S, y: gy(x, y) - 0.08, z: y * S, rot: ((x * 7 + y * 3) % 628) / 100, tilt: m.burnt ? (((x + y) % 9) - 4) * 0.02 : 0 }); continue; }
+      if (k !== 'prflag') continue;
+      const t = new THREE.TextureLoader().load(assetUrl(`assets/maps/tropical/${k}.png`)); t.colorSpace = THREE.SRGBColorSpace;
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, alphaTest: 0.4 })), s2 = size * S * 0.9; sp.center.set(0.5, 0.04); sp.scale.set(s2, s2, 1);
+      sp.position.set(x * S, gy(x, y) - 0.1, y * S); sp.userData.prop = k; scene.add(sp);
     }
+    this.war = buildWarzone(scene, T.props, gy, S, this.touch, groundTex('cobble'));
   }
 
   private buildGun() {
@@ -426,7 +436,7 @@ export class Possess {
   private loop = (now: number) => {
     if (!this.alive) return;
     const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
-    groundTime.value += dt; if (this.seaN) { this.seaN.offset.x += dt * 0.0026; this.seaN.offset.y += dt * 0.0017; }
+    groundTime.value += dt; this.war?.update(dt, this.camera); if (this.seaN) { this.seaN.offset.x += dt * 0.0026; this.seaN.offset.y += dt * 0.0017; }
     this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
     if (!this.tick(dt)) return;
     if (this.ctxLost) { this.raf = requestAnimationFrame(this.loop); return; }

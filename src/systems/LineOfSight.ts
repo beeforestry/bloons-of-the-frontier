@@ -11,7 +11,9 @@ export const LOS = { bins: 240, step: 16, maxDist: 2700, eye: 2.6, target: 1.3, 
 const NS = Math.ceil(LOS.maxDist / LOS.step);
 /** Obstacle heights in metres (2D radius in px). */
 export const PROP_H: Record<PropKind, number> = { sandbags: 1.1, supply: 1.7, tent: 3.2, barrier: 1.2, fuel: 2.4 };
-const MAP_PROP: Record<string, [number, number]> = { palm: [9, 0.12], palm2: [8, 0.12], trock: [2.8, 0.32], tbush: [1.6, 0.3] }; // [h, radius as fraction of sprite size]
+const MAP_PROP: Record<string, [number, number]> = { palm: [9, 0.12], palm2: [8, 0.12], trock: [2.8, 0.32], tbush: [1.6, 0.3],
+  // t50 warzone props
+  bpalm: [8, 0.1], bpalm2: [7, 0.1], deadtree2: [7, 0.12], rubble: [1.2, 0.3], wtank: [2.6, 0.34], wtank2: [2.6, 0.34], wheli: [3, 0.3], bunker: [3, 0.4], sandbags: [1.1, 0.3] }; // [h, radius as fraction of sprite size]
 const TOWER_H: Record<string, number> = { unsc_tank: 3.4, unsc_heli: 3.0, tesla_coil: 4.4, arcane_obelisk: 4.2, unsc_depot: 3.6, unsc_firebase: 3.2, stone_wall: 3.0, star_emperor: 3.2, frost_wallnut_bastion: 2.8 };
 export interface Blocker { x: number; y: number; r: number; h: number }
 interface LosTower { x: number; y: number; data: { id: string; footprint?: number }; alive: boolean; los?: LosCache }
