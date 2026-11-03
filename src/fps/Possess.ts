@@ -21,8 +21,14 @@ import { tank, heli, prop, gun, hand, gunFor } from './military';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
 import { floraField, decoTo3D, type FloraItem, type FloraKind } from './flora';
-import { buildWarzone, type WarFx } from './warzone';
+import { buildWarzone, envStructure, type WarFx } from './warzone';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
+const SH_R = 22; // t51: half-size (m) of the sun's shadow box
 /** Metres per map pixel (garden ~110 x 74 m). */
 export const S = 0.05;
 const BLOON_COL: Record<string, number> = { red: 0xe8352f, blue: 0x2f7ce8, green: 0x3bc24a, yellow: 0xf2d02c, pink: 0xff6fb5, lead: 0x7b8088, ceramic: 0xb5703a };
@@ -55,7 +61,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
+  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
   private seaN: THREE.Texture | null = null;
   private war: WarFx | null = null;
   private ctxLost = false;
@@ -74,12 +80,18 @@ export class Possess {
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.touch, powerPreference: 'high-performance', preserveDrawingBuffer: true });
     this.pr = Math.min(devicePixelRatio, this.touch ? 1.25 : 1.75); this.renderer.setPixelRatio(this.pr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.domElement.className = 'p3d';
+    // t51 lighting: filmic ACES tone mapping everywhere; quality tiers — high (desktop): HDRI env + 2k sun shadows
+    // + light bloom; medium (touch): HDRI env, no shadows/bloom; low (?fpq=low or slow frames): no env/bloom/shadows.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.15;
+    const fq = new URLSearchParams(location.search).get('fpq');
+    this.vm.quality = fq === 'low' || fq === 'medium' || fq === 'high' ? fq : this.touch ? 'medium' : 'high';
+    this.pinQ = !!fq; // an explicit ?fpq= disables the automatic downgrade
     this.root.appendChild(this.renderer.domElement);
     // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
-    this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; });
+    this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; if (this.composer) this.composer.setSize(innerWidth, innerHeight); });
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, 420); this.camera.rotation.order = 'YXZ';
-    this.buildWorld(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
+    this.buildWorld(); this.buildPost(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
     // face the nearest enemy (or the HQ's lanes) on entry
     const near = this.g.enemies.filter((e) => e.alive).sort((a, b) => (a.x - obj.x) ** 2 + (a.y - obj.y) ** 2 - ((b.x - obj.x) ** 2 + (b.y - obj.y) ** 2))[0];
     const look = near ?? { x: this.g.map.width / 2, y: this.g.map.height / 2 };
@@ -98,10 +110,18 @@ export class Possess {
     const war = !!g.map.terrain; // t50: Tropical = warzone (smoky, dimmer, orange sun through haze)
     const hemi = war ? new THREE.HemisphereLight(0xd8cfc0, 0x3a342c, 1.05) : new THREE.HemisphereLight(0xfff0d8, 0x56603a, 1.25); hemi.layers.enableAll(); scene.add(hemi);
     const sun = new THREE.DirectionalLight(war ? 0xffb878 : 0xffd9a8, war ? 2.0 : 2.4); sun.position.copy(this.sunDir).multiplyScalar(80); scene.add(sun, sun.target); this.sun = sun; sun.layers.enableAll();
-    if (!this.touch) {
+    if (!this.touch && this.vm.quality !== 'low') {
+      // t51: 2k map over a tighter box that follows the possessed view (see placeSun) -> ~2.7 cm texels near you
       this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
-      Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 220 });
+      sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.025; sun.shadow.radius = 2;
+      Object.assign(sun.shadow.camera, { left: -SH_R, right: SH_R, top: SH_R, bottom: -SH_R, near: 1, far: 200 });
+    }
+    if (this.vm.quality !== 'low') {
+      new RGBELoader().load(assetUrl('assets/tex/sky_env.hdr'), (hdr) => {
+        if (!this.alive) { hdr.dispose(); return; }
+        const pm = new THREE.PMREMGenerator(this.renderer), rt = pm.fromEquirectangular(hdr); hdr.dispose(); pm.dispose();
+        scene.environment = rt.texture; scene.environmentIntensity = war ? 0.45 : 0.6; this.envRT = rt;
+      }, undefined, (e) => console.warn('hdri', e));
     }
     const T = g.map.terrain, flora: FloraItem[] = [];
     if (T) { this.buildTerrain(W, D, flora); } else {
@@ -135,10 +155,20 @@ export class Possess {
     }).catch((e) => console.warn('prop load', e));
     // t50: the painted 2D plants/rocks become real 3D models on the same spots (+ obstacle rocks/logs)
     let fs = 11; const fr = () => ((fs = (fs * 16807) % 2147483647) / 2147483647);
-    for (const [k, x, y, size] of g.map.deco ?? []) { const m = decoTo3D(k, size); if (m) flora.push({ k: m.k, h: m.h * (0.9 + fr() * 0.2), burnt: m.burnt, x: x * S, y: gy(x, y) - 0.05, z: y * S, rot: fr() * 6.28 }); }
+    for (const [k, x, y, size] of g.map.deco ?? []) {
+      const m = decoTo3D(k, size); if (!m) continue;
+      flora.push({ k: m.k, h: m.h * (0.9 + fr() * 0.2), burnt: m.burnt, x: x * S, y: gy(x, y) - 0.05, z: y * S, rot: fr() * 6.28 });
+      // t51: textured grass clumps around living plants (not in the warzone)
+      if (!T && !m.burnt && /^(oak|tree|pine|palm|bush|fern)/.test(m.k)) for (let i = 0; i < 2; i++) { const a = fr() * 6.28, r = 0.6 + fr() * 1.6; flora.push({ k: 'grass', h: 0.35 + fr() * 0.3, x: x * S + Math.cos(a) * r, y: gy(x, y) - 0.02, z: y * S + Math.sin(a) * r, rot: fr() * 6.28 }); }
+    }
     for (const o of g.obstacles) if (o.alive) flora.push(o.kind === 'rock' ? { k: 'rock_big', h: 1.5, x: o.x * S, y: gy(o.x, o.y) - 0.1, z: o.y * S, rot: -o.ang } : { k: 'log', h: 0.55, x: o.x * S, y: gy(o.x, o.y), z: o.y * S, rot: -o.ang + Math.PI / 2 });
-    void floraField(flora, !this.touch).then((f) => { if (!this.alive) return; scene.add(f); this.vm.flora = flora.length; }).catch((e) => console.warn('flora', e));
-    for (const e of g.envs) { const b = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 2.6), lam(0x9a8a6a)); at(b, e.x * S, gy(e.x, e.y) + 0.9, e.y * S); scene.add(b); }
+    void floraField(flora, !this.touch && this.vm.quality !== 'low', { high: 2, medium: 1, low: 0 }[this.vm.quality]).then((f) => {
+      if (!this.alive) return; scene.add(f); this.vm.flora = flora.length; this.floraGrp = f;
+      (f.userData.updateLod as (c: THREE.Camera, force?: boolean) => void)(this.camera, true);
+      this.vm.tex.flora = f.userData.texKinds as number; this.vm.tex.lod = f.children.filter((m) => m.userData.lod === 1).length;
+    }).catch((e) => console.warn('flora', e));
+    // t51: garrisonable bunkers/watchtowers/ruins/garitas as real shapes (was a stray placeholder box)
+    for (const e of g.envs) { const b = envStructure(e.kind, groundTex('cobble')); at(b, e.x * S, gy(e.x, e.y) - 0.05, e.y * S); b.rotation.y = ((e.x * 13 + e.y * 7) % 628) / 100; scene.add(b); }
     // buildings (HQ keep + pads)
     const stone = lam(0x8b8f99), roof = lam(0x3a6fd0);
     for (const b of g.buildings) if (b.alive) {
@@ -257,7 +287,7 @@ export class Possess {
       g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 3.6, 12).rotateX(Math.PI / 2), dark), 0, -0.78, -2.9)); // main gun
       g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.5, 12).rotateX(Math.PI / 2), dark), 0, -0.78, -3.3)); // fume extractor
       g.add(at(new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.06, 6, 16).rotateX(Math.PI / 2), dark), 0, -0.9, 0.05)); // hatch ring
-      if (o.tier >= 1) { const mg = await gun('rifle'); mg.scale.setScalar(1.3); at(mg, 0.7, -0.88, -0.4); g.add(mg); }
+      // t51: no rifle viewmodel in the tank cockpit (the T1 roof MG is on the 3D tank model itself)
       this.vm.vehicles++; return swap(g, new THREE.Vector3(0, -0.78, -4.8), new THREE.Vector3(0, 0, 0), 'tank_cannon', 4);
     }
     if (o instanceof Tower && o.data.id === 'unsc_heli') {
@@ -272,7 +302,7 @@ export class Possess {
       this.vm.vehicles++; return swap(g, new THREE.Vector3(0, -1.25, -2.25), new THREE.Vector3(0, 0, 0), 'heli_chingun', 1.6);
     }
     if (o instanceof Tower && (o.data.id === 'unsc_autoturret' || o.data.id === 'unsc_flak')) {
-      const mg = await gun('rifle'), g = new THREE.Group(); mg.scale.setScalar(1.25); g.add(mg);
+      const mg = await gun('rifle'), g = new THREE.Group(); mg.scale.setScalar(1.25); g.add(mg); if (mg.userData.textured) this.vm.tex.gun++;
       if (o.data.id === 'unsc_flak') { const m2 = await gun('rifle'); m2.scale.setScalar(1.25); m2.position.x = -0.32; g.add(m2); }
       const mz = (mg.userData.muzzle as THREE.Vector3).clone().multiplyScalar(1.25);
       return swap(g, mz, new THREE.Vector3(0.12, -0.3, -0.42), 'mounted_mg');
@@ -280,14 +310,16 @@ export class Possess {
     if (o instanceof Unit) {
       const veh = !!o.squad.data.vehicle, kind = gunFor(o.squad.data.id, veh), gm = await gun(kind);
       // Kenney guns are chunky extruded silhouettes: flatten the profile a bit so it reads like a real rifle
-      gm.scale.set(1, 0.78, 1);
-      const L = gm.userData.len as number, mz = (gm.userData.muzzle as THREE.Vector3).clone(); mz.y *= 0.78;
+      const fy = gm.userData.textured ? 1 : 0.78; gm.scale.set(1, fy, 1);
+      const L = gm.userData.len as number, mz = (gm.userData.muzzle as THREE.Vector3).clone(); mz.y *= fy;
+      if (gm.userData.textured) this.vm.tex.gun++;
       const g = new THREE.Group(); g.add(gm);
       if (!veh) {
         const sleeve = new THREE.Color(factionInfo(o.squad.data.faction).color).lerp(new THREE.Color(0x4a5236), 0.7).getHex();
         const pistol = kind === 'pistol';
         const rh = hand(sleeve); rh.scale.setScalar(0.9); at(rh, 0.035, mz.y - 0.1, pistol ? 0.02 : L * 0.17); rh.rotation.set(-1.0, 0.15, 0.3); g.add(rh);
-        if (!pistol) { const lh = hand(sleeve); lh.scale.setScalar(0.9); at(lh, -0.035, mz.y - 0.095, -L * 0.2); lh.rotation.set(-0.55, -0.25, -0.45); g.add(lh); this.vm.hands = 2; } else this.vm.hands = 1;
+        this.vm.tex.glove++;
+        if (!pistol) { const lh = hand(sleeve); lh.scale.setScalar(0.9); at(lh, gm.userData.textured ? -0.012 : -0.035, mz.y - 0.095, -L * 0.2); lh.rotation.set(-0.55, -0.25, -0.45); g.add(lh); this.vm.hands = 2; } else this.vm.hands = 1;
         g.rotation.set(0.02, 0.07, 0.03);
       }
       // sights sit a little under and right of the eye line; the stock reaches back toward the shoulder (bottom-right, like the reference M4)
@@ -430,24 +462,66 @@ export class Possess {
   };
   private onKeyUp = (e: KeyboardEvent) => { this.keys.delete(e.key.toLowerCase()); e.stopImmediatePropagation(); };
   private ability(id: AbilityId) { if (this.obj instanceof Unit && this.g.useAbility(this.obj.squad, id)) logEvent('possess: ability ' + id); }
-  private resize = () => { const w = innerWidth, h = innerHeight; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); };
+  private resize = () => { const w = innerWidth, h = innerHeight; this.renderer.setSize(w, h, false); this.composer?.setPixelRatio(this.pr); this.composer?.setSize(w, h); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); };
 
   // ------------------------------------------------------------------ per-frame
+  private last0 = performance.now(); private composer: EffectComposer | null = null; private bloom: UnrealBloomPass | null = null;
+  private envRT: THREE.WebGLRenderTarget | null = null; private floraGrp: THREE.Group | null = null; private lodT = 0;
+  /** t51 post: two render passes (world, then viewmodel over cleared depth) + half-res bloom + ACES output. High quality only. */
+  private buildPost() {
+    if (this.vm.quality !== 'high') return;
+    const c = this.camera, scene = this.scene;
+    const world = new RenderPass(scene, c);
+    const vm = new RenderPass(scene, c); vm.clear = false; vm.clearDepth = true;
+    const wr = world.render.bind(world), vr = vm.render.bind(vm);
+    world.render = (...a: Parameters<RenderPass['render']>) => { c.layers.set(0); wr(...a); };
+    vm.render = (...a: Parameters<RenderPass['render']>) => { const bg = scene.background; scene.background = null; c.layers.set(1); vr(...a); c.layers.set(0); scene.background = bg; };
+    const comp = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: this.touch ? 0 : 4 }));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.35, 0.92);
+    comp.addPass(world); comp.addPass(vm); comp.addPass(this.bloom); comp.addPass(new OutputPass());
+    this.composer = comp;
+  }
+  private pinQ = false;
+  /** Slow frames even without bloom: no HDRI env, no sun shadows, Lambert plants. */
+  private dropToLow() {
+    this.vm.quality = 'low'; this.scene.environment = null; this.sun.castShadow = false; this.renderer.shadowMap.enabled = false;
+    (this.floraGrp?.userData.setDetail as ((d: number) => void) | undefined)?.(0);
+    this.scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; });
+    console.info('[possess] slow frames: low quality');
+  }
+  private dropPost() {
+    if (!this.composer) return; this.composer.dispose(); this.composer = null; this.bloom = null; this.vm.quality = 'medium';
+    console.info('[possess] slow frames: bloom off');
+  }
+  /** Sun shadow box centred ~40% of its radius ahead of the eye, snapped to texels so edges don't shimmer. */
+  private placeSun(eye: THREE.Vector3) {
+    const f = this.v2.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).multiplyScalar(SH_R * 0.4).add(eye);
+    const tx = (SH_R * 2) / 2048; f.x = Math.round(f.x / tx) * tx; f.z = Math.round(f.z / tx) * tx;
+    this.sun.position.copy(f).addScaledVector(this.sunDir, 80); this.sun.target.position.copy(f); this.sun.target.updateMatrixWorld();
+  }
   private loop = (now: number) => {
     if (!this.alive) return;
     const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
     groundTime.value += dt; this.war?.update(dt, this.camera); if (this.seaN) { this.seaN.offset.x += dt * 0.0026; this.seaN.offset.y += dt * 0.0017; }
-    this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
+    this.fpsAcc += Math.min(1, (now - this.last0) / 1000); this.last0 = now; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
     if (!this.tick(dt)) return;
     if (this.ctxLost) { this.raf = requestAnimationFrame(this.loop); return; }
     // two passes: world, then the viewmodel (layer 1) over a cleared depth buffer so walls never clip the gun/hands
-    const r = this.renderer, c = this.camera; c.layers.set(0); r.autoClear = true; r.render(this.scene, c);
-    const bg = this.scene.background; this.scene.background = null;
-    c.layers.set(1); r.autoClear = false; r.clearDepth(); r.render(this.scene, c); c.layers.set(0); this.scene.background = bg;
+    this.lodT -= dt; if (this.lodT <= 0 && this.floraGrp) { this.lodT = 0.12; (this.floraGrp.userData.updateLod as (c: THREE.Camera) => void)(this.camera); }
+    const r = this.renderer, c = this.camera;
+    if (this.composer && this.bloom) {
+      // high quality: world + viewmodel render passes -> light bloom (off with '⚡ Reduce flashing') -> ACES/sRGB output
+      this.bloom.enabled = !this.g.reduceFlash; this.composer.render(dt);
+    } else {
+      c.layers.set(0); r.autoClear = true; r.render(this.scene, c);
+      const bg = this.scene.background; this.scene.background = null;
+      c.layers.set(1); r.autoClear = false; r.clearDepth(); r.render(this.scene, c); c.layers.set(0); this.scene.background = bg;
+    }
     this.raf = requestAnimationFrame(this.loop);
   };
   private governor() {
     if (this.fps < 45) this.slow++; else this.slow = Math.max(0, this.slow - 1);
+    if (!this.pinQ && this.slow >= 3 && this.fps < 24 && this.vm.quality !== 'low') { if (this.composer) this.dropPost(); else this.dropToLow(); this.slow = 0; return; }
     if (this.slow >= 3 && this.pr > 0.6) { this.pr = Math.max(0.6, this.pr - 0.25); this.renderer.setPixelRatio(this.pr); this.resize(); this.slow = 0; }
   }
   /** Eye point (metres) of the possessed entity. */
@@ -464,7 +538,7 @@ export class Possess {
     if (g.speed !== 1) g.speed = 1;
     // camera
     const eye = this.eye(); this.camera.position.copy(eye); this.camera.rotation.set(this.pitch, this.yaw, 0);
-    this.sky.position.copy(eye); this.sun.position.copy(eye).addScaledVector(this.sunDir, 80); this.sun.target.position.copy(eye); this.sun.target.updateMatrixWorld();
+    this.sky.position.copy(eye); this.placeSun(eye);
     // crosshair ray -> enemy under the crosshair (manual direct hit) / aim point on the ground
     this.ray.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     let best: Enemy | null = null, bt = Infinity;
@@ -685,6 +759,7 @@ export class Possess {
     if (document.pointerLockElement) void document.exitPointerLock();
     if (this.obj.alive) this.g.possessCtl(this.obj, null);
     this.scene.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); const mat = m.material as THREE.Material | THREE.Material[] | undefined; if (Array.isArray(mat)) mat.forEach((x) => x.dispose()); else mat?.dispose?.(); });
+    this.composer?.dispose(); this.envRT?.dispose();
     this.renderer.dispose(); this.renderer.forceContextLoss?.();
     this.root.remove(); document.body.classList.remove('possess-on', 'ps-touch-on');
     if (cur === this) cur = null;

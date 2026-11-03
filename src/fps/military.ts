@@ -197,14 +197,27 @@ export async function prop(k: PropKind): Promise<THREE.Group> {
 export type GunKind = 'rifle' | 'rocket' | 'sniper' | 'shotgun' | 'pistol' | 'smg';
 const GUN_MAT: Record<string, number> = { Gray8: 0x2a2d2f, Gray6: 0x42474a, Gray5: 0x6b6450, FrontColor: 0x4c5156 };
 /** Gun model pointing -Z (camera forward), stock at z=0, grip origin; `userData.muzzle` = local tip. */
+/** t51: textured PBR guns from Poly Haven (CC0): bolt_action_rifle_7_62 (rifle/sniper/shotgun/smg; the scope
+ *  only on the sniper) and service_pistol, converted by art_src/tools/fp_assets_t51.mjs (512 px WebP base/ARM/normal).
+ *  The rocket launcher stays on the Kenney Weapon Pack model (no CC0 textured launcher found), given a metal finish. */
+const PH_GUN: Partial<Record<GunKind, string>> = { rifle: 'gun_rifle_ph', sniper: 'gun_rifle_ph', shotgun: 'gun_rifle_ph', smg: 'gun_rifle_ph', pistol: 'gun_pistol_ph' };
 export async function gun(k: GunKind): Promise<THREE.Group> {
-  const key = ('gun_' + k) as keyof typeof SIZE, src = await raw(key);
+  const key = ('gun_' + k) as keyof typeof SIZE, ph = PH_GUN[k];
+  let src: THREE.Object3D;
+  if (ph) {
+    src = (await raw(ph)).clone(true);
+    const drop: THREE.Object3D[] = []; src.traverse((o) => { if (k !== 'sniper' && /scope/i.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent();
+    src.traverse((o) => { const m = o as THREE.Mesh; if (!m.isMesh) return; const mt = (m.material as THREE.MeshStandardMaterial).clone(); mt.envMapIntensity = 0.9; m.material = mt; m.castShadow = true; });
+  } else src = await raw(key);
   const g = normalise(src, SIZE[key] as number);
-  recolor(g, (n) => GUN_MAT[n] ?? null);
-  g.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; // lift near-black parts to gunmetal so the shape reads
-    if (m && m.color && m.color.getHSL({ h: 0, s: 0, l: 0 }).l < 0.12) { (o as THREE.Mesh).material = m.clone(); ((o as THREE.Mesh).material as THREE.MeshStandardMaterial).color.setHex(0x3b4043); } });
+  if (!ph) {
+    recolor(g, (n) => GUN_MAT[n] ?? null);
+    g.traverse((o) => { const mesh = o as THREE.Mesh, m = mesh.material as THREE.MeshLambertMaterial | undefined; if (!m || !m.color) return; // lift near-black parts to gunmetal; metal finish
+      const c = m.color.getHSL({ h: 0, s: 0, l: 0 }).l < 0.12 ? new THREE.Color(0x3b4043) : m.color;
+      mesh.material = new THREE.MeshStandardMaterial({ color: c, metalness: 0.55, roughness: 0.45, vertexColors: m.vertexColors }); });
+  }
   g.updateMatrixWorld(true);
-  // Kenney guns lie along Z. The muzzle is the end with the thinner (y) profile: barrel vs stock/grip.
+  // guns lie along Z. The muzzle is the end with the thinner (y) profile: barrel vs stock/grip.
   const b = new THREE.Box3().setFromObject(g), L = b.max.z - b.min.z, v = new THREE.Vector3();
   const prof = { lo: [Infinity, -Infinity], hi: [Infinity, -Infinity] };
   g.traverse((o) => { const m = o as THREE.Mesh; if (!m.isMesh) return; const p = m.geometry.attributes.position;
@@ -213,17 +226,28 @@ export async function gun(k: GunKind): Promise<THREE.Group> {
   const out = new THREE.Group(); out.add(g);
   if (!muzzleAtMinZ) g.rotation.y = Math.PI; // muzzle -> -Z (camera forward)
   const muzzleY = muzzleAtMinZ ? (prof.lo[0] + prof.lo[1]) / 2 : (prof.hi[0] + prof.hi[1]) / 2;
-  out.userData = { len: L, h: b.max.y, muzzle: new THREE.Vector3(0, muzzleY, -L / 2 - 0.02) };
+  out.userData = { len: L, h: b.max.y, muzzle: new THREE.Vector3(0, muzzleY, -L / 2 - 0.02), gunKind: k, textured: !!ph };
   return out;
 }
+// t51: tactical leather gloves + woven fabric sleeves (Poly Haven brown_leather / denim_fabric_04, CC0, 256 px WebP)
+let handTex: { glove: THREE.Texture; gloveN: THREE.Texture; fab: THREE.Texture; fabN: THREE.Texture } | null = null;
+function texOf(f: string, srgb: boolean, rep: number) {
+  const t = new THREE.TextureLoader().load(assetUrl(`assets/tex/${f}.webp`)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep);
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t;
+}
 /** Gloved hand (palm block + wrapped fingers + thumb) and a sleeve, in metres. */
-export function hand(sleeve = 0x4f5b3c, glove = 0x2a2620): THREE.Group {
-  const h = new THREE.Group(), gm = lam(glove), sm = lam(sleeve);
+export function hand(sleeve = 0x4f5b3c, glove = 0x5a4a3a): THREE.Group {
+  handTex ??= { glove: texOf('glove', true, 1), gloveN: texOf('glove_n', false, 1), fab: texOf('fabric', true, 2), fabN: texOf('fabric_n', false, 2) };
+  const h = new THREE.Group();
+  const gm = new THREE.MeshStandardMaterial({ color: glove, map: handTex.glove, normalMap: handTex.gloveN, roughness: 0.62, metalness: 0, envMapIntensity: 0.7 });
+  const sm = new THREE.MeshStandardMaterial({ color: new THREE.Color(sleeve).multiplyScalar(1.6), map: handTex.fab, normalMap: handTex.fabN, roughness: 0.95, metalness: 0 });
+  gm.name = 'glove_leather'; sm.name = 'sleeve_fabric';
   h.add(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.085), gm));
   for (let i = 0; i < 4; i++) h.add(at(new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.05, 2, 6).rotateZ(Math.PI / 2), gm), 0.02, 0.06 - i * 0.026, -0.05));
   h.add(at(new THREE.Mesh(new THREE.CapsuleGeometry(0.016, 0.05, 2, 6).rotateX(Math.PI / 2.4), gm), -0.045, 0.04, -0.035));
-  h.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.06, 10).rotateZ(Math.PI / 2), lam(0x1b1b1b)), 0, -0.065, 0.02)); // cuff
+  h.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.06, 10).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.7 })), 0, -0.065, 0.02)); // cuff
   const arm = at(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.42, 10), sm), 0.02, -0.28, 0.06); h.add(arm);
+  h.userData.glove = true;
   return h;
 }
 export function gunFor(id: string, vehicle?: boolean): GunKind {

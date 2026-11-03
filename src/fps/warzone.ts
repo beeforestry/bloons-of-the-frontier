@@ -18,7 +18,7 @@ function puff(): THREE.Texture {
 
 /** Ruined octagonal concrete pillbox (~5.5 m), roof slab cracked and sagging, firing slits, blown-off chunk. */
 let conTex: THREE.Texture | null = null;
-function bunker(rockTex?: THREE.Texture): THREE.Group {
+export function bunker(rockTex?: THREE.Texture): THREE.Group {
   if (!conTex && rockTex) { conTex = rockTex.clone(); conTex.repeat.set(3, 0.8); conTex.needsUpdate = true; }
   const g = new THREE.Group(), con = new THREE.MeshLambertMaterial({ color: 0xb8b2a8, map: conTex }), dark = lam(0x121110), burnt = new THREE.MeshLambertMaterial({ color: 0x55504a, map: conTex });
   const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, ry = 0, rz = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(0, ry, rz); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
@@ -96,4 +96,32 @@ export function buildWarzone(scene: THREE.Scene, props: [string, number, number,
       a.needsUpdate = true;
     },
   };
+}
+
+/** t51: garrisonable env structures (bunker / watchtower / ruins / garita) as real 3D shapes instead of the
+ *  old placeholder box. Base on y=0, metres. */
+export function envStructure(kind: string, tex?: THREE.Texture): THREE.Group {
+  if (kind === 'bunker') { const b = bunker(tex); b.userData.env = kind; return b; }
+  const g = new THREE.Group(); g.userData.env = kind;
+  const stone = new THREE.MeshLambertMaterial({ color: 0xcfc2a8, map: tex ?? null }), wood = new THREE.MeshLambertMaterial({ color: 0x6b4f33 }), roof = new THREE.MeshLambertMaterial({ color: 0x4e5a3a });
+  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, ry = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.y = ry; o.castShadow = o.receiveShadow = true; g.add(o); return o; };
+  if (kind === 'watchtower') {
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.CylinderGeometry(0.1, 0.13, 4.6, 6), wood, x, 2.3, z);
+    add(new THREE.BoxGeometry(2.6, 0.16, 2.6), wood, 0, 4.0, 0);
+    for (const [x, z, w, d] of [[0, -1.25, 2.6, 0.08], [0, 1.25, 2.6, 0.08], [-1.25, 0, 0.08, 2.6], [1.25, 0, 0.08, 2.6]]) add(new THREE.BoxGeometry(w, 0.9, d), wood, x, 4.5, z);
+    add(new THREE.ConeGeometry(2.1, 1.1, 4).rotateY(Math.PI / 4), roof, 0, 6.0, 0);
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 4), wood, x, 5.2, z);
+  } else if (kind === 'garita') {
+    add(new THREE.CylinderGeometry(1.0, 1.15, 2.6, 14), stone, 0, 1.3, 0);
+    add(new THREE.SphereGeometry(1.05, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), stone, 0, 2.6, 0);
+    add(new THREE.ConeGeometry(0.16, 0.5, 8), stone, 0, 3.85, 0);
+    const slit = new THREE.MeshBasicMaterial({ color: 0x15130f });
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; add(new THREE.BoxGeometry(0.12, 0.55, 0.1), slit, Math.sin(a) * 1.03, 1.9, Math.cos(a) * 1.03, a); }
+  } else { // ruins: broken masonry walls + rubble
+    add(new THREE.BoxGeometry(3.4, 2.2, 0.5), stone, 0, 1.1, -1.4);
+    add(new THREE.BoxGeometry(0.5, 1.4, 2.6), stone, -1.5, 0.7, -0.1);
+    add(new THREE.BoxGeometry(1.4, 1.0, 0.5), stone, 1.0, 0.5, 1.2, 0.2);
+    for (let i = 0; i < 7; i++) add(new THREE.DodecahedronGeometry(0.22 + (i % 3) * 0.1, 0), stone, Math.sin(i * 2.3) * 1.6, 0.15, Math.cos(i * 1.7) * 1.4);
+  }
+  return g;
 }
