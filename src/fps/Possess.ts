@@ -19,6 +19,7 @@ import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, prop, gun, hand, gunFor } from './military';
 import { towerMesh } from './towers3d';
+import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
 
 /** Metres per map pixel (garden ~110 x 74 m). */
 export const S = 0.05;
@@ -53,6 +54,7 @@ export class Possess {
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
   vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
+  private seaN: THREE.Texture | null = null;
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
   private gun = new THREE.Group(); private flash!: THREE.Mesh; private flashT = 0; private kick = 0;
@@ -97,12 +99,14 @@ export class Possess {
     if (T) { this.buildTerrain(W, D); } else {
     // floor: the map image itself (lanes, paths and decor are painted into it)
     const tex = new THREE.TextureLoader().load(assetUrl(g.map.image)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2).translate(W / 2, 0, D / 2), new THREE.MeshLambertMaterial({ map: tex }));
-    floor.name = 'floor'; scene.add(floor);
-    const skirt = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), lam(0x5f8f3a)); skirt.position.set(W / 2, -0.05, D / 2); scene.add(skirt);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D).rotateX(-Math.PI / 2).translate(W / 2, 0, D / 2), detailGround(new THREE.MeshLambertMaterial({ map: tex }), { stone: g.map.id === 'morro' || g.map.id === 'fortress' ? 1 : 0.5 }));
+    floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
+    const skirt = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), detailGround(lam(0x5f8f3a))); skirt.position.set(W / 2, -0.05, D / 2); scene.add(skirt);
     // boundary walls + a tree ring outside the map
     const wallM = lam(0x6b5a44);
-    for (const [x, z, w, d] of [[W / 2, -0.4, W + 1.6, 0.8], [W / 2, D + 0.4, W + 1.6, 0.8], [-0.4, D / 2, 0.8, D], [W + 0.4, D / 2, 0.8, D]]) scene.add(at(new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), wallM), x, 0.55, z));
+    const stoneWall = g.map.id === 'morro' || g.map.id === 'fortress'; // t46: masonry walls, tiled at ~2.4 m per cobble tile
+    const wallFor = (len: number) => { if (!stoneWall) return wallM; const c = groundTex('cobble').clone(); c.repeat.set(len / 2.4, 0.46); c.needsUpdate = true; return new THREE.MeshLambertMaterial({ map: c, color: 0xd8cbb4 }); };
+    for (const [x, z, w, d] of [[W / 2, -0.4, W + 1.6, 0.8], [W / 2, D + 0.4, W + 1.6, 0.8], [-0.4, D / 2, 0.8, D], [W + 0.4, D / 2, 0.8, D]]) scene.add(at(new THREE.Mesh(new THREE.BoxGeometry(w, 1.1, d), wallFor(Math.max(w, d))), x, 0.55, z));
     let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const spots: THREE.Vector3[] = [];
     for (let i = 0; i < 90; i++) { const a = (i / 90) * Math.PI * 2, rr = 1.04 + rnd() * 0.3; spots.push(new THREE.Vector3(W / 2 + Math.cos(a) * W * 0.6 * rr, 0, D / 2 + Math.sin(a) * D * 0.66 * rr)); }
@@ -190,8 +194,8 @@ export class Possess {
     for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
     geo.computeVertexNormals();
     const tex = new THREE.TextureLoader().load(assetUrl(T.ground)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-    const floor = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex })); floor.name = 'floor'; scene.add(floor);
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x2f9fc0, transparent: true, opacity: 0.72 }));
+    const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: 0.4 })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), (() => { const n = waterNormal().clone(); n.repeat.set(900 / 7, 900 / 7); n.needsUpdate = true; this.seaN = n; return new THREE.MeshPhongMaterial({ color: 0x2f9fc0, transparent: true, opacity: 0.76, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6), shininess: 90, specular: 0x9fd8ff }); })());
     sea.position.set(W / 2, T.water, D / 2); sea.name = 'sea'; scene.add(sea);
     const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), lam(0x1d5f8a)); sea2.position.set(W / 2, -1.7, D / 2); scene.add(sea2);
     const mats = new Map<string, THREE.SpriteMaterial>(), loader = new THREE.TextureLoader();
@@ -418,6 +422,7 @@ export class Possess {
   private loop = (now: number) => {
     if (!this.alive) return;
     const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
+    groundTime.value += dt; if (this.seaN) { this.seaN.offset.x += dt * 0.0026; this.seaN.offset.y += dt * 0.0017; }
     this.fpsAcc += dt; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
     if (!this.tick(dt)) return;
     // two passes: world, then the viewmodel (layer 1) over a cleared depth buffer so walls never clip the gun/hands
