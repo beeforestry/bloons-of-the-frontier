@@ -6,6 +6,7 @@
 // DataChannel to the host. Room code = 4 digits -> host peer id `bof-frontier-1234`.
 // =============================================================================
 import { Peer, type DataConnection } from 'peerjs';
+import { meteredUrl } from '../config/turn';
 
 export const PEER_PREFIX = 'bof-frontier-';
 export const ICE: RTCIceServer[] = [
@@ -15,22 +16,76 @@ export const ICE: RTCIceServer[] = [
 ];
 export type Msg = { t: string; [k: string]: unknown };
 
-/** TURN fallback: Open Relay (metered.ca) publishes a static-auth secret, so short-lived
- *  credentials can be minted client-side (TURN REST: user = expiry:tag, pass = b64 HMAC-SHA1).
- *  It is a shared free service with no SLA. Players with their own TURN can set
- *  localStorage['bof.ice'] = JSON iceServers[] to override. */
+/** ICE config, in priority order (t47):
+ *  1. localStorage['bof.ice'] = JSON iceServers[] (manual override, e.g. your own TURN);
+ *  2. Metered TURN: credentials fetched from the Metered API (app + key from src/config/turn.ts,
+ *     injected at build time), cached for the session; turns:443/TCP is ensured for strict networks;
+ *  3. public STUN + Open Relay (shared free TURN, static-auth secret -> client-minted TURN REST creds, no SLA). */
 const TURN_HOST = 'staticauth.openrelay.metered.ca', TURN_SECRET = 'openrelayprojectsecret';
+export type IceSource = 'custom' | 'metered' | 'openrelay' | 'stun';
+export let iceSource: IceSource = 'stun';
+let meteredCache: Promise<RTCIceServer[] | null> | null = null;
+const urlsOf = (s: RTCIceServer) => (Array.isArray(s.urls) ? s.urls : [s.urls]);
+async function metered(): Promise<RTCIceServer[] | null> {
+  const url = meteredUrl(); if (!url) return null;
+  return (meteredCache ??= (async () => {
+    try {
+      const ac = new AbortController(), t = setTimeout(() => ac.abort(), 6000);
+      const r = await fetch(url, { signal: ac.signal }); clearTimeout(t);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const list = (await r.json()) as RTCIceServer[];
+      if (!Array.isArray(list) || !list.some((x) => urlsOf(x).some((u) => /^turns?:/.test(u)))) throw new Error('no TURN in response');
+      // strict firewalls often only allow TLS on 443: make sure a turns:443/TCP route exists
+      if (!list.some((x) => urlsOf(x).some((u) => u.startsWith('turns:')))) {
+        const t0 = list.find((x) => urlsOf(x).some((u) => u.startsWith('turn:')))!;
+        const host = urlsOf(t0).find((u) => u.startsWith('turn:'))!.slice(5).split(/[:?]/)[0];
+        list.push({ urls: `turns:${host}:443?transport=tcp`, username: t0.username, credential: t0.credential });
+      }
+      return list;
+    } catch (e) { console.warn('[net] Metered TURN unavailable, falling back to Open Relay:', (e as Error).message); meteredCache = null; return null; }
+  })());
+}
 export async function iceServers(): Promise<RTCIceServer[]> {
-  try { const o = localStorage.getItem('bof.ice'); if (o) return JSON.parse(o) as RTCIceServer[]; } catch { /* */ }
-  const out = [...ICE];
+  try { const o = localStorage.getItem('bof.ice'); if (o) { iceSource = 'custom'; return JSON.parse(o) as RTCIceServer[]; } } catch { /* */ }
+  const m = await metered();
+  if (m) { iceSource = 'metered'; return [...ICE.slice(0, 1), ...m]; }
+  const out = [...ICE]; iceSource = 'stun';
   try {
     const username = `${Math.floor(Date.now() / 1000) + 6 * 3600}:bof`;
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(TURN_SECRET), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
     const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(username)));
     const credential = btoa(String.fromCharCode(...sig));
     out.push({ urls: [`turn:${TURN_HOST}:80`, `turn:${TURN_HOST}:80?transport=tcp`, `turn:${TURN_HOST}:443`, `turns:${TURN_HOST}:443?transport=tcp`], username, credential });
+    iceSource = 'openrelay';
   } catch { /* no WebCrypto (insecure origin): STUN only */ }
   return out;
+}
+export const ICE_LABEL: Record<IceSource, string> = { custom: 'custom ICE (bof.ice)', metered: 'Metered TURN', openrelay: 'Open Relay TURN (free, best-effort)', stun: 'STUN only (no relay)' };
+
+/** Connection stages shown in the lobby, and specific failure reasons. */
+export type Stage = 'signal' | 'room' | 'link' | 'done';
+export type FailCode = 'not-found' | 'signal' | 'ice' | 'timeout' | 'full' | 'started' | 'closed' | 'webrtc';
+export class NetError extends Error { constructor(readonly code: FailCode, msg: string) { super(msg); } }
+
+/** Lobby "Test connection": gather ICE candidates with the current config and report which kinds appear.
+ *  relay = TURN works (connects almost anywhere); srflx only = direct P2P via STUN (fails on strict NATs). */
+export async function testIce(timeoutMs = 9000): Promise<{ host: number; srflx: number; relay: number; source: IceSource; ms: number }> {
+  const t0 = performance.now(), servers = await iceServers();
+  const pc = new RTCPeerConnection({ iceServers: servers });
+  const n = { host: 0, srflx: 0, relay: 0 };
+  try {
+    pc.createDataChannel('probe');
+    await new Promise<void>((res) => {
+      const to = setTimeout(res, timeoutMs);
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) { clearTimeout(to); res(); return; }
+        const typ = (e.candidate.type ?? / typ (\w+)/.exec(e.candidate.candidate)?.[1]) as string | undefined;
+        if (typ === 'host' || typ === 'srflx' || typ === 'relay') n[typ]++; else if (typ === 'prflx') n.srflx++;
+      };
+      void pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => { clearTimeout(to); res(); });
+    });
+  } finally { pc.close(); }
+  return { ...n, source: iceSource, ms: Math.round(performance.now() - t0) };
 }
 /** Stable per-browser seat token: rejoining with it gives back the same player slot. */
 export function seatToken(): string {
@@ -98,6 +153,10 @@ export class NetSession {
   onJoin: (pid: number, rejoin: boolean) => void = () => {};
   onLeave: (pid: number) => void = () => {};
   onStatus: (s: string) => void = () => {};
+  /** join progress: stage + detail ('direct' / 'relay' once linked). */
+  onStage: (st: Stage, detail?: string) => void = () => {};
+  stage: Stage = 'signal';
+  private setStage(st: Stage, d?: string) { this.stage = st; this.onStage(st, d); }
   /** Bytes sent (debug / HUD). */
   sent = 0;
   constructor(readonly role: 'host' | 'client', readonly maxPlayers = 4) {}
@@ -182,35 +241,50 @@ export class NetSession {
     this.onJoin(pid, rejoin);
     return pid;
   }
-  /** Client: connect to room `code`; resolves once the host has given us a seat. */
+  /** Client: connect to room `code`; resolves once the host has given us a seat. Rejects with a NetError. */
   join(code: string, timeoutMs = 25000): Promise<void> {
     this.code = code;
     return new Promise((resolve, reject) => {
-      let done = false;
-      const fail = (msg: string) => { if (done) return; done = true; clearTimeout(to); this.close(); reject(new Error(msg)); };
-      const to = setTimeout(() => fail(this.sawHost
-        ? `Found room ${code} but couldn't open a direct link — a strict NAT/firewall is blocking peer-to-peer (TURN relay fallback also failed). Try another network (e.g. phone hotspot).`
-        : `Timed out reaching room ${code} — check your connection and try again.`), timeoutMs);
+      let done = false, poll = 0;
+      const fail = (c: FailCode, msg: string) => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); this.close(); reject(new NetError(c, msg)); };
+      const NF = `Room ${code} not found — check the code, or ask the host to open it again.`;
+      const to = setTimeout(() => {
+        if (this.stage === 'signal') fail('signal', "Couldn't reach the signaling (matchmaking) server.");
+        else if (this.stage === 'link') fail('ice', `Found room ${code}, but no direct route and the TURN relay failed (${ICE_LABEL[iceSource]}).`);
+        else fail('timeout', `Timed out waiting for room ${code} to answer — the host may have closed it or lost internet.`);
+      }, timeoutMs);
       const wire = (conn: Conn) => {
-        conn.on('open', () => { this.sawHost = true; this.rx(conn); conn.send({ t: 'hello', tok: seatToken() }); });
+        this.setStage('room');
+        // watch the underlying RTCPeerConnection: an answer = room found; ICE 'failed' = no route even via relay
+        const pc = () => (conn as unknown as { peerConnection?: RTCPeerConnection }).peerConnection;
+        poll = window.setInterval(() => {
+          const p = pc(); if (!p || done) return;
+          if (this.stage === 'room' && p.remoteDescription) this.setStage('link');
+          if (p.iceConnectionState === 'failed') fail('ice', `Found room ${code}, but no direct route and the TURN relay failed (${ICE_LABEL[iceSource]}).`);
+        }, 250);
+        conn.on('open', () => { if (this.stage !== 'link') this.setStage('link'); this.rx(conn); conn.send({ t: 'hello', tok: seatToken() }); });
         conn.on('data', (d) => {
           const m = d as Msg; this.rx(conn);
           if (m.t === 'hb') return;
           if (!done) {
-            if (m.t === 'full') return fail(`Room ${code} is full`);
-            if (m.t === 'started') return fail(`Room ${code} is already in a match (no free seat)`);
+            if (m.t === 'full') return fail('full', `Room ${code} is full.`);
+            if (m.t === 'started') return fail('started', `Room ${code} is already in a match (no free seat).`);
             if (m.t !== 'welcome') return;
-            done = true; clearTimeout(to); this.conns.set(0, conn); this.startHb(); resolve();
+            done = true; clearTimeout(to); clearInterval(poll); this.conns.set(0, conn); this.startHb();
+            void routeKind(pc()).then((k) => { this.route = k; this.setStage('done', k); });
+            resolve();
           }
           if (m.t === 'bye') this.endReason = 'bye';
           this.onMsg(0, m);
         });
-        conn.on('close', () => { this.lastRx.delete(conn); if (!done) return fail(`Room ${code} closed while joining`); if (this.conns.get(0) === conn) { this.conns.delete(0); this.onLeave(0); } });
-        conn.on('error', (e) => { if ((e as { type?: string })?.type === 'peer-unavailable') fail(`Room ${code} not found — check the code, or ask the host to open it again`); });
+        conn.on('close', () => { this.lastRx.delete(conn); if (!done) return fail('closed', `Room ${code} closed while joining.`); if (this.conns.get(0) === conn) { this.conns.delete(0); this.onLeave(0); } });
+        conn.on('error', (e) => { if ((e as { type?: string })?.type === 'peer-unavailable') fail('not-found', NF); });
       };
+      this.setStage('signal');
       const ru = relayUrl();
       if (ru) {
         const ep = new RelayEndpoint(ru, 'c-' + Math.random().toString(36).slice(2), () => wire(ep.connect(PEER_PREFIX + code)));
+        ep.es.onerror = () => { if (this.stage === 'signal') fail('signal', "Couldn't reach the signaling (matchmaking) server."); };
         this.relay = ep; return;
       }
       void this.opts().then((opts) => {
@@ -219,13 +293,14 @@ export class NetSession {
         this.peer = p;
         p.on('open', () => wire(p.connect(PEER_PREFIX + code, { reliable: true, serialization: 'json' }) as unknown as Conn));
         p.on('error', (err: { type?: string; message?: string }) => {
-          if (err.type === 'peer-unavailable') fail(`Room ${code} not found — check the code, or ask the host to open it again`);
-          else if (!this.conns.size) fail(brokerErr(err));
+          if (err.type === 'peer-unavailable') fail('not-found', NF);
+          else if (!this.conns.size) { const w = err.type === 'browser-incompatible' || err.type === 'webrtc'; fail(w ? 'webrtc' : 'signal', brokerErr(err)); }
         });
       });
     });
   }
-  private sawHost = false;
+  /** 'direct' | 'relay' once linked ('' for the test relay transport). */
+  route = '';
   send(pid: number, m: Msg) {
     const c = this.conns.get(pid); if (!c || !c.open) return;
     try { c.send(m); this.sent++; } catch { /* channel closing */ }
@@ -236,6 +311,16 @@ export class NetSession {
   close() { clearInterval(this.hb); this.hb = 0; for (const c of this.conns.values()) try { c.close(); } catch { /* */ } this.conns.clear(); try { this.peer?.destroy(); } catch { /* */ } this.peer = null; this.relay?.destroy(); this.relay = null; }
 }
 
+/** Which path the selected ICE candidate pair uses. */
+async function routeKind(pc?: RTCPeerConnection): Promise<string> {
+  if (!pc) return '';
+  try {
+    const st = await pc.getStats(); let pair: { localCandidateId?: string } | undefined;
+    st.forEach((r: { type: string; selected?: boolean; nominated?: boolean; state?: string }) => { if (r.type === 'candidate-pair' && (r.selected || (r.nominated && r.state === 'succeeded'))) pair = r as typeof pair; });
+    const loc = pair?.localCandidateId ? st.get(pair.localCandidateId) as { candidateType?: string } | undefined : undefined;
+    return loc?.candidateType === 'relay' ? 'relay' : loc ? 'direct' : '';
+  } catch { return ''; }
+}
 function brokerErr(err: { type?: string; message?: string }) {
   if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'socket-closed')
     return "Couldn't reach the matchmaking server — check your internet connection";

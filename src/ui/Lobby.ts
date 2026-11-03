@@ -3,7 +3,7 @@
 // lobby: 4-digit room code, copyable ?room=1234 link, player list with ready
 // state, and host-only match settings.
 // =============================================================================
-import { NetSession, type Msg } from '../net/Net';
+import { NetSession, NetError, testIce, ICE_LABEL, type Msg, type Stage, type FailCode } from '../net/Net';
 import { DEFAULT_SETTINGS, type MpSettings, type PlayerInfo, type Mode } from '../net/Sync';
 import { MAPS } from '../data/maps';
 import { DIFFICULTIES } from '../data/difficulty';
@@ -32,6 +32,7 @@ export class Lobby {
     panel.insertBefore(this.el, panel.querySelector('.hint'));
     for (const b of Array.from(modes.children) as HTMLElement[]) b.onclick = () => this.pickMode(b.dataset.mode as 'solo' | Mode);
     const room = new URLSearchParams(location.search).get('room');
+    (window as unknown as { __lobby?: Lobby }).__lobby = this;
     if (room && /^\d{4}$/.test(room)) { this.pickMode('coop', true); void this.join(room); }
   }
   private pickMode(m: 'solo' | Mode, silent = false) {
@@ -46,13 +47,60 @@ export class Lobby {
       <button class="btn big go" id="mp-host">🏠 Host a ${this.settings.mode === 'coop' ? 'Co-Op' : 'Versus'} room</button>
       <div class="mp-join"><input id="mp-code" inputmode="numeric" maxlength="4" placeholder="1234" aria-label="Room code" value="${esc(this.typed)}"><button class="btn big" id="mp-joinb" ${this.joining ? 'disabled' : ''}>${this.joining ? 'Joining…' : 'Join'}</button></div>
       </div><p class="mp-status${this.status.startsWith('⚠') ? ' err' : ''}" id="mp-status">${esc(this.status)}</p>
+      <div id="mp-prog">${this.progHtml()}</div>
+      <div class="mp-test"><button class="btn small" id="mp-testb" ${this.testing ? 'disabled' : ''}>🔌 ${this.testing ? 'Testing…' : 'Test connection'}</button><span id="mp-testr">${this.testRes}</span></div>
       <p class="hint">Peer-to-peer (WebRTC, TURN relay fallback). Share the 4-digit code or the link. Works on most home/office networks; some strict mobile/corporate NATs can block direct connections.</p>`;
     (this.el.querySelector('#mp-host') as HTMLElement).onclick = () => void this.host();
     const inp = this.el.querySelector('#mp-code') as HTMLInputElement;
     (this.el.querySelector('#mp-joinb') as HTMLElement).onclick = () => { if (this.joining) return; if (/^\d{4}$/.test(inp.value.trim())) void this.join(inp.value.trim()); else this.setStatus('⚠ Enter the 4-digit room code'); };
+    (this.el.querySelector('#mp-testb') as HTMLElement).onclick = () => void this.testConn();
+    this.bindProg();
     inp.onkeydown = (e) => { if (e.key === 'Enter') (this.el.querySelector('#mp-joinb') as HTMLElement).click(); };
   }
   private joining = false;
+  /** join progress (t47): staged status + specific failure with Retry. */
+  prog: { code: string; stage: Stage; detail?: string; fail?: { code: FailCode; msg: string } } | null = null;
+  private testing = false;
+  private testRes = '';
+  private progHtml(): string {
+    const p = this.prog; if (!p) return '';
+    const steps: [Stage, string][] = [['signal', 'Signaling server'], ['room', `Finding room ${p.code}`], ['link', 'Opening connection (direct or relay)']];
+    const order: Stage[] = ['signal', 'room', 'link', 'done'];
+    const failAt: Stage | null = p.fail ? ({ signal: 'signal', 'not-found': 'room', timeout: p.stage, ice: 'link', webrtc: 'signal' } as Record<string, Stage>)[p.fail.code] ?? p.stage : null;
+    const cur = order.indexOf(failAt ?? p.stage);
+    const li = steps.map(([st, label], i) => {
+      const cls = failAt === st ? 'bad' : i < cur ? 'ok' : i === cur ? 'run' : 'todo';
+      const ic = cls === 'bad' ? '✖' : cls === 'ok' ? '✔' : cls === 'run' ? '<i class="spin"></i>' : '○';
+      return `<li class="${cls}" data-stage="${st}"><span>${ic}</span>${label}${st === 'link' && p.stage === 'done' && p.detail ? ` — ${p.detail}` : ''}</li>`;
+    }).join('');
+    const TIPS: Record<FailCode, string> = {
+      'not-found': 'Double-check the 4-digit code. A room closes when the host leaves or reloads the page.',
+      signal: 'Check your internet. Some school/work Wi-Fi blocks the matchmaking server — try mobile data.',
+      ice: 'Try both players on the same Wi-Fi, or switch one player to mobile data / a phone hotspot. Use “Test connection”: if it finds no relay candidates, TURN is blocked on this network.',
+      timeout: 'Ask the host to keep the lobby open, then Retry. If it keeps happening, try the same Wi-Fi or mobile data.',
+      full: 'The room already has the maximum number of players.', started: 'Wait for the match to end, or ask the host for a new room.',
+      closed: 'The host closed the connection — ask them to reopen the room.', webrtc: 'Use an up-to-date Chrome, Edge, Firefox or Safari.',
+    };
+    const f = p.fail ? `<div class="mp-fail" data-fail="${p.fail.code}"><b>⚠ ${esc(p.fail.msg)}</b><p>💡 ${TIPS[p.fail.code]}</p><button class="btn small go" id="mp-retry">↻ Retry</button></div>` : '';
+    return `<ol class="mp-steps">${li}</ol>${f}`;
+  }
+  private renderProg() { const e = this.el.querySelector('#mp-prog'); if (e) { e.innerHTML = this.progHtml(); this.bindProg(); } }
+  private bindProg() { const r = this.el.querySelector('#mp-retry') as HTMLElement | null; if (r && this.prog) { const c = this.prog.code; r.onclick = () => void this.join(c); } }
+  /** test hook / UI: show a failure state without a real network failure. */
+  showFail(code: FailCode, msg: string, room = '1234', stage: Stage = 'link') { this.prog = { code: room, stage, fail: { code, msg } }; this.status = ''; this.joining = false; this.renderEntry(); }
+  async testConn() {
+    this.testing = true; this.testRes = 'Gathering network candidates…'; this.renderEntry();
+    let html: string;
+    try {
+      const r = await testIce();
+      const lvl = r.relay ? 'green' : r.srflx ? 'yellow' : 'red';
+      const say = r.relay ? 'TURN relay works — you should be able to connect from almost any network.'
+        : r.srflx ? 'Direct (STUN) only — no relay. Works on most home Wi-Fi, but strict mobile/corporate networks may fail.'
+        : 'No public route found — peer-to-peer is likely blocked on this network. Try mobile data or another Wi-Fi.';
+      html = `<b class="lvl ${lvl}" data-lvl="${lvl}">●</b> ${say} <small>(host ${r.host} · srflx ${r.srflx} · relay ${r.relay} · ${ICE_LABEL[r.source]} · ${(r.ms / 1000).toFixed(1)} s)</small>`;
+    } catch (e) { html = `<b class="lvl red" data-lvl="red">●</b> WebRTC unavailable: ${esc((e as Error).message)}`; }
+    this.testing = false; this.testRes = html; this.renderEntry();
+  }
   private typed = '';
   private setStatus(s: string) { this.status = s; const e = this.el.querySelector('#mp-status'); if (e) e.textContent = s; this.errorCls(s.startsWith('⚠')); }
   private errorCls(on: boolean) { this.el.querySelector('#mp-status')?.classList.toggle('err', on); }
@@ -76,15 +124,21 @@ export class Lobby {
   async join(code: string) {
     this.typed = code;
     const n = new NetSession('client');
-    this.setStatus(`Joining room ${code}…`);
+    this.status = ''; this.prog = { code, stage: 'signal' };
+    n.onStage = (st, d) => { if (!this.prog || this.prog.code !== code) return; this.prog.stage = st; this.prog.detail = d; this.renderProg(); };
     n.onMsg = (_p, m) => this.clientMsg(m);
     n.onLeave = () => { this.status = n.endReason === 'bye' ? '⚠ The host left — the room is closed' : '⚠ Lost connection to the host'; this.net = null; this.renderEntry(); this.errorCls(true); };
     this.joining = true; this.renderEntry();
-    try { await n.join(code); } catch (e) { this.joining = false; this.status = '⚠ ' + (e as Error).message; this.renderEntry(); this.errorCls(true); return; }
+    try { await n.join(code); } catch (e) {
+      this.joining = false; const er = e as Error;
+      this.prog = { code, stage: n.stage, fail: { code: er instanceof NetError ? er.code : 'timeout', msg: er.message } };
+      this.renderEntry(); return;
+    }
+    this.prog = null;
     this.joining = false;
     this.net = n; this.code = code;
     history.replaceState(null, '', `?room=${code}`);
-    this.status = `Connected to room ${code}`;
+    this.status = `Connected to room ${code}${n.route ? ` (${n.route})` : ''}`;
   }
   private hostMsg(pid: number, m: Msg) {
     const p = this.players.find((x) => x.pid === pid); if (!p) return;

@@ -321,3 +321,14 @@ body.role-invader #tower-cards, body.role-invader #faction-tabs, body.role-invad
 #troop-bar .troop.free .ucost { color: #8fe36f; font-weight: 700; }
 .btn.possess { background: linear-gradient(#1f5a6e, #143c4a); border-color: #7fe8ff; color: #e8fbff; font-weight: 700; flex: 1; }
 .btn.possess small { opacity: .7; font-weight: 400; }
+/* t47: staged join progress, failure reasons, connection test */
+.mp-steps { list-style: none; margin: 10px auto 0; padding: 0; max-width: 420px; text-align: left; font-size: 14px; }
+.mp-steps li { display: flex; gap: 8px; align-items: center; padding: 3px 0; color: #9aa7b4; }
+.mp-steps li span { width: 18px; text-align: center; }
+.mp-steps li.ok { color: #7fe08a; } .mp-steps li.run { color: #fff; } .mp-steps li.bad { color: #ff7a6b; font-weight: 700; }
+.mp-steps .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #ffd24a; border-right-color: transparent; border-radius: 50%; animation: mpspin .8s linear infinite; }
+@keyframes mpspin { to { transform: rotate(360deg); } }
+.mp-fail { margin: 8px auto 0; max-width: 460px; background: #2a1414; border: 2px solid #ff7a6b; border-radius: 10px; padding: 8px 10px; text-align: left; font-size: 14px; }
+.mp-fail b { color: #ffb0a6; } .mp-fail p { margin: 6px 0; color: #e8d9c0; }
+.mp-test { margin-top: 10px; font-size: 13px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.mp-test small { color: #9aa7b4; } .mp-test .lvl { font-size: 16px; } .lvl.green { color: #4fe06a; } .lvl.yellow { color: #ffd24a; } .lvl.red { color: #ff5a4a; }
