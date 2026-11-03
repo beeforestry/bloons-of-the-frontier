@@ -9,3 +9,14 @@
 
 Sandbag walls are procedural (our own). ITHappy "Military FREE" was requested but its download is account/email-gated, so it was not used.
 GLBs converted/optimised to `public/assets/military/`; 2D sheets rendered from them by `art_src/tools/mil_sprites.py`.
+
+## Ground textures (t46) — CC0, Poly Haven (https://polyhaven.com/license)
+1K diffuse maps, re-encoded to 1024² WebP in `public/assets/tex/`. They are used as tiled detail on the first-person ground.
+| File | Source asset | Author |
+|---|---|---|
+| grass.webp | Leafy Grass — https://polyhaven.com/a/leafy_grass | Charlotte Baglioni |
+| sand.webp | Coast Sand 01 — https://polyhaven.com/a/coast_sand_01 | Rob Tuytel |
+| dirt.webp | Dirt — https://polyhaven.com/a/dirt | Charlotte Baglioni |
+| cobble.webp | Cobblestone Floor 08 — https://polyhaven.com/a/cobblestone_floor_08 | Rob Tuytel |
+| rock.webp | Aerial Rocks 02 — https://polyhaven.com/a/aerial_rocks_02 | Rob Tuytel |
+| water_n.webp | Procedural tileable water normal map (our own, generated with numpy) | — |
