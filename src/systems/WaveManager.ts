@@ -17,7 +17,7 @@ export class WaveManager {
   hpMul = 1;
   /** Per-map enemy HP ease (tighter / longer-lane maps are a touch more forgiving). */
   mapEase = 1;
-  constructor(readonly waves: WaveData[], readonly diffHp = 1) {}
+  constructor(readonly waves: WaveData[], readonly diffHp = 1, readonly diffCount = 1, readonly diffLate = 1) {}
   get total() { return this.waves.length; }
   get current() { return this.active ? this.index + 1 : this.index; }
   get remainingToSpawn() { return this.queue.length; }
@@ -35,10 +35,12 @@ export class WaveManager {
     // Hard/Impoppable HP bonus ramps in over the first 25 waves (no early-game wall: the
     // sim showed fully-spent bots going broke by wave 9-10), full strength after that.
     const ramp = Math.min(1, 0.35 + this.index / 25);
-    this.hpMul = sc.hp * (this.diffHp > 1 ? 1 + (this.diffHp - 1) * ramp : this.diffHp) * this.mapEase;
+    // t50: tougher + bigger waves on Medium/Hard, ramped in over waves 15-35 (early economy untouched)
+    const lr = Math.max(0, Math.min(1, (this.index - 14) / 20)), cm = 1 + (this.diffCount - 1) * lr;
+    this.hpMul = sc.hp * (this.diffHp > 1 ? 1 + (this.diffHp - 1) * ramp : this.diffHp) * (1 + (this.diffLate - 1) * lr) * this.mapEase;
     w.groups.forEach((grp, gi) => {
-      const n = Math.round(grp.count * (grp.count > 2 ? sc.count : 1));
-      const spacing = grp.spacing / Math.sqrt(sc.count);
+      const big = grp.count > 2, n = Math.round(grp.count * (big ? sc.count * cm : 1));
+      const spacing = grp.spacing / Math.sqrt(sc.count * (big ? cm : 1));
       // spread spawns round-robin over every entry lane
       for (let i = 0; i < n; i++) this.queue.push({ t: grp.delay + i * spacing, id: grp.enemy, lane: (gi + i) % lanes });
     });

@@ -185,7 +185,7 @@ export class Game {
 
   constructor(readonly map: MapDef = MAPS[0], readonly diff: Difficulty = DIFFICULTIES[1]) {
     applyCostMul(diff.cost);
-    this.waves = new WaveManager(buildWaves(diff.waves), diff.hp);
+    this.waves = new WaveManager(buildWaves(diff.waves), diff.hp, diff.count, diff.late);
     this.waves.mapEase = MAP_EASE[map.id] ?? 1;
     this.res = new ResourceManager(this.bus, diff.cash ?? START_CREDITS);
     this.grid = new PlacementSystem<Tower>(map);
