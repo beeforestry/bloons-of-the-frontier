@@ -833,6 +833,7 @@ export class Game {
   }
   /** t45 Glue Slinger delivery per tier, matching the sprite: T1 slingshot-lobbed glass vial, T2 hand sprayer stream, T3 hazmat cannon canister. */
   private fireAcid(tw: Tower, tgt: Enemy, c: CombatStats, muzzle: Vec, dmg: number, type: DamageType, hit: HitOpts) {
+    const d = Math.cos(tw.aim) >= 0 ? 1 : -1; muzzle = { x: tw.x + d * 22, y: tw.y - [42, 32, 30][tw.tier] }; // slingshot pouch / sprayer nozzle / cannon mouth on the sprite
     const lead = (s: number) => ({ x: tgt.x + Math.cos(tgt.ang) * tgt.data.speed * s, y: tgt.y + Math.sin(tgt.ang) * tgt.data.speed * s });
     const base = { x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg, type, pierce: 1, splash: c.splash, slow: c.slow, hit, hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround };
     if (tw.tier === 0) { const p = lead(0.4); this.projectiles.push(new Projectile({ ...base, kind: 'acid_vial', lob: { tx: p.x, ty: p.y, dur: 0.55, arc: 70 }, pool: { r: (c.splash ?? 28) * 0.75, dur: 2, dps: dmg * 0.3 } })); return; }

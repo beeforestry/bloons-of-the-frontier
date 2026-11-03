@@ -173,6 +173,7 @@ export class Renderer {
     for (const p of g.pads) if (!p.building) this.pad(p, p === v.selPad);
     for (const p of g.pickups) if (this.inView(p.x, p.y)) this.pickup(p);
     // y-sorted world objects (culled)
+    for (const pl of g.acidPools) if (this.inView(pl.x, pl.y, 80)) this.acidPool(pl);
     const objs: { y: number; f: () => void }[] = [];
     const sel = new Set(v.selSquads);
     for (const b of g.buildings) objs.push({ y: b.y + 30, f: () => this.building(b, b === v.selBuilding) });
@@ -647,7 +648,8 @@ export class Renderer {
       // Wind-up = arm drawn back, fire = overhand throw arc, then settle; idle = breathing + look.
       const tilt = Math.max(-0.18, Math.min(0.18, Math.sin(aim) * 0.22)) * dir; // aim the weapon up/down
       const idle = an.engaged ? 0 : Math.sin(time * 0.9) * 0.05;
-      const upRot = tilt - dir * wind * 0.26 + dir * thr * Math.sin(thr * Math.PI) * 0.42 + idle;
+      const gun = td.id === 'glue_slinger' && tier >= 1; // t45: sprayer / canister cannon fire from the hip: brace + recoil, no throw
+      const upRot = gun ? tilt - dir * wind * 0.05 - dir * recoil * (tier === 2 ? 0.16 : 0.07) + idle : tilt - dir * wind * 0.26 + dir * thr * Math.sin(thr * Math.PI) * 0.42 + idle;
       this.splitFeet(img, x - dir * recoil * 3, footY + hover, w, h, flip, upRot, breathe - sq);
     } else this.feet(img, x - dir * recoil * 3, footY + hover, w, h, flip, breathe + sq * 0.6 + wind * 0.03, breathe - sq - wind * 0.04);
     if (td?.id === 'hypno_shroom') this.additive(IMG.fx_magic, x, footY - h * 0.75, 22 + tier * 8 + Math.sin(time * 4) * 4, time * 1.5, 0.35 + wind * 0.5);
@@ -657,6 +659,9 @@ export class Renderer {
       const dir = flip ? -1 : 1;
       const mx = x + dir * w * 0.42, my = footY + hover - h * (pj === 'pea' ? 0.66 : 0.62);
       this.additive(IMG.fx_muzzle, mx, my, 26 + tier * 4, flip ? Math.PI : 0, (recoil - 0.6) / 0.4);
+    }
+    if (td?.id === 'glue_slinger' && tier >= 1 && recoil > 0.45) { // acid nozzle / cannon flash at release
+      const d2 = flip ? -1 : 1; this.additive(IMG.fx_magic, x + d2 * w * 0.4, footY + hover - h * (tier === 2 ? 0.42 : 0.48), (tier === 2 ? 30 : 18) * recoil, 0, (recoil - 0.45) / 0.55);
     }
     if (td?.id === 'wizard_monkey' || td?.id === 'star_emperor') { // magical shimmer that grows per tier
       this.additive(td.id === 'wizard_monkey' ? IMG.fx_magic : IMG.fx_star, x + (flip ? -1 : 1) * w * 0.3, footY - h * 0.85, 12 + tier * 5, time, 0.35 + 0.25 * Math.sin(time * 3));
@@ -917,18 +922,41 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------- projectiles & fx
+  /** t45: bubbling corrosive acid puddle (fades in, shrinks out). */
+  private acidPool(pl: { x: number; y: number; r: number; t: number; dur: number }) {
+    const c = this.ctx, k = Math.min(1, pl.t / 0.15) * Math.min(1, (pl.dur - pl.t) / 0.6), r = pl.r * (0.85 + 0.15 * Math.min(1, pl.t / 0.3));
+    c.save(); c.globalAlpha = 0.55 * k; const gr = c.createRadialGradient(pl.x, pl.y, 0, pl.x, pl.y, r);
+    gr.addColorStop(0, '#c8ff5a'); gr.addColorStop(0.6, '#6ccf2a'); gr.addColorStop(1, 'rgba(60,140,20,0)');
+    c.fillStyle = gr; c.beginPath(); c.ellipse(pl.x, pl.y, r, r * 0.62, 0, 0, 7); c.fill();
+    c.globalAlpha = 0.8 * k; c.fillStyle = '#e6ffb0'; const tm = performance.now() / 1000;
+    for (let i = 0; i < 4; i++) { const a = i * 2.4 + pl.x, ph = (tm * 1.3 + i * 0.37) % 1, d = r * 0.55 * ((i * 0.37 + 0.2) % 1);
+      c.beginPath(); c.arc(pl.x + Math.cos(a) * d, pl.y + Math.sin(a) * d * 0.62, 1.5 + ph * 3, 0, 7); c.globalAlpha = 0.8 * k * (1 - ph); c.fill(); }
+    c.restore();
+  }
   private projectile(p: Projectile, dt: number) {
     const c = this.ctx, k = p.o.kind, s = p.o.scale ?? 1, y = p.y - p.height;
     const ang = Math.atan2(p.vy, p.vx);
     // glowing trails on high-tier / magical shots
     if (dt && this.quality < 2) {
-      const trail: Record<string, number> = { magic: 0xc77dff, star: 0xffe066, flak: 0xffa040, glue: 0xa6ff4d, seed: 0xb6f78f, gpea: 0xff5a5a, melon: 0xff8a3a };
+      const trail: Record<string, number> = { magic: 0xc77dff, star: 0xffe066, flak: 0xffa040, glue: 0xa6ff4d, acid_vial: 0xa6ff4d, acid_spray: 0xa6ff4d, acid_can: 0x9cff3a, seed: 0xb6f78f, gpea: 0xff5a5a, melon: 0xff8a3a };
       const col = trail[k] ?? (s > 1.3 ? 0xfff0b0 : 0);
       if (col && Math.random() < (this.quality ? 0.5 : 1)) this.parts.spawn(k === 'melon' ? PK.Ember : PK.Glow, p.x + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4, -p.vx * 0.05 + (Math.random() - 0.5) * 20, -p.vy * 0.05 + (Math.random() - 0.5) * 20, 0.35, (k === 'magic' ? 9 : 6) * s, col);
     }
     switch (k) {
       case 'flak': this.additive(IMG.fx_boom_fire, p.x, y, 16 * s, p.spin, 0.9); c.fillStyle = '#ffd08a'; c.beginPath(); c.arc(p.x, y, 3, 0, 7); c.fill(); break;
       case 'glue': c.fillStyle = '#9be04a'; c.beginPath(); c.ellipse(p.x, y, 7 * s, 5 * s, ang, 0, 7); c.fill(); c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(p.x - 2, y - 2, 2, 0, 7); c.fill(); break;
+      case 'acid_vial': { // glass vial tumbling in its arc: cork, glass, green acid
+        c.save(); c.translate(p.x, y); c.rotate(p.spin * 0.8); c.fillStyle = 'rgba(210,240,230,0.55)'; c.strokeStyle = '#eaffff'; c.lineWidth = 1.5;
+        c.beginPath(); c.roundRect(-4.5, -9, 9, 16, 3.5); c.fill(); c.stroke(); c.fillStyle = '#7dff2a'; c.beginPath(); c.roundRect(-3.5, -2, 7, 8, 3); c.fill();
+        c.fillStyle = '#8a5a2e'; c.fillRect(-2.5, -12, 5, 4); c.restore(); this.additive(IMG.fx_magic, p.x, y, 12, 0, 0.25); break; }
+      case 'acid_spray': { // sprayer jet: stretched glowing droplet streak
+        const tx = p.x - p.vx * 0.045, ty = y - p.vy * 0.045; c.save(); c.lineCap = 'round';
+        c.strokeStyle = 'rgba(140,255,60,0.45)'; c.lineWidth = 8; c.beginPath(); c.moveTo(tx, ty); c.lineTo(p.x, y); c.stroke();
+        c.strokeStyle = '#c8ff6a'; c.lineWidth = 3.5; c.beginPath(); c.moveTo(tx, ty); c.lineTo(p.x, y); c.stroke(); c.restore(); break; }
+      case 'acid_can': { // hazmat canister: steel shell, glowing acid band
+        c.save(); c.translate(p.x, y); c.rotate(p.spin * 0.45); c.fillStyle = '#6b7376'; c.strokeStyle = '#2a3032'; c.lineWidth = 1.5;
+        c.beginPath(); c.roundRect(-7, -12, 14, 24, 4); c.fill(); c.stroke(); c.fillStyle = '#9cff3a'; c.fillRect(-7, -3, 14, 6); c.fillStyle = '#ffd23a'; c.fillRect(-4, -12, 8, 3);
+        c.restore(); this.additive(IMG.fx_magic, p.x, y, 26, p.spin, 0.45); break; }
       case 'seed': this.additive(IMG.fx_pea, p.x, y, 18 * s, ang); break;
       case 'dart': if (IMG.fx_dart) this.img(IMG.fx_dart, p.x, y, 24 * s, false, ang); break;
       case 'pea': this.additive(IMG.fx_pea, p.x, y, 22 * s, ang); break;

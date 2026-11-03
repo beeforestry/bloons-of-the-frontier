@@ -46,7 +46,7 @@ export class Possess {
   ctl: ManualCtl = { aim: 0, fire: false, target: null, mx: 0, my: 0 };
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
-  private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
+  private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
   private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli'; tier?: number; model?: THREE.Group; base?: number }>();
   private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number }>();
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
@@ -294,6 +294,10 @@ export class Possess {
     this.shotMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.14, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffe28a }), 500);
     this.bitMesh = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.16), new THREE.MeshBasicMaterial(), 500);
     for (const m of [this.bloonMesh, this.bugMesh, this.unitMesh, this.bitMesh]) m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3);
+    // t45 acid: glowing green vial / jet / canister bodies + flat corrosive puddles
+    this.acidMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1, 8), new THREE.MeshBasicMaterial({ color: 0x8cff3a }), 200);
+    this.poolMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7ee02c, transparent: true, opacity: 0.6, depthWrite: false }), 48);
+    for (const m of [this.acidMesh, this.poolMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
     for (const m of [this.bloonMesh, this.bugMesh, this.unitMesh, this.shotMesh, this.bitMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
     const tm = new THREE.LineBasicMaterial({ color: 0xfff0a0, transparent: true });
     for (let i = 0; i < 8; i++) { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), tm.clone()); line.visible = false; line.frustumCulled = false; this.scene.add(line); this.tracers.push({ line, life: 0 }); }
@@ -556,7 +560,17 @@ export class Possess {
     this.unitMesh.count = nu; this.unitMesh.instanceMatrix.needsUpdate = true; if (this.unitMesh.instanceColor) this.unitMesh.instanceColor.needsUpdate = true;
     // projectiles
     let np = 0;
-    for (const p of g.projectiles) { if (!p.alive || np >= 500) continue; D.position.set(p.x * S, standH(g.map, p.x, p.y) + 1.6, p.y * S); D.rotation.set(0, 0, 0); D.scale.setScalar(1); D.updateMatrix(); this.shotMesh.setMatrixAt(np++, D.matrix); }
+    let na = 0;
+    for (const p of g.projectiles) { const k = p.o.kind; if (!p.alive || !k.startsWith('acid') || na >= 200) continue;
+      D.position.set(p.x * S, standH(g.map, p.x, p.y) + 1.6 + p.height * S, p.y * S);
+      if (k === 'acid_spray') { D.rotation.set(0, -Math.atan2(p.vy, p.vx), Math.PI / 2); D.scale.set(0.16, 0.9, 0.16); }
+      else { D.rotation.set(p.spin * 0.8, 0, p.spin * 0.5); if (k === 'acid_vial') D.scale.set(0.2, 0.42, 0.2); else D.scale.set(0.38, 0.75, 0.38); }
+      D.updateMatrix(); this.acidMesh.setMatrixAt(na++, D.matrix); }
+    this.acidMesh.count = na; this.acidMesh.instanceMatrix.needsUpdate = true;
+    let nq = 0;
+    for (const pl of g.acidPools) { if (nq >= 48) break; const k = Math.min(1, (pl.dur - pl.t) / 0.6); D.position.set(pl.x * S, standH(g.map, pl.x, pl.y) + 0.06, pl.y * S); D.rotation.set(0, 0, 0); D.scale.set(pl.r * S * k, 1, pl.r * S * k); D.updateMatrix(); this.poolMesh.setMatrixAt(nq++, D.matrix); }
+    this.poolMesh.count = nq; this.poolMesh.instanceMatrix.needsUpdate = true;
+    for (const p of g.projectiles) { if (!p.alive || np >= 500 || p.o.kind.startsWith('acid')) continue; D.position.set(p.x * S, standH(g.map, p.x, p.y) + 1.6, p.y * S); D.rotation.set(0, 0, 0); D.scale.setScalar(1); D.updateMatrix(); this.shotMesh.setMatrixAt(np++, D.matrix); }
     this.shotMesh.count = np; this.shotMesh.instanceMatrix.needsUpdate = true;
     // particles
     let nbits = 0;
