@@ -29,8 +29,10 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 const SH_R = 22; // t51: half-size (m) of the sun's shadow box
-/** Metres per map pixel (garden ~110 x 74 m). */
-export const S = 0.05;
+/** Metres per map pixel for POSITIONS (garden ~110 x 74 m). t53: per map — El Morro is true scale (0.25, real lidar
+ * terrain), set in the constructor from map.mpp. Object SIZES keep the game scale SZ so units/bloons look the same. */
+export let S = 0.05;
+const SZ = 0.05;
 const BLOON_COL: Record<string, number> = { red: 0xe8352f, blue: 0x2f7ce8, green: 0x3bc24a, yellow: 0xf2d02c, pink: 0xff6fb5, lead: 0x7b8088, ceramic: 0xb5703a };
 const BUG_COL: Record<string, number> = { scavenger: 0x8a5a2b, hunter: 0x6b3a8a, charger: 0x8a2b2b, brood: 0x9a7a2b, bile_titan: 0x5f9a2b, ironback: 0x6a7480, warden: 0x2b6a8a };
 const BOSS_COL: Record<string, number> = { moab: 0x2f6fd8, boss_zeppelin: 0x8a3fd8, boss_leviathan: 0x1f9a8a, boss_scarab: 0xb8862b, boss_dreadnought: 0x3a3f48, gargoyle: 0x707070 };
@@ -43,11 +45,17 @@ export interface PossessHost { g: Game; onExit(): void }
 type Target = Tower | Unit;
 
 /** Enemy -> 3D centre height (m). Aircraft fly high, bloons float, bugs crawl. */
-function enemyY(e: Enemy) { return e.data.air ? 6.5 : e.data.family === 'bloon' ? (e.data.boss || e.data.id === 'moab' ? 2.6 : 1.3) : Math.max(0.5, e.data.radius * S * 0.8); }
-function enemyR(e: Enemy) { return Math.max(0.45, e.data.radius * S * 1.15); }
+function enemyY(e: Enemy) { return e.data.air ? 6.5 : e.data.family === 'bloon' ? (e.data.boss || e.data.id === 'moab' ? 2.6 : 1.3) : Math.max(0.5, e.data.radius * SZ * 0.8); }
+function enemyR(e: Enemy) { return Math.max(0.45, e.data.radius * SZ * 1.15); }
 
 export class Possess {
   readonly g: Game; readonly obj: Target; readonly isTower: boolean;
+  /** t50 warzone styling is Tropical only (terrain alone no longer implies it: El Morro has real terrain too). */
+  get isWar() { return this.g.map.id === 'tropical'; }
+  /** t53: true-scale map built from real elevation/imagery (El Morro). */
+  get real() { return (this.g.map.mpp ?? 0.05) > 0.051; }
+  /** Ground (standing) height in metres at map px — test hook. */
+  groundAt(x: number, y: number) { return standH(this.g.map, x, y); }
   renderer: THREE.WebGLRenderer; scene = new THREE.Scene(); camera: THREE.PerspectiveCamera;
   root: HTMLDivElement; touch = coarse();
   yaw = 0; pitch = -0.12; keys = new Set<string>(); firing = false; locked = false;
@@ -74,7 +82,7 @@ export class Possess {
   private ray = new THREE.Raycaster(); private v = new THREE.Vector3(); private v2 = new THREE.Vector3();
 
   constructor(readonly host: PossessHost, obj: Target) {
-    this.g = host.g; this.obj = obj; this.isTower = obj instanceof Tower;
+    this.g = host.g; this.obj = obj; this.isTower = obj instanceof Tower; S = this.g.map.mpp ?? 0.05;
     this.root = document.createElement('div'); this.root.id = 'possess-root'; document.body.appendChild(this.root);
     document.body.classList.add('possess-on'); document.body.classList.toggle('ps-touch-on', this.touch);
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.touch, powerPreference: 'high-performance', preserveDrawingBuffer: true });
@@ -90,7 +98,7 @@ export class Possess {
     // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
     this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; if (this.composer) this.composer.setSize(innerWidth, innerHeight); });
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, 420); this.camera.rotation.order = 'YXZ';
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, this.real ? 1100 : 420); this.camera.rotation.order = 'YXZ';
     this.buildWorld(); this.buildPost(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
     // face the nearest enemy (or the HQ's lanes) on entry
     const near = this.g.enemies.filter((e) => e.alive).sort((a, b) => (a.x - obj.x) ** 2 + (a.y - obj.y) ** 2 - ((b.x - obj.x) ** 2 + (b.y - obj.y) ** 2))[0];
@@ -107,7 +115,7 @@ export class Possess {
   private buildWorld() {
     const { scene, g } = this, W = g.map.width * S, D = g.map.height * S;
     // warm late-afternoon light (t42, after the user's FPS reference): soft sky fill + low golden sun, shadows on desktop
-    const war = !!g.map.terrain; // t50: Tropical = warzone (smoky, dimmer, orange sun through haze)
+    const war = this.isWar; // t50: Tropical = warzone (smoky, dimmer, orange sun through haze)
     const hemi = war ? new THREE.HemisphereLight(0xd8cfc0, 0x3a342c, 1.05) : new THREE.HemisphereLight(0xfff0d8, 0x56603a, 1.25); hemi.layers.enableAll(); scene.add(hemi);
     const sun = new THREE.DirectionalLight(war ? 0xffb878 : 0xffd9a8, war ? 2.0 : 2.4); sun.position.copy(this.sunDir).multiplyScalar(80); scene.add(sun, sun.target); this.sun = sun; sun.layers.enableAll();
     if (!this.touch && this.vm.quality !== 'low') {
@@ -188,9 +196,9 @@ export class Possess {
 
   /** Gradient sky dome + sun glow + horizon fog + a ring of distant hazy hills (cheap: ~3 draw calls). */
   private buildSky(W: number, D: number) {
-    const war = !!this.g.map.terrain;
+    const war = this.isWar;
     const { scene } = this, HOR = new THREE.Color(war ? 0x9b9387 : 0xdde4df), ZEN = new THREE.Color(war ? 0x5e646c : 0x5f97cf), WARM = new THREE.Color(war ? 0xe0a060 : 0xffe2b8), LOW = new THREE.Color(war ? 0x6a645a : 0xa9b5a6);
-    scene.background = HOR.clone(); scene.fog = new THREE.Fog(HOR.getHex(), war ? 28 : 40, war ? 150 : 185);
+    scene.background = HOR.clone(); scene.fog = this.real ? new THREE.Fog(HOR.getHex(), 180, 1000) : new THREE.Fog(HOR.getHex(), war ? 28 : 40, war ? 150 : 185);
     const sky = new THREE.Group(); sky.name = 'sky';
     const geo = new THREE.SphereGeometry(360, 32, 16), pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), n = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) {
@@ -223,7 +231,7 @@ export class Possess {
       const hg = new THREE.BufferGeometry(); hg.setAttribute('position', new THREE.Float32BufferAttribute(vs, 3)); hg.setAttribute('color', new THREE.Float32BufferAttribute(cs, 3)); hg.setIndex(idx);
       const hm = new THREE.Mesh(hg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide })); hm.renderOrder = -1 + ring * -0.5; hills.add(hm);
     }
-    scene.add(hills);
+    if (!this.real) scene.add(hills); // t53: El Morro looks out over the real sea horizon instead
   }
   /** Tropical Island: heightfield mesh (shared groundH), sea plane, prop billboards at the 2D decor spots. */
   private buildTerrain(W: number, D: number, flora: FloraItem[]) {
@@ -234,10 +242,12 @@ export class Possess {
     for (let i = 0; i < pos.count; i++) pos.setY(i, h[i]);
     geo.computeVertexNormals();
     const tex = new THREE.TextureLoader().load(assetUrl(T.ground)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-    const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: 0.4, war: true })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), (() => { const n = waterNormal().clone(); n.repeat.set(900 / 7, 900 / 7); n.needsUpdate = true; this.seaN = n; return new THREE.MeshPhongMaterial({ color: 0x35514f, transparent: true, opacity: 0.86, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6), shininess: 70, specular: 0x6f7f80 }); })());
+    // t53 El Morro: the real NOAA aerial photo drapes the real USGS lidar mesh; CC0 detail textures blend in up close
+    const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: this.real ? 0.25 : 0.4, war: this.isWar })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
+    const SEA = this.real ? 3200 : 900; // sea plane at sea level (El Morro: out to the horizon)
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA).rotateX(-Math.PI / 2), (() => { const n = waterNormal().clone(); n.repeat.set(SEA / 7, SEA / 7); n.needsUpdate = true; this.seaN = n; return new THREE.MeshPhongMaterial({ color: this.real ? 0x2c5a5e : 0x35514f, transparent: true, opacity: this.real ? 0.8 : 0.86, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6), shininess: 70, specular: 0x6f7f80 }); })());
     sea.position.set(W / 2, T.water, D / 2); sea.name = 'sea'; scene.add(sea);
-    const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(900, 900).rotateX(-Math.PI / 2), lam(0x1c2c2e)); sea2.position.set(W / 2, -1.7, D / 2); scene.add(sea2);
+    const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA).rotateX(-Math.PI / 2), lam(0x1c2c2e)); sea2.position.set(W / 2, this.real ? T.off - 0.3 : -1.7, D / 2); scene.add(sea2);
     // t50 warzone: plants/rocks -> 3D flora (burnt palms, dead trees), wrecks/bunkers/wire/sandbags -> models; flag stays a billboard
     const gy = (x: number, y: number) => groundH(g.map, x, y);
     for (const [k, x, y, size] of T.props) {
@@ -245,10 +255,10 @@ export class Possess {
       if (m) { flora.push({ k: m.k, h: m.h, burnt: m.burnt, x: x * S, y: gy(x, y) - 0.08, z: y * S, rot: ((x * 7 + y * 3) % 628) / 100, tilt: m.burnt ? (((x + y) % 9) - 4) * 0.02 : 0 }); continue; }
       if (k !== 'prflag') continue;
       const t = new THREE.TextureLoader().load(assetUrl(`assets/maps/tropical/${k}.png`)); t.colorSpace = THREE.SRGBColorSpace;
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, alphaTest: 0.4 })), s2 = size * S * 0.9; sp.center.set(0.5, 0.04); sp.scale.set(s2, s2, 1);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, alphaTest: 0.4 })), s2 = size * SZ * 0.9; sp.center.set(0.5, 0.04); sp.scale.set(s2, s2, 1);
       sp.position.set(x * S, gy(x, y) - 0.1, y * S); sp.userData.prop = k; scene.add(sp);
     }
-    this.war = buildWarzone(scene, T.props, gy, S, this.touch, groundTex('cobble'));
+    if (this.isWar) this.war = buildWarzone(scene, T.props, gy, S, this.touch, groundTex('cobble'));
   }
 
   private buildGun() {
@@ -606,7 +616,7 @@ export class Possess {
       if (!e.alive) continue; live.add(e);
       const gh = standH(g.map, e.x, e.y), x = e.x * S, z = e.y * S, y = enemyY(e) + gh, id = e.data.id;
       if (e.data.boss || id === 'moab' || e.data.air) {
-        const m = this.bossModel(e), k = Math.max(1, e.data.radius * S * 0.9);
+        const m = this.bossModel(e), k = Math.max(1, e.data.radius * SZ * 0.9);
         m.position.set(x, y, z); m.rotation.set(0, -e.ang, 0); m.scale.setScalar(k);
         this.seen.set(e, { x, y, z, c: BOSS_COL[id] ?? 0x8a3fd8 }); continue;
       }
@@ -618,7 +628,7 @@ export class Possess {
         this.seen.set(e, { x, y, z, c });
       } else {
         if (ng >= 300) continue;
-        const k = Math.max(0.6, e.data.radius * S * 1.6);
+        const k = Math.max(0.6, e.data.radius * SZ * 1.6);
         D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k); D.updateMatrix();
         this.bugMesh.setMatrixAt(ng, D.matrix); const c = BUG_COL[id] ?? 0x7a4a2a; this.bugMesh.setColorAt(ng++, this.tmpC.setHex(c));
         this.seen.set(e, { x, y: gh + 0.5, z, c });
@@ -656,7 +666,7 @@ export class Possess {
     let np = 0;
     let na = 0;
     for (const p of g.projectiles) { const k = p.o.kind; if (!p.alive || !k.startsWith('acid') || na >= 200) continue;
-      D.position.set(p.x * S, standH(g.map, p.x, p.y) + 1.6 + p.height * S, p.y * S);
+      D.position.set(p.x * S, standH(g.map, p.x, p.y) + 1.6 + p.height * SZ, p.y * S);
       if (k === 'acid_spray') { D.rotation.set(0, -Math.atan2(p.vy, p.vx), Math.PI / 2); D.scale.set(0.16, 0.9, 0.16); }
       else { D.rotation.set(p.spin * 0.8, 0, p.spin * 0.5); if (k === 'acid_vial') D.scale.set(0.2, 0.42, 0.2); else D.scale.set(0.38, 0.75, 0.38); }
       D.updateMatrix(); this.acidMesh.setMatrixAt(na++, D.matrix); }

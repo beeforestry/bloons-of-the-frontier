@@ -152,9 +152,10 @@ def compose(M):
     if not M.get('noPlaza'): g = Image.composite(ImageEnhance.Brightness(tex(M.get('plaza', 'stone'), 420)).enhance(0.95), g, pm)
     # ---- lanes: dark rut edge, then road
     road = tex(M['road'], 512)
+    ra = M.get('roadAlpha', 1.0)  # t53: <1 lets the real aerial photo show through the painted road
     edge = line_mask(lanes, pw + 22, M['seed'] + 5)
-    g = Image.composite(ImageEnhance.Brightness(g).enhance(0.62), g, edge.point(lambda v: v * 0.7))
-    rm = line_mask(lanes, pw, M['seed'] + 6)
+    g = Image.composite(ImageEnhance.Brightness(g).enhance(0.62), g, edge.point(lambda v: v * 0.7 * ra))
+    rm = line_mask(lanes, pw, M['seed'] + 6).point(lambda v: v * ra)
     if water_polys:  # fords: road slightly transparent over water
         rm = ImageChops.multiply(rm, ImageChops.invert(wm.point(lambda v: v * 0.25)))
     g = Image.composite(road, g, rm)
@@ -163,8 +164,9 @@ def compose(M):
     g = Image.composite(ImageEnhance.Brightness(g).enhance(1.15), g, wear)
     if M.get('post'): g = M['post'](M, g, lanes)
     if M.get('terrain'):  # 3D ground for Possess: the painted map without the stamped props (they become billboards)
-        os.makedirs(tropical.OUT, exist_ok=True)
-        g.resize((W // 2, H // 2), Image.LANCZOS).save(f'{tropical.OUT}/ground.jpg', quality=82, optimize=True)
+        gdir = f"{ROOT}/public/assets/maps/{M['id']}" if M.get('groundFull') else tropical.OUT
+        os.makedirs(gdir, exist_ok=True)
+        (g if M.get('groundFull') else g.resize((W // 2, H // 2), Image.LANCZOS)).save(f'{gdir}/ground.jpg', quality=M.get('groundQ', 82), optimize=True)
         for k in {'prflag'}:  # t50: only the flag stays a billboard; plants/wrecks are 3D models
             s_ = DECO[k].copy(); s_.thumbnail((256, 256), Image.LANCZOS); s_.save(f'{tropical.OUT}/{k}.png', optimize=True)
     # ---- decorations
@@ -242,13 +244,14 @@ def compose(M):
                 waypoints=lanes[0], lanes=lanes, hq=hq, pads=pads, rally=M['rally'],
                 grid=dict(cell=CELL, originX=0, originY=0, cols=COLS, rows=ROWS, buildable=rows),
                 **({'envs': M['envs']} if M.get('envs') else {}), **({'deco': props} if not M.get('terrain') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}),
-                **({'terrain': dict(M['terrain'](M, W, H, lanes, pw), ground='assets/maps/tropical/ground.jpg', props=props)} if M.get('terrain') else {}))
+                **({'terrain': dict(M['terrain'](M, W, H, lanes, pw), ground=f"assets/maps/{M['id'] if M.get('groundFull') else 'tropical'}/ground.jpg", props=props)} if M.get('terrain') else {}),
+                **({'mpp': M['mpp']} if M.get('mpp') else {}), **({'walls': M['walls'](W, H)} if M.get('walls') else {}))
 
 HQ_G = [1980, 744]
 import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import morro_v2
-MORRO_HQ = [1730, 830]
-MORRO_PADS = [[1590, 600], [1730, 640], [1250, 560], [1240, 1080], [1700, 1000], [1880, 760]]
+import morro_v2, morro_real
+MORRO_HQ = [1300, 830]
+MORRO_PADS = [[1120, 594], [1096, 1002], [1300, 640], [1300, 1030], [1520, 900], [1670, 880]]  # t53: flat terraces inside the real fort
 def ring(hq):  # 6 pads around HQ (left side kept open for lane entry)
     x, y = hq
     return [[x - 140, y - 210], [x + 50, y - 230], [x + 165, y - 90], [x + 165, y + 100], [x + 50, y + 235], [x - 140, y + 215]]
@@ -282,18 +285,22 @@ MAPS = [
     # west; Old San Juan along the land edge. Lanes: diagonal lawn footpath through the west
     # gate (two city roads that merge at the bridge), and a sea landing from the harbor bay up
     # the south glacis and ramp. The breakwater jetty off the point is scenery.
-    dict(id='morro', name='El Morro, San Juan', seed=53, ground='grass', road='stone', pathWidth=58, decoCount=9, noPlaza=True,
-         painter=morro_v2.paint, post=morro_v2.post, streets=[600, 1250], gate=[1150, 825],
-         deco=['palm2', 'palm2', 'palm', 'palm', 'fern', 'fern', 'boulders'],
-         hq=MORRO_HQ, pads=MORRO_PADS, rally=[1560, 830],
-         fixed=[['lighthouse', 1462, 470, 0.62], ['cannon', 1880, 720, 0.7], ['cannon', 1560, 1150, 0.7], ['cannonballs', 1250, 980, 0.8],
-                ['prflag', 1185, 1010, 0.8], ['palm2', 900, 250, 0.9], ['palm2', 470, 1390, 0.9]],
-         envs=[['garita', 1150, 345], ['garita', 1440, 322], ['garita', 1238, 1282], ['garita', 1650, 478]],
+    # t53: El Morro rebuilt from REAL public-domain data (see morro_real.py): NOAA NGS 2017 aerial photo as the
+    # background, USGS 3DEP 1 m lidar as the first-person terrain, 0.25 m/px true scale. Lanes re-traced on the photo:
+    # (0) the esplanade footpath to the roundel, over the moat bridge and through the gate; (1) a landing on the
+    # north-shore rocks, up the brushy slope and along the glacis to the bridge; (2) in from Calle Norzagaray
+    # (city edge) diagonally across the lawn to the roundel. HQ in the fort's courtyard.
+    dict(id='morro', name='El Morro, San Juan', seed=53, ground='grass', road='stone', pathWidth=58, decoCount=0, noPlaza=True,
+         painter=morro_real.paint, terrain=morro_real.heightfield, walls=morro_real.walls, mpp=morro_real.FRAME['mpp'],
+         groundFull=True, groundQ=80, roadAlpha=0.42, deco=['palm2'],
+         hq=MORRO_HQ, pads=MORRO_PADS, rally=[1150, 800],
+         fixed=[],
+         envs=[['garita', 1005, 515], ['garita', 1012, 1062], ['garita', 1790, 925], ['garita', 1500, 585]],
          flavor='morro',
          lanes=[
-             [[-80, 600], [260, 590], [480, 470], [720, 400], [930, 450], [1010, 600], [960, 740], [1040, 815], [1100, 825], [1230, 822], [1330, 765], [1450, 735], [1530, 800], [1590, 830]],
-             [[-80, 1250], [300, 1240], [560, 1170], [760, 1060], [900, 950], [1010, 870], [1100, 825], [1230, 822], [1330, 765], [1450, 735], [1530, 800], [1590, 830]],
-             [[640, 1570], [700, 1450], [900, 1380], [1180, 1345], [1380, 1268], [1480, 1150], [1480, 1010], [1500, 890], [1530, 800], [1590, 830]],
+             [[-80, 735], [200, 733], [500, 748], [800, 765], [940, 775], [1060, 795], [1175, 800]],
+             [[1000, 1570], [985, 1420], [925, 1300], [865, 1180], [840, 1050], [868, 905], [940, 790], [1060, 795], [1175, 800]],
+             [[-80, 112], [150, 116], [330, 150], [500, 320], [700, 520], [870, 700], [940, 778], [1060, 795], [1175, 800]],
          ]),
     # Tropical Island (t40u): user's terrain/heightmap/grass assets; one long winding lane from the
     # west landing dock (balloon) to the HQ by the east dock (flag).
