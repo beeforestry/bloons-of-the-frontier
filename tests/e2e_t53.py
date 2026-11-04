@@ -45,11 +45,11 @@ with sync_playwright() as p:
     # ---- 2D (normal match: the free Sprout Farmhand is pre-placed)
     load('map=morro&diff=medium' + ('' if args.before else '&fpq=high'), sandbox=False)
     m = G('({ img: H.g.map.image, mpp: H.g.map.mpp, terr: !!H.g.map.terrain, lanes: H.g.map.lanes.length, build: H.g.map.grid.buildable.join("").split("1").length - 1, walls: (H.g.map.walls || []).length })'); print('  map', m)
-    check(m['terr'] and abs((m['mpp'] or 0) - 0.25) < 1e-6, 'morro: real DEM terrain at 0.25 m/px')
+    check(m['terr'] and abs((m['mpp'] or 0) - 0.125) < 1e-6, 'morro: real DEM terrain at 0.125 m/px (t55 2x world)')
     check(m['build'] > 150, 'morro: enough buildable cells after re-trace')
     check(m['walls'] > 10, 'morro: fort wall LOS blockers present')
     check(G('H.g.units ? H.g.units.some(u => u.data && /farmhand/i.test(u.data.id)) : true') or G('JSON.stringify(H.g.squads.map(s => s.data.id)).includes("farmhand")'), 'morro: Sprout Farmhand pre-placed')
-    G('H.camFocus && H.camFocus(1104, 744, 0.5)'); pg.wait_for_timeout(800); shot(pg, 'morro_2d_full')
+    G('H.camFocus && H.camFocus(2208, 1488, 0.25)'); pg.wait_for_timeout(800); shot(pg, 'morro_2d_full')
     G('H.sandbox(); H.addCredits(90000)'); G('H.startWave()'); pg.wait_for_timeout(9000); shot(pg, 'morro_2d_midwave')
     check(G('H.g.enemies.filter(e => e.alive).length') > 0, 'morro: enemies walk the re-traced lane')
     if not args.before:
@@ -65,11 +65,11 @@ with sync_playwright() as p:
         print('  terrain height range m', dz); check(dz[1] - dz[0] > 25, 'morro FP: DEM relief (fort/cliffs) > 25 m')
         gh = P('(() => { const e = P.eye(); return e.y - P.groundAt(P.obj.x, P.obj.y); })()') if P('typeof P.groundAt') == 'function' else 1.6
         check(0.5 < gh < 3.5, f'morro FP: camera follows the ground (eye {gh:.2f} m above)')
-    P('P.aimAt(1500, 780, 8); P.pitch = 0.02'); pg.mouse.move(800, 480); pg.wait_for_timeout(2000); shot(pg, 'morro_fp_fort'); print(f'  fps≈{P("P.fps || 0")}')
+    P('P.aimAt(3000, 1560, 8); P.pitch = 0.02'); pg.mouse.move(800, 480); pg.wait_for_timeout(2000); shot(pg, 'morro_fp_fort'); print(f'  fps≈{P("P.fps || 0")}')
     pg.keyboard.press('e'); pg.wait_for_timeout(500)
     sp = G('H.lanePoint(1, 0.3)')  # north-shore landing: the fort's sea walls + cliffs + surf
     check(possess_unit(sp['x'] + 40, sp['y'] - 30), 'morro: possessed by the north shore')
-    P('P.aimAt(1700, 1180, 0); P.pitch = -0.06'); pg.wait_for_timeout(2000); shot(pg, 'morro_fp_sea')
+    P('P.aimAt(3400, 2360, 0); P.pitch = -0.06'); pg.wait_for_timeout(2000); shot(pg, 'morro_fp_sea')
     pg.keyboard.press('e'); pg.wait_for_timeout(400)
     if not args.before:
         load('map=morro&fpq=low'); pt = G('H.lanePoint(0, 0.5)'); possess_unit(pt['x'], pt['y'] + 70)

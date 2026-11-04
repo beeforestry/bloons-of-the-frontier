@@ -32,13 +32,14 @@ def bilinear(a, x, y):
     return (a[j, i] * (1 - u) + a[j, i + 1] * u) * (1 - v) + (a[j + 1, i] * (1 - u) + a[j + 1, i + 1] * u) * v
 
 
-def fetch():
+def fetch(scale=1):
     import subprocess, rasterio
     from rasterio.windows import from_bounds
     from pyproj import Transformer
     os.makedirs(CACHE + '/tiles', exist_ok=True)
-    W, H = FRAME['W'], FRAME['H']
-    E, N = frame_utm(W, H)
+    W, H = FRAME['W'] * scale, FRAME['H'] * scale
+    f0 = dict(FRAME); FRAME['mpp'] = f0['mpp'] / scale
+    E, N = frame_utm(W, H); Z = 19 + (scale > 1)
     lon, lat = Transformer.from_crs('EPSG:26919', 'EPSG:4326', always_xy=True).transform(E, N)
     n = 256 * 2 ** Z; gx = (lon + 180) / 360 * n; gy = (1 - np.arcsinh(np.tan(np.radians(lat))) / math.pi) / 2 * n
     tx0, ty0, tx1, ty1 = int(gx.min() // 256), int(gy.min() // 256), int(gx.max() // 256), int(gy.max() // 256)
@@ -51,7 +52,9 @@ def fetch():
             except Exception: miss += 1
     print('tiles', (tx1 - tx0 + 1) * (ty1 - ty0 + 1), 'missing', miss)
     img = bilinear(mos, gx - tx0 * 256 - 0.5, gy - ty0 * 256 - 0.5)
-    Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(f'{CACHE}/photo_raw.png')
+    Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(f'{CACHE}/photo_raw{"2" if scale > 1 else ""}.png')
+    FRAME.update(f0)
+    if scale > 1: return
     with rasterio.open(DEM_URL) as d:
         w = from_bounds(E.min() - 6, N.min() - 6, E.max() + 6, N.max() + 6, d.transform).round_offsets().round_lengths()
         a = d.read(1, window=w).astype(np.float32); t = d.window_transform(w); nod = d.nodata
@@ -138,3 +141,4 @@ def walls(W, H, region=None, step=32):
 
 
 if __name__ == '__main__' and sys.argv[1:] == ['fetch']: fetch()
+if __name__ == '__main__' and sys.argv[1:] == ['fetch2']: fetch(2)  # t55: 0.125 m/px (z20) for the 2x-size map

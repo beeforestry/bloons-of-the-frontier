@@ -687,7 +687,8 @@ export class Possess {
     this.bitMesh.count = nbits; this.bitMesh.instanceMatrix.needsUpdate = true; if (this.bitMesh.instanceColor) this.bitMesh.instanceColor.needsUpdate = true;
     for (const tr of this.tracers) if (tr.life > 0) { tr.life -= dt; if (tr.life <= 0) tr.line.visible = false; }
     // range ring
-    const r = this.rangePx() * S; this.ring.position.set(me.x * S, standH(g.map, me.x, me.y) + 0.06, me.y * S); this.ring.scale.set(r, 1, r);
+    const r = this.rangePx() * S; this.ring.visible = r < 60; // t55: a huge ring on terrain reads as a cyan horizon line
+    this.ring.position.set(me.x * S, standH(g.map, me.x, me.y) + 0.06, me.y * S); this.ring.scale.set(r, 1, r);
   }
   /** Vehicle troops at real size: Scorpion = the M808 tank model, Warthog = a 4.6 m jeep. */
   private vehicleUnit(u: Unit, dt: number) {

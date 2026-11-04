@@ -250,7 +250,8 @@ export class Unit implements Buffable {
   updateManual(g: Game, dt: number, t: UnitTier, speed: number) {
     const m = this.manual!, L = Math.hypot(m.mx, m.my);
     if (L > 0.05) {
-      const k = (Math.min(1, L) / L) * speed * dt, nx = this.x + m.mx * k, ny = this.y + m.my * k;
+      // t55: walk at the same metres/second on every map (El Morro is 0.125 m/px vs 0.05 elsewhere)
+      const k = (Math.min(1, L) / L) * speed * dt * Math.min(1, 0.05 / (g.map.mpp ?? 0.05)), nx = this.x + m.mx * k, ny = this.y + m.my * k;
       if (g.walkable(nx, ny)) { this.x = nx; this.y = ny; } else if (g.walkable(nx, this.y)) this.x = nx; else if (g.walkable(this.x, ny)) this.y = ny;
       this.moving = true;
   }
