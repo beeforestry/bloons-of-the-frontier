@@ -49,9 +49,10 @@ with sync_playwright() as p:
     G(f'H.selectTower({ti})'); pg.wait_for_selector('#sp-possess', timeout=4000); pg.click('#sp-possess')
     check(until('window.__possess && window.__possess.cur && document.querySelector("#possess-root canvas")', 30000), 'Possess opened on tropical')
     pg.wait_for_timeout(2500)
-    st = P('({ floor: P.scene.getObjectByName("floor").geometry.attributes.position.count, sea: !!P.scene.getObjectByName("sea"), props: P.scene.children.filter(o => o.userData.prop).length, camY: P.camera.position.y, tier: P.obj.tier })')
+    until('(() => { let n = 0; window.__possess.cur.scene.traverse(o => { if (o.isInstancedMesh && (o.userData.flora || o.userData.texModel)) n += o.count; }); return n >= 30; })()', 20000)  # t50 flora models load async
+    st = P('({ floor: P.scene.getObjectByName("floor").geometry.attributes.position.count, sea: !!P.scene.getObjectByName("sea"), props: (() => { let n = 0; P.scene.traverse(o => { if (o.isInstancedMesh && (o.userData.flora || o.userData.texModel)) n += o.count; }); return n; })(), bb: P.scene.children.filter(o => o.userData.prop && o.userData.prop !== "prflag").length, camY: P.camera.position.y, tier: P.obj.tier })')
     check(st['floor'] > 4000 and st['sea'], f'heightfield terrain mesh + sea ({st["floor"]} verts)')
-    check(st['props'] >= 30, f'{st["props"]} palm/rock/bush billboards')
+    check(st['props'] >= 30 and st['bb'] == 0, f'{st["props"]} 3D palm/rock/bush model instances, {st["bb"]} non-flag billboards (t50: props are models)')
     check(st['camY'] > 2.7 + st['tier'] * 0.15 + 0.3, f'tower camera sits on the terrain (eye y={st["camY"]:.2f} m)')
     for i in range(10): G(f'H.spawn("pink", 0, {0.30 + i * 0.01:.3f})')
     pg.wait_for_timeout(1500); P('P.aimNearest()'); P('P.pitch = -0.1'); pg.wait_for_timeout(400); shot(pg, 'fps_tower_view')
