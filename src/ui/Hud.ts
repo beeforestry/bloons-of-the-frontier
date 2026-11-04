@@ -51,7 +51,8 @@ function deltaLine(a: TowerTier, b: TowerTier): string {
   const cmp = (name: string, x?: number, y?: number, pct = false) => {
     if (x === undefined || y === undefined || x === y) return;
     const v = pct ? `${Math.round(x * 100)}→${Math.round(y * 100)}%` : `${+x.toFixed(2)}→${+y.toFixed(2)}`;
-    d.push(`<b>${name}</b> ${v}`);
+    const dv = pct ? Math.round((y - x) * 100) : +(y - x).toFixed(2);
+    d.push(`<span class="dl"><b>${name}</b> ${v} <i class="${dv >= 0 ? 'up' : 'dn'}">${dv >= 0 ? '+' : ''}${dv}${pct ? '%' : ''}</i></span>`);
   };
   cmp('Dmg', a.combat?.damage, b.combat?.damage); cmp('Rate', a.combat?.fireRate, b.combat?.fireRate); cmp('Range', a.combat?.range, b.combat?.range);
   cmp('Pierce', a.combat?.pierce, b.combat?.pierce); cmp('Shots', a.combat?.shots, b.combat?.shots); cmp('Splash', a.combat?.splash, b.combat?.splash);
@@ -62,7 +63,7 @@ function deltaLine(a: TowerTier, b: TowerTier): string {
   cmp('Orb ⚡', a.orbs?.energy, b.orbs?.energy); cmp('Orbs/min', a.orbs?.perMin, b.orbs?.perMin);
   cmp('Shred', a.combat?.armorShred, b.combat?.armorShred, true); cmp('Slow', a.combat?.slow, b.combat?.slow, true);
   cmp('Garrison armor', a.cover?.garrisonProtect, b.cover?.garrisonProtect, true); cmp('Garrison range', a.cover?.garrisonRangePct, b.cover?.garrisonRangePct, true);
-  return d.join('<br>');
+  return d.join('');
 }
 function bldLine(t: BuildingTier) {
   const s = t.stats, o: string[] = [`❤ ${s.maxHp}`];
@@ -281,7 +282,7 @@ export class Hud {
       p.innerHTML = `<div class="sp-head">${th(t.t.visual.sprite ?? t.data.sprite, t.tier, 56)}<div><div class="sp-name">${t.t.name}</div>
         <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${tags ? ' · ' + tags : ''}</div></div></div>
         <div class="sp-stats">${statLine(t.t)}</div><div class="sp-live"></div>
-        ${n ? `<button class="btn up" id="sp-up" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
+        ${n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
         <div class="row">${t.combat && this.mine(t) ? `<button class="btn possess" id="sp-possess" title="See and fight through this tower in first person (E)">👁 Possess <small>(E)</small></button>` : ''}<button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
@@ -509,7 +510,7 @@ export class Hud {
    *  (moved back into place on wider screens). */
   private compactTopbar() {
     const more = document.getElementById('hud-more')!, btn = document.getElementById('btn-more')!, sp = document.getElementById('btn-speed')!;
-    const items = ['#tech-stat', '#orbs-stat', '#btn-auto', '[data-speed="1"]', '[data-speed="2"]', '[data-speed="4"]', '#btn-voice', '#btn-bug'].map((q) => document.querySelector<HTMLElement>('#topbar ' + q)).filter((e): e is HTMLElement => !!e);
+    const items = ['#tech-stat', '#orbs-stat', '#btn-auto', '[data-speed="1"]', '[data-speed="2"]', '[data-speed="4"]', '#btn-sfx', '#btn-voice', '#btn-bug'].map((q) => document.querySelector<HTMLElement>('#topbar ' + q)).filter((e): e is HTMLElement => !!e);
     const marks = items.map((e) => { const c = document.createComment('hud-slot'); e.before(c); return c; });
     const close = () => { more.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.classList.remove('on'); };
     btn.onclick = (ev) => { ev.stopPropagation(); const open = more.hidden; more.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.classList.toggle('on', open); };

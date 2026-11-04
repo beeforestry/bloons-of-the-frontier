@@ -38,7 +38,7 @@ import { ABILITIES, EMP, HIJACK, RALLY, STIM, VET_AURA } from '../data/abilities
 
 /** Anything bugs / acid can hurt. */
 export type Damageable = (Tower | Unit | Building | Barrier) & { takeDamage(g: Game, n: number): void };
-export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap';
+export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap' | 'wave' | 'victory' | 'defeat';
 export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number; owner?: number; /** MAC: the exact aimed point (clears terrain there even when the sweep snaps to a lane). */ aim?: Vec }
 export interface Decal { x: number; y: number; r: number; ang: number; t: number }
 
@@ -101,7 +101,7 @@ export class Game {
   speed = 1;
   paused = false;
   /** Researched tier per troop type (Halo Wars style: upgrades all squads of that type). */
-  private unitTiers: Record<string, number> = {};
+  unitTiers: Record<string, number> = {};
   /** Deploy cooldown per troop type. */
   deployCd: Record<string, number> = {};
   stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0,

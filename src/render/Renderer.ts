@@ -1048,7 +1048,15 @@ export class Renderer {
       case 'boom': case 'boom_fire': {
         c.globalAlpha = 1;
         const im = e.kind === 'boom' ? IMG.fx_boom : IMG.fx_boom_fire;
-        if (im) this.additive(im, e.x, e.y, (e.r ?? 40) * 2.1 * (0.55 + 0.6 * k), k * 0.6, 1 - k * k); else this.ringAt(e.x, e.y, e.r ?? 40, '#ffa040', 4);
+        const R = e.r ?? 40, rf = this.g.reduceFlash ? 0.45 : 1;
+        // t55: smoke puffs drift out under the fireball, a soft shock ring, and tumbling debris (no full-screen flash)
+        c.fillStyle = '#3d3a36';
+        for (let i = 0; i < 7; i++) { const a = i * 0.9 + R, d = R * (0.25 + k * 0.75); c.globalAlpha = 0.32 * (1 - k); c.beginPath(); c.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d * 0.7 - k * 14, R * (0.22 + k * 0.3), 0, 7); c.fill(); }
+        if (k < 0.5) { c.globalAlpha = (1 - k * 2) * 0.55 * rf; c.strokeStyle = '#ffe2a8'; c.lineWidth = 3; c.beginPath(); c.arc(e.x, e.y, R * (0.4 + k * 1.6), 0, 7); c.stroke(); }
+        c.globalAlpha = 1 - k; c.fillStyle = '#2a2420';
+        for (let i = 0; i < 8; i++) { const a = i * 0.785 + R * 0.1, d = R * (0.2 + k * 1.1); c.fillRect(e.x + Math.cos(a) * d - 2, e.y + Math.sin(a) * d + k * k * 18 - 2, 4, 4); }
+        c.globalAlpha = 1;
+        if (im) this.additive(im, e.x, e.y, R * 2.1 * (0.55 + 0.6 * k), k * 0.6, (1 - k * k) * rf); else this.ringAt(e.x, e.y, R, '#ffa040', 4);
         break;
       }
       case 'acid': c.globalAlpha = 1; this.additive(IMG.fx_acid, e.x, e.y, (e.r ?? 24) * 2 * (0.6 + k * 0.6), 0, 1 - k); break;

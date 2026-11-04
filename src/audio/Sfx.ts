@@ -12,6 +12,8 @@ export class Sfx {
   private last = new Map<string, number>();
   muted = false;
   volume = 0.35;
+  /** t55: modest default, saved by the 🔉 button (0 = muted). */
+  setVolume(v: number) { this.volume = v; this.muted = v <= 0; if (this.master) this.master.gain.value = v; }
   unlock() {
     if (this.ctx) { if (this.ctx.state === 'suspended') void this.ctx.resume(); return; }
     try {
@@ -37,7 +39,7 @@ export class Sfx {
   }
   play(n: SfxName) {
     if (!this.ctx || this.muted || this.ctx.state !== 'running') return;
-    const now = performance.now(), gap = n === 'fire' || n === 'pop' || n === 'laser' ? 45 : n === 'explosion' ? 90 : 60;
+    const now = performance.now(), gap = n === 'wave' || n === 'victory' || n === 'defeat' ? 500 : n === 'fire' || n === 'pop' || n === 'laser' ? 45 : n === 'explosion' ? 90 : 60;
     if (now - (this.last.get(n) ?? 0) < gap) return;
     this.last.set(n, now);
     switch (n) {
@@ -61,6 +63,9 @@ export class Sfx {
       case 'orb': this.tone('sine', 660, 1980, 0.18, 0.14); break;
       case 'upgrade': for (let i = 0; i < 3; i++) this.tone('triangle', 520 * (1 + i * 0.25), 520 * (1 + i * 0.25), 0.08, 0.14, i * 0.06); break;
       case 'error': this.tone('square', 200, 140, 0.15, 0.1); break;
+      case 'wave': this.tone('square', 392, 392, 0.12, 0.09); this.tone('square', 523, 523, 0.12, 0.09, 0.13); this.tone('square', 784, 784, 0.25, 0.1, 0.26); break;
+      case 'victory': [523, 659, 784, 1047].forEach((f, i) => this.tone('triangle', f, f, i === 3 ? 0.6 : 0.16, 0.16, i * 0.15)); break;
+      case 'defeat': [392, 330, 262, 196].forEach((f, i) => this.tone('sawtooth', f, f * 0.97, i === 3 ? 0.8 : 0.22, 0.1, i * 0.24)); break;
       case 'fuse': this.burst(0.6, 0.12, 5000, 3); break;
     }
   }

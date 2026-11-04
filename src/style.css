@@ -332,3 +332,16 @@ body.role-invader #tower-cards, body.role-invader #faction-tabs, body.role-invad
 .mp-fail b { color: #ffb0a6; } .mp-fail p { margin: 6px 0; color: #e8d9c0; }
 .mp-test { margin-top: 10px; font-size: 13px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
 .mp-test small { color: #9aa7b4; } .mp-test .lvl { font-size: 16px; } .lvl.green { color: #4fe06a; } .lvl.yellow { color: #ffd24a; } .lvl.red { color: #ff5a4a; }
+
+/* t55 polish: upgrade deltas as tidy chips, consistent panel spacing */
+.delta { display: flex; flex-wrap: wrap; gap: 3px 8px; line-height: 1.35; }
+.delta .dl { white-space: nowrap; }
+.delta i { font-style: normal; font-weight: 700; padding: 0 3px; border-radius: 3px; }
+.delta i.up { color: #9dff8a; background: rgba(80, 200, 90, 0.18); }
+.delta i.dn { color: #ffb0a0; background: rgba(220, 80, 60, 0.18); }
+#sel-panel .btn, #sel-panel .row { margin-top: 6px; }
+#sel-panel .btn.up { width: 100%; text-align: left; padding: 7px 10px; }
+
+.continue-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 10px; }
+.continue-box .btn.continue { flex: 1; font-size: 15px; padding: 10px 14px; background: linear-gradient(#4fbf5a, #2f8f3a); color: #fff; text-align: left; }
+.continue-box .cont-hint { flex-basis: 100%; margin: 0; font-size: 11px; opacity: 0.8; }
