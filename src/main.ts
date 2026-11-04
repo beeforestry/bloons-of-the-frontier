@@ -23,6 +23,7 @@ import { NetHud } from './ui/NetHud';
 import type { PingKind } from './game/Game';
 import { installConsoleCapture, logEvent, setReportContext, openBugReport, flushQueue, queued, buildReport, submit, issueUrl, reportText, transport, cooldownLeft, BUILD, type ReportCategory } from './ui/BugReport';
 import { PauseMenu } from './ui/PauseMenu';
+import { readSave, writeSave, clearSave, applySave, snapshot, type SaveData } from './game/Save';
 installConsoleCapture();
 
 const LS = { get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* */ } } };
@@ -56,6 +57,19 @@ async function boot() {
   }
   paint();
   document.getElementById('btn-menu-bug')!.onclick = () => openBugReport();
+  // t55: Continue the autosaved single-player match (co-op / versus are not saved)
+  const sv = readSave();
+  if (sv) {
+    const m = MAPS.find((x) => x.id === sv.map)!, d = DIFFICULTIES.find((x) => x.id === sv.diff);
+    const box = document.createElement('div'); box.id = 'continue-box'; box.className = 'continue-box';
+    box.innerHTML = `<button id="btn-continue" class="btn continue">▶ Continue <b>${m.name}</b> · ${d?.icon ?? ''} ${d?.name ?? sv.diff} · Wave ${sv.wave + 1} · ❤ ${sv.hq} · ¢${sv.credits}</button>
+      <button id="btn-discard" class="btn small" title="Delete this save">✕</button>
+      <div class="cont-hint">Autosaved ${new Date(sv.at).toLocaleString()} · single player only — co-op and versus matches are not saved</div>`;
+    const panel = document.querySelector('#menu .panel') ?? document.getElementById('menu')!, intro = panel.querySelector(':scope > p');
+    panel.insertBefore(box, intro ? intro.nextSibling : panel.firstChild);
+    document.getElementById('btn-continue')!.onclick = () => start(sv.map, sv.diff, false, undefined, sv);
+    document.getElementById('btn-discard')!.onclick = () => { clearSave(); box.remove(); };
+  }
   setTimeout(() => { void flushQueue().then((n) => { if (n) console.info(`[report] sent ${n} queued report(s)`); }); }, 1500);
   document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start('garden', diff, true); };
   // Single Player / Co-Op Defense / 1v1 Versus on the main menu; ?room=1234 invite links auto-join.
@@ -64,7 +78,7 @@ async function boot() {
   if (q && MAPS.some((m) => m.id === q)) start(q, diff);
 }
 
-function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false, mp?: MpStart) {
+function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false, mp?: MpStart, resume?: SaveData) {
   document.getElementById('menu')!.classList.remove('show');
   const g = new Game(MAPS.find((m) => m.id === mapId)!, difficultyById(diffId));
   // Multiplayer: host-authoritative sync (single player never creates it)
@@ -89,11 +103,29 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (!voiceOn || sfx.muted) return;
     try { const u = new SpeechSynthesisUtterance(line); u.rate = 1.15; u.pitch = 0.8; u.volume = 0.8; speechSynthesis.speak(u); } catch { /* no TTS */ }
   };
+  // t55: volume steps 🔇/🔈/🔉/🔊, saved in localStorage (default modest 0.35)
+  const VOLS = [0, 0.15, 0.35, 0.7], VICONS = ['🔇', '🔈', '🔉', '🔊'];
+  const sBtn = document.getElementById('btn-sfx');
+  let vi = Math.max(0, VOLS.indexOf(Number(LS.get('bof.vol') ?? '0.35'))); if (LS.get('bof.vol') == null) vi = 2;
+  const syncVol = () => { sfx.setVolume(VOLS[vi]); if (sBtn) { sBtn.textContent = VICONS[vi]; sBtn.title = `Sound: ${vi ? Math.round(VOLS[vi] * 100) + '%' : 'muted'} (click to change)`; sBtn.classList.toggle('on', vi > 0); } };
+  sBtn?.addEventListener('click', () => { vi = (vi + 1) % VOLS.length; LS.set('bof.vol', String(VOLS[vi])); sfx.unlock(); syncVol(); if (vi) sfx.play('select'); });
+  syncVol();
+  g.bus.on('wave', (e) => { if (e.active) g.sfx('wave', g.hq.x, g.hq.y); });
+  g.bus.on('gameover', (e) => g.sfx(e.won ? 'victory' : 'defeat', g.hq.x, g.hq.y));
   const unlock = () => sfx.unlock();
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
+  if (!mp && resume) { applySave(g, resume); g.toast(`Resumed at wave ${resume.wave + 1}`, '#9ff7b0'); }
   if (!mp) g.spawnFreeCollector(0);
+  // t55 autosave (single player): every wave end + when the page is hidden; a finished match clears it
+  if (!mp) {
+    g.bus.on('wave', (e) => { if (!e.active) writeSave(g, diffId); });
+    g.bus.on('gameover', () => clearSave());
+    const hide = () => { if (g.state === 'playing' && (g.waves.index > 0 || g.towers.length > 0)) writeSave(g, diffId); };
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') hide(); });
+    window.addEventListener('pagehide', hide);
+  }
   const pauseMenu = new PauseMenu(g, () => { if (g.netPause) g.netPause(false); else g.paused = false; });
   document.getElementById('btn-bug')!.onclick = () => openBugReport();
   logEvent(`start map=${mapId} diff=${diffId} mode=${mp ? mp.settings.mode : 'solo'}`);
@@ -403,7 +435,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   requestAnimationFrame(frame);
   // First-play tutorial (auto on the first match; replay via 🎓 in the menu).
   let tut: Tutorial | null = null;
-  if (!mp && (forceTutorial || !Tutorial.done())) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
+  if (!mp && !resume && (forceTutorial || !Tutorial.done())) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
   setReportContext(() => ({ map: g.map.id, difficulty: g.diff.id, wave: g.waves.freeplay ? `freeplay ${g.waves.index}` : `${g.waves.index}/${g.waves.total}`, mode: g.mode === 'solo' ? 'SP' : g.mode, fps: Math.round(fps.cur), quality: r.quality, speed: g.speed, paused: g.paused, state: g.state, hq: Math.ceil(g.hq.health.hp), credits: Math.floor(g.res.credits), towers: g.towers.length, squads: g.squads.length, enemies: g.enemies.length, canvas }));
   window.__game = Object.assign(testHooks(g, view, hud, click, r), {
     report: { build: (c: ReportCategory, d: string, shot = true) => buildReport(c, d, shot), submit, queued, issueUrl, reportText, transport, cooldownLeft, BUILD, open: openBugReport, flush: flushQueue },
@@ -482,6 +514,8 @@ function testHooks(g: Game, view: ViewState, hud: Hud, click: (p: Vec) => void, 
     deploy: (id: string, x: number, y: number) => !!g.deploySquad(id, { x, y }),
     organize: () => g.orderOrganizeFarms(),
     startWave: () => g.waves.start(g),
+    save: () => { writeSave(g, g.diff.id as DifficultyId); return snapshot(g, g.diff.id as DifficultyId); },
+    readSave,
     setSpeed: (n: number) => { g.speed = n; },
     addCredits: (n: number) => g.res.add(n),
     upgradeAll: () => { let n = 0; for (const t of g.towers) if (t.upgrade(g)) n++; return n; },
