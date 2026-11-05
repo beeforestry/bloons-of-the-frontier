@@ -39,9 +39,9 @@ with sync_playwright() as p:
     check(v0 == '🔉' and v1 == '🔊' and pg.evaluate("localStorage.getItem('bof.vol')") == '0.7', f'volume button cycles + saves ({v0}->{v1})')
     pg.click('#btn-sfx'); check(pg.inner_text('#btn-sfx') == '🔇' and pg.evaluate("localStorage.getItem('bof.vol')") == '0', 'mute step saved')
     pg.click('#btn-sfx'); pg.click('#btn-sfx')  # back to default 🔉
-    # --- garden: tooltip, FX, sfx cues, save
+    # --- tropical: tooltip, FX, sfx cues, save
     pg.evaluate("localStorage.removeItem('bof.save')")
-    goto('?map=garden'); pg.wait_for_function('window.__game && window.__game.g', timeout=60000); pg.wait_for_timeout(1200)
+    goto('?map=tropical'); pg.wait_for_function('window.__game && window.__game.g', timeout=60000); pg.wait_for_timeout(1200)
     G('H.addCredits(20000)')
     cells = G("""(() => { const g = H.g, p = H.lanePoint(0, 0.4), out = [];
         for (const [c, r] of H.freeCells()) { const q = g.grid.cellCenter(c, r), d = Math.hypot(q.x - p.x, q.y - p.y); if (d > 70 && d < 260) out.push([c, r, d]); }
@@ -71,11 +71,11 @@ with sync_playwright() as p:
     exp = [[t['id'], t['c'], t['r'], t['tier'], t['tg']] for t in before['towers']]
     check(after == exp, f'towers + tiers + targeting restored {after}')
     st = G('({ wave: H.g.waves.index, cr: Math.floor(H.g.res.credits), hq: Math.ceil(H.g.hq.health.hp), sq: H.g.squads.filter(s => s.alive).map(s => s.data.id).sort(), map: H.g.map.id })')
-    check(st['wave'] == 5 and st['cr'] == before['credits'] and st['hq'] == 150 and st['map'] == 'garden', f'wave/credits/HQ/map restored {st}')
+    check(st['wave'] == 5 and st['cr'] == before['credits'] and st['hq'] == 150 and st['map'] == 'tropical', f'wave/credits/HQ/map restored {st}')
     check(st['sq'] == sorted(s['id'] for s in before['squads']), f'squads restored (incl. the pre-placed Farmhand, no duplicate) {st["sq"]}')
     # --- incompatible save ignored
     goto(''); pg.wait_for_selector('#maps .map-pick', timeout=30000)  # leave the match first (its pagehide autosaves)
-    pg.evaluate("localStorage.setItem('bof.save', JSON.stringify({ v: 0, map: 'garden' }))")
+    pg.evaluate("localStorage.setItem('bof.save', JSON.stringify({ v: 0, map: 'tropical' }))")
     goto(''); pg.wait_for_selector('#maps .map-pick', timeout=30000); pg.wait_for_timeout(500)
     check(pg.locator('#btn-continue').count() == 0 and pg.evaluate("localStorage.getItem('bof.save')") is None, 'old/incompatible save ignored and cleared')
     print('errors:', errors[:6]); check(not errors, 'no console errors')

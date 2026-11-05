@@ -8,7 +8,7 @@ import type { TargetingMode } from '../core/types';
 import type { DifficultyId } from '../data/difficulty';
 import { unitById } from '../data/units';
 import { buildingById } from '../data/buildings';
-import { MAPS } from '../data/maps';
+import { PLAYABLE_MAPS as MAPS } from '../data/maps';
 
 export const SAVE_KEY = 'bof.save', SAVE_V = 1;
 export interface SaveData {

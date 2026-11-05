@@ -5,7 +5,7 @@
 // =============================================================================
 import { NetSession, NetError, testIce, ICE_LABEL, type Msg, type Stage, type FailCode } from '../net/Net';
 import { DEFAULT_SETTINGS, type MpSettings, type PlayerInfo, type Mode } from '../net/Sync';
-import { MAPS } from '../data/maps';
+import { PLAYABLE_MAPS as MAPS } from '../data/maps';
 import { DIFFICULTIES } from '../data/difficulty';
 import { PCOLORS, PNAMES } from '../core/players';
 

@@ -6,7 +6,7 @@ import { Renderer, dmgTextPx, type ViewState } from './render/Renderer';
 import { Hud } from './ui/Hud';
 import { loadSprites, IMG } from './render/sprites';
 import { assetUrl } from './assetUrl';
-import { MAPS } from './data/maps';
+import { MAPS, PLAYABLE_MAPS, DEFAULT_MAP } from './data/maps';
 import { validateAll } from './data/validate';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
@@ -34,9 +34,9 @@ async function boot() {
   // Dev-time upgrade-rule validation (also enforced in `npm run build`).
   const issues = validateAll();
   if (issues.length) { console.warn(`[validate] ${issues.length} data issue(s):`); for (const i of issues) console.warn('  ' + i); }
-  await loadSprites(MAPS.map((m) => m.image));
+  await loadSprites(PLAYABLE_MAPS.map((m) => m.image));
   const menu = document.getElementById('maps')!;
-  for (const m of MAPS) {
+  for (const m of PLAYABLE_MAPS) {
     const b = document.createElement('button');
     b.className = 'map-pick'; b.dataset.map = m.id;
     b.innerHTML = `<img src="${assetUrl(m.image)}" alt=""><span>${m.name}</span>`;
@@ -71,11 +71,11 @@ async function boot() {
     document.getElementById('btn-discard')!.onclick = () => { clearSave(); box.remove(); };
   }
   setTimeout(() => { void flushQueue().then((n) => { if (n) console.info(`[report] sent ${n} queued report(s)`); }); }, 1500);
-  document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start('garden', diff, true); };
+  document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start(DEFAULT_MAP, diff, true); };
   // Single Player / Co-Op Defense / 1v1 Versus on the main menu; ?room=1234 invite links auto-join.
   window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp));
   const q = qs.get('map');
-  if (q && MAPS.some((m) => m.id === q)) start(q, diff);
+  if (q && MAPS.some((m) => m.id === q)) { if (!PLAYABLE_MAPS.some((m) => m.id === q)) await loadSprites([MAPS.find((m) => m.id === q)!.image]); start(q, diff); }
 }
 
 function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false, mp?: MpStart, resume?: SaveData) {

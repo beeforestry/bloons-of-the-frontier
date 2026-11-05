@@ -38,3 +38,7 @@ export interface TerrainDef {
 }
 export const MAPS: MapDef[] = raw as unknown as MapDef[];
 export const toVec = ([x, y]: [number, number]): Vec => ({ x, y });
+/** t56: only these maps are offered in menus (others kept for tests/balance tools). */
+export const PLAYABLE_IDS = ['morro', 'tropical'];
+export const PLAYABLE_MAPS: MapDef[] = MAPS.filter((m) => PLAYABLE_IDS.includes(m.id));
+export const DEFAULT_MAP = 'tropical';

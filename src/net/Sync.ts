@@ -31,7 +31,7 @@ import type { Vec } from '../core/types';
 export type Mode = 'coop' | 'versus';
 export interface MpSettings { mode: Mode; map: string; diff: DifficultyId; credits: number; waveTimer: number; speed: 1 | 2; matchMin: number; hostRole: 'defender' | 'invader' }
 export interface PlayerInfo { pid: number; name: string; ready: boolean }
-export const DEFAULT_SETTINGS: MpSettings = { mode: 'coop', map: 'garden', diff: 'medium', credits: 650, waveTimer: 25, speed: 1, matchMin: 8, hostRole: 'defender' };
+export const DEFAULT_SETTINGS: MpSettings = { mode: 'coop', map: 'tropical', diff: 'medium', credits: 650, waveTimer: 25, speed: 1, matchMin: 8, hostRole: 'defender' };
 export const SNAP_HZ = 15;
 
 type Wallet = { res: ReturnType<Game['res']['dump']>; energy: number; powerCd: Record<string, number>; deployCd: Record<string, number>; acc: number };
