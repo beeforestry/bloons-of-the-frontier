@@ -24,7 +24,7 @@ Steering: FP-primary; do **not** redo monkey/plant/troop 2D. Exception: redo 2D 
 
 ## Deploy
 - **main** `5febc2c`
-- **gh-pages** `f3bbfae` — Deploy 5febc2c
+- **gh-pages** `c1f0ca1` — Deploy 6b21d77 (clean)
 
 ## Live
 - https://beeforestry.github.io/bloons-of-the-frontier/
