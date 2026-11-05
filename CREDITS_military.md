@@ -92,3 +92,20 @@ Shared FP materials live in `src/fps/mats.ts` and tile maps under `public/assets
 Painted 2D (exception redo, matching v3 monkey quality): `public/assets/v3/unsc_{tank,heli,destroyer,beacon}_{0,1,2}.webp` — original AI-assisted digital paintings keyed to transparency; not traced from any commercial game. Sources under `art_src/military/paint_t64/`.
 
 No Google imagery. No ripped commercial game art. Monkey / plant / troop 2D sprites were left as existing v3 paintings (FP-only upgrade for those).
+
+## t65 — photoreal tank + lighthouse + attachment fixes (all CC0)
+
+Bugfixes (first-person meshes): Siege Gunner cupola parented to turret roof (was placed using a bbox that included the antenna); Skyranger main/tail rotors mounted on cabin hub after a correct meshopt-safe blade strip; Harbor Beacon no longer a black pylon (`lam()` disabled `vertexColors` on procedural meshes + low-metalness photo paints).
+
+| File | Source | License / author |
+|---|---|---|
+| tex/tank_olive.webp, tank_tan.webp, tank_n.webp, tank_rough.webp | Baked from Poly Haven [Metal Plate](https://polyhaven.com/a/metal_plate) + ambientCG [Metal035](https://ambientcg.com/view?id=Metal035) (olive/tan multiply) | CC0 |
+| tex/tank_track.webp, tank_track_n.webp | Poly Haven [Asphalt 02](https://polyhaven.com/a/asphalt_02) | CC0 |
+| tex/tank_iron.webp, tank_iron_n.webp | Poly Haven [Corrugated Iron 02](https://polyhaven.com/a/corrugated_iron_02) | CC0 |
+| tex/lh_cream.webp, lh_paint_n.webp | Poly Haven [Plastered Wall](https://polyhaven.com/a/plastered_wall) + ambientCG [Paint001](https://ambientcg.com/view?id=Paint001) | CC0 |
+| tex/lh_red.webp, lh_red_n.webp | Poly Haven [Roof 07](https://polyhaven.com/a/roof_07) (red-pushed) | CC0 |
+| tex/lh_brick.webp, lh_brick_n.webp | Poly Haven [Brick 4](https://polyhaven.com/a/brick_4) | CC0 |
+| tex/lh_rock.webp, lh_rock_n.webp | Poly Haven [Rock 06](https://polyhaven.com/a/rock_06) | CC0 |
+| tex/lh_slate.webp | Darkened Corrugated Iron 02 bake | CC0 |
+
+Sources staged under `art_src/tex_t65/` (jpg/zips); runtime uses WebP under `public/assets/tex/`. No Google Earth/Maps/Street View. No ripped game art.

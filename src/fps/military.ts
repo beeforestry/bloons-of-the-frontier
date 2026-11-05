@@ -18,10 +18,58 @@ function raw(name: string) {
 }
 const lam = (c: number, kind: MatKind = 'paint') => {
   const m = (matOf(kind) as THREE.MeshStandardMaterial).clone();
-  if ('color' in m) m.color.setHex(c);
+  // Procedural meshes have no color attribute; vertexColors:true would multiply by black.
+  m.vertexColors = false;
+  if ('color' in m) {
+    m.color.setHex(c);
+    // Lift near-black bases that crush under metalness without an HDRI (t64/t65 silhouette bug).
+    const lum = 0.2126 * m.color.r + 0.7152 * m.color.g + 0.0722 * m.color.b;
+    if (lum < 0.08) {
+      m.color.offsetHSL(0, 0, 0.14);
+      if ('metalness' in m) m.metalness = Math.min(m.metalness, 0.28);
+      if ('roughness' in m) m.roughness = Math.max(m.roughness, 0.62);
+    }
+  }
   return m;
 };
 const at = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T => { o.position.set(x, y, z); return o; };
+
+// t65: photoreal CC0 photo materials (Poly Haven / ambientCG), vendored under public/assets/tex/.
+const photoCache = new Map<string, THREE.Texture>();
+function photoTex(name: string, srgb: boolean, rep = 2) {
+  const key = name + ':' + rep + (srgb ? ':s' : '');
+  let t = photoCache.get(key);
+  if (t) return t;
+  t = new THREE.TextureLoader().load(assetUrl(`assets/tex/${name}.webp`));
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rep, rep);
+  t.anisotropy = 4;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  photoCache.set(key, t);
+  return t;
+}
+/** Build a MeshStandardMaterial from a vendored photo albedo (+ optional normal/rough). No vertexColors. */
+function photoMat(opts: {
+  map: string; nor?: string; roughMap?: string; rep?: number;
+  color?: number; metal?: number; rough?: number; flat?: boolean;
+}): THREE.MeshStandardMaterial {
+  const rep = opts.rep ?? 2.2;
+  const m = new THREE.MeshStandardMaterial({
+    map: photoTex(opts.map, true, rep),
+    normalMap: opts.nor ? photoTex(opts.nor, false, rep) : null,
+    roughnessMap: opts.roughMap ? photoTex(opts.roughMap, false, rep) : null,
+    color: opts.color ?? 0xffffff,
+    metalness: opts.metal ?? 0.1,
+    roughness: opts.rough ?? 0.7,
+    envMapIntensity: 1.05,
+    flatShading: !!opts.flat,
+    vertexColors: false,
+  });
+  // Clamp so medium-quality / no-HDRI never crushes to a black silhouette.
+  m.metalness = Math.min(m.metalness, 0.35);
+  m.roughness = Math.max(m.roughness, 0.4);
+  return m;
+}
 
 /** Real-world sizes (metres): longest horizontal extent. */
 export const SIZE = {
@@ -65,9 +113,23 @@ function recolor(o: THREE.Object3D, f: (name: string, c: THREE.Color) => number 
 export async function tank(t: number): Promise<THREE.Group> {
   const name = `tank_${Math.min(2, t) + 1}`, src = await raw(name);
   const g = normalise(src, SIZE.tank[Math.min(2, t)], FRONT[name]);
-  // T2 (heavy) repainted Vanguard dark olive so it reads as the top tier next to the tan/olive ones
-  if (t === 2) recolor(g, (n) => ({ Main: 0x6a7a50, Main_Dark: 0x4a5538, Main_Light: 0x8a9a68, Main_Details: 0x3a4030, Wheels: 0x3a4034 } as Record<string, number>)[n] ?? null, true, 'paint');
-  else recolor(g, () => null);
+  // t65: photoreal painted-steel MBT — Poly Haven metal_plate + ambientCG Metal035, olive/tan bake.
+  const hullMap = t >= 2 ? 'tank_olive' : 'tank_tan';
+  const hull = photoMat({ map: hullMap, nor: 'tank_n', roughMap: 'tank_rough', rep: 2.4, color: 0xffffff, metal: 0.08, rough: 0.72 });
+  const hullDark = photoMat({ map: hullMap, nor: 'tank_n', roughMap: 'tank_rough', rep: 2.8, color: 0xd8dcc8, metal: 0.1, rough: 0.75 });
+  const track = photoMat({ map: 'tank_track', nor: 'tank_track_n', rep: 3.2, color: 0x3a3a38, metal: 0.05, rough: 0.92 });
+  const iron = photoMat({ map: 'tank_iron', nor: 'tank_iron_n', rep: 1.8, color: 0xc8c8c0, metal: 0.22, rough: 0.55 });
+  g.traverse((o) => {
+    const mesh = o as THREE.Mesh; if (!mesh.isMesh) return;
+    const mats = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as THREE.MeshStandardMaterial[];
+    const n = mats[0]?.name ?? '';
+    let mat = hull;
+    if (/Wheel/i.test(n) || /Wheel/i.test(mesh.name)) mat = track;
+    else if (/Gun/i.test(n) || /Gun/i.test(mesh.name)) mat = iron;
+    else if (/Dark|Detail/i.test(n)) mat = hullDark;
+    else if (t === 2 && /Main_Light/i.test(n)) mat = photoMat({ map: hullMap, nor: 'tank_n', roughMap: 'tank_rough', rep: 2.0, color: 0xd0d8c0, metal: 0.18, rough: 0.55 });
+    mesh.material = mat; mesh.castShadow = true;
+  });
   // re-parent turret + gun under a pivot at the turret centre so it can traverse
   const inner = g.children[0].children[0];
   inner.updateMatrixWorld(true); g.updateMatrixWorld(true);
@@ -81,7 +143,7 @@ export async function tank(t: number): Promise<THREE.Group> {
   }
   g.userData.turret = pivot;
   // tier extras: T1 side skirts, T2 reactive armour + independent roof gunner (matches last-tier secondary)
-  const dark = lam(0x2a2e26, 'iron'), olive = lam(0x56603f, 'metal');
+  const dark = iron, olive = hull;
   if (t >= 1) {
     const b0 = new THREE.Box3().setFromObject(g);
     for (const s of [-1, 1]) for (let i = 0; i < 4; i++) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.28, 0.1), olive), b0.min.x + 1.4 + i * 1.05, b0.max.y * 0.38, s * (b0.max.z + 0.02)));
@@ -89,39 +151,70 @@ export async function tank(t: number): Promise<THREE.Group> {
   if (t >= 2) {
     const b = new THREE.Box3().setFromObject(g);
     for (const s of [-1, 1]) for (let i = 0; i < 5; i++) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.42, 0.14), olive), b.min.x + 1.3 + i * 1.05, b.max.y * 0.42, s * (b.max.z + 0.02)));
-    const ant = at(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 2.6, 4), dark), -1.2, 0, -0.7); ant.position.y = new THREE.Box3().setFromObject(pivot).max.y + 1.2; pivot.add(ant);
-    // independent roof gunner cupola + MG
-    const top = new THREE.Box3().setFromObject(pivot);
+    // Roof = main turret body (largest XZ footprint). Using every Turret_* mesh floated the
+    // cupola on top of a small hatch (Turret_2 ~3.2 m) above the flat roof (Turret_1 ~2.75 m).
+    pivot.updateMatrixWorld(true);
+    let best: THREE.Mesh | null = null, bestArea = -1;
+    pivot.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || !/Turret/i.test(mesh.name)) return;
+      const b = new THREE.Box3().setFromObject(mesh), s = b.getSize(new THREE.Vector3());
+      const area = s.x * s.z;
+      if (area > bestArea) { bestArea = area; best = mesh; }
+    });
+    const roofBox = best ? new THREE.Box3().setFromObject(best) : new THREE.Box3().setFromObject(pivot);
+    const roofY = roofBox.max.y;
+    const roofCx = (roofBox.min.x + roofBox.max.x) / 2 - pivot.position.x;
+    const ant = at(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 2.6, 4), dark), -1.2, roofY + 1.2, -0.7);
+    pivot.add(ant);
+    // Independent roof gunner cupola + MG, parented to the turret pivot so it turns with the tank.
     const gunner = new THREE.Group();
-    gunner.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.35, 8), olive), 0, 0.2, 0));
-    gunner.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), lam(0x3a4030)), 0, 0.42, 0)); // helmet
-    const mg = new THREE.Group(); mg.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.2, 0.2), dark), 0, 0, 0));
-    mg.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.25, 6).rotateZ(Math.PI / 2), dark), 0.75, 0.03, 0));
-    at(mg, 0.15, 0.55, 0.35); gunner.add(mg);
-    at(gunner, (top.min.x + top.max.x) / 2 - 0.35 - pivot.position.x, top.max.y + 0.05, 0.35);
+    // Base ring sunk into the turret roof so the cupola clearly reads as mounted, not hovering.
+    gunner.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.4, 0.12, 10), olive), 0, 0.04, 0));
+    gunner.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.32, 8), olive), 0, 0.26, 0));
+    gunner.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), photoMat({ map: 'tank_track', nor: 'tank_track_n', rep: 1.5, color: 0x5a6048, metal: 0.05, rough: 0.85 })), 0, 0.48, 0)); // helmet
+    const mg = new THREE.Group(); mg.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.2), dark), 0, 0, 0));
+    mg.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.15, 6).rotateZ(Math.PI / 2), dark), 0.7, 0.02, 0));
+    at(mg, 0.12, 0.48, 0.28); gunner.add(mg);
+    at(gunner, roofCx - 0.35, roofY - 0.08, 0.35);
     pivot.add(gunner); g.userData.gunner = gunner;
   }
   g.userData.kind = 'tank'; g.userData.textured = true; return g;
 }
 
-/** Remove triangles lying entirely above `frac` of the model height (thin rotor blades). */
-function stripTop(g: THREE.Group, frac: number) {
+/** Remove triangles with any vertex above world-Y `cutY` (clears rotor blades + mast stubs).
+ *  Meshopt GLBs use interleaved normalised Int16 attrs — always read via getX/getComponent. */
+function stripAbove(g: THREE.Group, cutY: number) {
   g.updateMatrixWorld(true);
-  const H = new THREE.Box3().setFromObject(g).max.y * frac, v = new THREE.Vector3();
+  const v = new THREE.Vector3();
   g.traverse((o) => {
     const m = o as THREE.Mesh; if (!m.isMesh) return;
-    const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(), pos = geo.attributes.position;
+    const geo0 = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+    const pos0 = geo0.attributes.position, n = pos0.count;
+    const posArr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { posArr[i * 3] = pos0.getX(i); posArr[i * 3 + 1] = pos0.getY(i); posArr[i * 3 + 2] = pos0.getZ(i); }
     const keep: number[] = [];
-    for (let i = 0; i < pos.count; i += 3) {
-      let hi = true; for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, i + k).applyMatrix4(m.matrixWorld); if (v.y < H) hi = false; }
-      if (!hi) keep.push(i, i + 1, i + 2);
+    for (let i = 0; i < n; i += 3) {
+      let above = false;
+      for (let k = 0; k < 3; k++) {
+        v.set(posArr[(i + k) * 3], posArr[(i + k) * 3 + 1], posArr[(i + k) * 3 + 2]).applyMatrix4(m.matrixWorld);
+        if (v.y > cutY) above = true;
+      }
+      if (!above) keep.push(i, i + 1, i + 2);
     }
+    if (keep.length === 0) { m.visible = false; return; }
     const out = new THREE.BufferGeometry();
-    for (const [name, a] of Object.entries(geo.attributes)) {
-      const at2 = a as THREE.BufferAttribute, arr = new (at2.array.constructor as Float32ArrayConstructor)(keep.length * at2.itemSize);
-      keep.forEach((src, j) => { for (let c = 0; c < at2.itemSize; c++) arr[j * at2.itemSize + c] = at2.array[src * at2.itemSize + c]; });
-      out.setAttribute(name, new THREE.BufferAttribute(arr, at2.itemSize, at2.normalized));
+    const outPos = new Float32Array(keep.length * 3);
+    keep.forEach((src, j) => { outPos[j * 3] = posArr[src * 3]; outPos[j * 3 + 1] = posArr[src * 3 + 1]; outPos[j * 3 + 2] = posArr[src * 3 + 2]; });
+    out.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+    for (const name of Object.keys(geo0.attributes)) {
+      if (name === 'position') continue;
+      const a = geo0.attributes[name] as THREE.BufferAttribute;
+      const arr = new Float32Array(keep.length * a.itemSize);
+      for (let j = 0; j < keep.length; j++) for (let c = 0; c < a.itemSize; c++) arr[j * a.itemSize + c] = a.getComponent(keep[j], c);
+      out.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize));
     }
+    out.computeVertexNormals();
     m.geometry = out;
   });
 }
@@ -130,21 +223,36 @@ function stripTop(g: THREE.Group, frac: number) {
 export async function heli(t: number): Promise<THREE.Group> {
   const src = await raw('heli'), L = SIZE.heli[Math.min(2, t)];
   const g = normalise(src, L, FRONT.heli);
-  // hide the source rotor blades (light grey material) and replace with a big spinning rotor
-  const camo = [0x8a9a58, 0x7a8a4e, 0x6a7a44][Math.min(2, t)];
-  stripTop(g, 0.9); // drop the source's static rotor blades (replaced by the spinning rotor below)
-  // t64: paint/cloth kinds + brighter olives so the gunship reads in FP (old near-black metal looked like a silhouette).
-  recolor(g, (n) => (n === 'Material.001' ? camo : n === 'Material.003' ? 0x3a4230 : n === 'Material.004' ? 0x4a5538 : 0x5a6840), true, 'paint');
+  // Capture cabin-roof hub BEFORE stripping blades. Old code used post-strip bbox max.y, which
+  // still included straddling blade stubs → spinning rotor floated ~0.8 m above the fuselage.
+  g.updateMatrixWorld(true);
+  const pre = new THREE.Box3().setFromObject(g);
+  const hubY = pre.min.y + (pre.max.y - pre.min.y) * 0.78;
+  const hubX = pre.min.x + (pre.max.x - pre.min.x) * 0.55;
+  stripAbove(g, hubY + 0.05); // drop source blades + mast stubs
+  // t65: olive painted-steel photo mat (same bake as Bulwark) so the gunship isn't a flat silhouette.
+  const camoTint = [0xffffff, 0xe8f0d8, 0xd0dcb8][Math.min(2, t)];
+  const body = photoMat({ map: 'tank_olive', nor: 'tank_n', roughMap: 'tank_rough', rep: 2.6, color: camoTint, metal: 0.08, rough: 0.7 });
+  const bodyDark = photoMat({ map: 'tank_olive', nor: 'tank_n', roughMap: 'tank_rough', rep: 3.0, color: 0xc8d0b0, metal: 0.1, rough: 0.72 });
+  g.traverse((o) => {
+    const mesh = o as THREE.Mesh; if (!mesh.isMesh) return;
+    const n = ((Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.Material)?.name ?? '';
+    mesh.material = /003|004/.test(n) ? bodyDark : body;
+    mesh.castShadow = true;
+  });
   const b = new THREE.Box3().setFromObject(g), H = b.max.y, len = b.max.x - b.min.x;
-  const blade = lam(0x1d201c, 'iron'), rotor = new THREE.Group();
+  const blade = photoMat({ map: 'tank_iron', nor: 'tank_iron_n', rep: 2.5, color: 0x6a7068, metal: 0.35, rough: 0.5 }), rotor = new THREE.Group();
+  // Short mast so the hub reads as mounted on the roof, not hovering.
+  rotor.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, Math.max(0.35, hubY + 0.32 - H), 8), blade), 0, -(hubY + 0.32 - H) / 2, 0));
   const nb = t >= 2 ? 5 : 4;
   for (let i = 0; i < nb; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(L * 0.47, 0.05, 0.32).translate(L * 0.235, 0, 0), blade); m.rotation.y = (i / nb) * Math.PI * 2; rotor.add(m); }
-  rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.4, 8), blade));
+  rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.28, 8), blade));
   const disc = new THREE.Mesh(new THREE.CircleGeometry(L * 0.47, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
-  rotor.add(disc); rotor.position.set(b.min.x + len * 0.55, H + 0.15, 0); g.add(rotor);
+  rotor.add(disc); rotor.position.set(hubX, hubY + 0.32, 0); g.add(rotor);
   const tail = new THREE.Group();
   for (let i = 0; i < 2; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, L * 0.16, 0.04), blade); m.rotation.z = i * Math.PI / 2; tail.add(m); }
-  tail.position.set(b.min.x + 0.25, H * 0.72, 0.28); g.add(tail);
+  // Tail boom tip: rear (min.x), mid-height of remaining fuselage, slight +Z for the fin.
+  tail.position.set(b.min.x + 0.35, Math.min(H * 0.92, hubY * 0.88), 0.42); g.add(tail);
   g.userData.rotor = rotor; g.userData.tail = tail;
   // weapons per tier: T0 chin gun, T1 + stub wings w/ rocket pods, T2 + strike rails + 2nd pods
   const dark = lam(0x22261f, 'iron'), pod = lam(0x3a4130, 'metal');
@@ -200,31 +308,60 @@ export function destroyer(t: number): THREE.Group {
   g.traverse((m) => { const mesh = m as THREE.Mesh; if (mesh.isMesh) mesh.castShadow = true; });
   return g;
 }
-/** Harbor Beacon lighthouse: tall striped tower with glowing lantern (userData.lamp). */
+/** Harbor Beacon lighthouse: photoreal white/red striped tower + lantern (CC0 photo mats, t65). */
 export function beacon(t: number): THREE.Group {
   const g = new THREE.Group(), H = 8 + t * 1.5;
-  const dark = lam(0x3e4650, 'iron'), cream = lam(0xf4efe3, 'paint'), red = lam(0xc62828, 'paint');
-  const stone = lam(0x8a9098, 'concrete'), gold = lam(0xe0b030, 'gold');
-  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, 0.6, 12), stone), 0, 0.3, 0));
-  // rocky pier ring
+  // Photo materials — never pure-black * high metalness (that was the t65 black-pylon bug).
+  const cream = photoMat({ map: 'lh_cream', nor: 'lh_paint_n', rep: 1.6, color: 0xfffaf0, metal: 0.0, rough: 0.82 });
+  const red = photoMat({ map: 'lh_red', nor: 'lh_red_n', rep: 1.8, color: 0xffe0e0, metal: 0.0, rough: 0.78 });
+  const brick = photoMat({ map: 'lh_brick', nor: 'lh_brick_n', rep: 2.4, metal: 0, rough: 0.9 });
+  const rock = photoMat({ map: 'lh_rock', nor: 'lh_rock_n', rep: 1.8, metal: 0, rough: 0.95 });
+  const slate = photoMat({ map: 'lh_slate', nor: 'tank_iron_n', rep: 2.0, metal: 0.25, rough: 0.55 });
+  const rail = photoMat({ map: 'tank_iron', nor: 'tank_iron_n', rep: 3.0, color: 0xd0d6dc, metal: 0.35, rough: 0.4 });
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xc8e8ff, metalness: 0.05, roughness: 0.12, transparent: true, opacity: 0.42,
+    envMapIntensity: 1.0, vertexColors: false, side: THREE.DoubleSide,
+  });
+  // Rocky pier + brick plinth
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.65, 1.95, 0.55, 14), rock), 0, 0.28, 0));
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
-    g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.35 + (i % 3) * 0.08, 8, 6), stone), Math.cos(a) * 1.7, 0.25, Math.sin(a) * 1.7));
+    g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.35 + (i % 3) * 0.08, 8, 6), rock), Math.cos(a) * 1.75, 0.22, Math.sin(a) * 1.75));
   }
-  const bands = 3 + t;
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, 0.45, 14), brick), 0, 0.7, 0));
+  // Door
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.9, 0.12), lam(0x5a3a28, 'wood')), 0, 1.15, 1.05));
+  // Alternating cream / red bands (silhouette matches painted unsc_beacon_*.webp)
+  const bands = 4 + t;
+  const shaftH = H * 0.68;
   for (let i = 0; i < bands; i++) {
-    const y0 = 0.6 + i * (H * 0.7 / bands), h = H * 0.7 / bands;
-    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.85 - i * 0.04, 0.9 - i * 0.04, h, 12), i % 2 ? red : cream), 0, y0 + h / 2, 0));
+    const h = shaftH / bands, y0 = 0.95 + i * h;
+    const r0 = 0.95 - i * 0.035, r1 = 0.9 - i * 0.035;
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, h, 16), i % 2 ? red : cream), 0, y0 + h / 2, 0));
   }
-  const lampY = 0.6 + H * 0.72 + 0.5;
-  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.35, 10), dark), 0, lampY, 0));
-  // glass lantern cage
-  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.0 + t * 0.15, 10, 1, true), lam(0xa8d8ff, 'paint')), 0, lampY + 0.55, 0));
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.45 + t * 0.08, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
-  at(lamp, 0, lampY + 0.55, 0); g.add(lamp);
-  g.add(at(new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.04, 6, 16), dark), 0, lampY, 0));
-  if (t >= 1) g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.08, 12), gold), 0, lampY + 1.05, 0));
-  if (t >= 2) g.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.55, 8), dark), 0, lampY + 1.4, 0));
+  const galleryY = 0.95 + shaftH;
+  // Gallery deck + railings
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 0.12, 16), slate), 0, galleryY, 0));
+  g.add(at(new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.045, 6, 24), rail), 0, galleryY + 0.35, 0));
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 5), rail), Math.cos(a) * 1.2, galleryY + 0.18, Math.sin(a) * 1.2));
+  }
+  // Lantern room — closed glass cage with warm lamp
+  const lampY = galleryY + 0.7 + t * 0.05;
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 1.15 + t * 0.12, 14), glassMat), 0, lampY, 0));
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.1 + t * 0.12, 0.07), slate), Math.cos(a) * 0.78, lampY, Math.sin(a) * 0.78));
+  }
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.42 + t * 0.06, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+  at(lamp, 0, lampY, 0); g.add(lamp);
+  // Dark conical roof + finial
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.1, 14), slate), 0, lampY + 0.65 + t * 0.06, 0));
+  g.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.95, 0.7 + t * 0.05, 14), slate), 0, lampY + 1.05 + t * 0.08, 0));
+  g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), rail), 0, lampY + 1.45 + t * 0.1, 0));
+  if (t >= 1) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.45, 0.08), cream), 0.55, 0.95 + shaftH * 0.45, 0.7));
+  if (t >= 2) g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 5), slate), 0.9, galleryY - 0.5, 0));
   g.userData.lamp = lamp; g.userData.kind = 'beacon'; g.userData.textured = true;
   g.traverse((m) => { const mesh = m as THREE.Mesh; if (mesh.isMesh && mesh !== lamp) mesh.castShadow = true; });
   return g;
@@ -344,7 +481,11 @@ export function gunFor(id: string, vehicle?: boolean): GunKind {
 export async function wreck(k: 'tank' | 'tank2' | 'heli', seed = 0): Promise<THREE.Group> {
   const name = k === 'heli' ? 'heli' : k === 'tank2' ? 'tank_2' : 'tank_1';
   const g = normalise(await raw(name), k === 'heli' ? SIZE.heli[1] : SIZE.tank[1], FRONT[name]);
-  if (k === 'heli') stripTop(g, 0.9);
+  if (k === 'heli') {
+    g.updateMatrixWorld(true);
+    const pre = new THREE.Box3().setFromObject(g);
+    stripAbove(g, pre.min.y + (pre.max.y - pre.min.y) * 0.78);
+  }
   const pal = [0x2b2723, 0x35302a, 0x221f1c, 0x4a3324, 0x5a3b26];
   let i = seed; recolor(g, () => pal[(i++ * 7 + seed) % pal.length], true);
   const inner = g.children[0];
