@@ -6,6 +6,8 @@ import type { Vec } from '../core/types';
 import type { MapDef } from '../data/maps';
 
 export interface Cell { c: number; r: number }
+/** t56 free placement: a cell (bookkeeping) plus the exact world spot. */
+export interface Spot extends Cell { x?: number; y?: number }
 export interface Occupant { uid: number }
 export const SELL_REFUND = 0.7;
 
@@ -18,6 +20,49 @@ export class PlacementSystem<T extends Occupant = Occupant> {
     this.cell = g.cell; this.ox = g.originX; this.oy = g.originY; this.cols = g.cols; this.rows = g.rows;
     this.buildable = g.buildable.join('').split('').map((ch) => ch === '1');
     this.occ = new Array(this.cols * this.rows).fill(null);
+    // t56: "land" for free placement. Cells the coarse grid dropped only because they hug the lane are land too
+    // (the exact lane clearance is checked per spot). Optional fine mask `land` (base64 bits, `landRes` px) wins.
+    const lanes = map.lanes ?? [map.waypoints], pw = map.pathWidth, hq = map.hq, pads = map.pads ?? [];
+    this.land = this.buildable.slice();
+    const segD = (px: number, py: number, a: number[], b: number[]) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / L)); return Math.hypot(px - a[0] - t * dx, py - a[1] - t * dy); };
+    for (let r = 0; r < this.rows; r++) for (let c = 0; c < this.cols; c++) {
+      const i = this.idx(c, r); if (this.buildable[i]) continue;
+      const p = this.cellCenter(c, r);
+      if (Math.abs(p.x - hq[0]) < 130 && Math.abs(p.y - hq[1]) < 130) continue;
+      if (pads.some(([x, y]) => Math.abs(p.x - x) < 70 && Math.abs(p.y - y) < 70)) continue;
+      let d = Infinity; for (const l of lanes) for (let k = 0; k < l.length - 1; k++) d = Math.min(d, segD(p.x, p.y, l[k] as number[], l[k + 1] as number[]));
+      if (d > pw / 2 + this.cell * 0.42 + 4) continue;
+      let nb = false; for (let dc = -1; dc <= 1 && !nb; dc++) for (let dr = -1; dr <= 1; dr++) if (this.inBounds(c + dc, r + dr) && this.buildable[this.idx(c + dc, r + dr)]) { nb = true; break; }
+      if (nb) this.land[i] = true;
+    }
+    const fine = (g as { land?: string; landRes?: number });
+    if (fine.land && fine.landRes) {
+      const bin = atob(fine.land), res = fine.landRes, fc = Math.ceil(map.width / res);
+      this.fineLand = (x: number, y: number) => { const k = Math.floor(y / res) * fc + Math.floor(x / res); return k >= 0 && k >> 3 < bin.length && ((bin.charCodeAt(k >> 3) >> (k & 7)) & 1) === 1; };
+    }
+  }
+  private land: boolean[];
+  private fineLand: ((x: number, y: number) => boolean) | null = null;
+  /** Free placement: world point is on buildable land (not water / trees / HQ / env / obstacles). */
+  isLandAt(x: number, y: number) {
+    const { c, r } = this.worldToCell({ x, y });
+    if (!this.inBounds(c, r)) return false;
+    const i = this.idx(c, r);
+    if (this.blocked.has(i)) return false;
+    if (this.fineLand) return this.fineLand(x, y);
+    return this.land[i];
+  }
+  /** Release every cell held by t (free-placed towers hold the cells under their footprint circle). */
+  releaseOwner(t: T) { for (let i = 0; i < this.occ.length; i++) if (this.occ[i] === t) this.occ[i] = null; }
+  /** Mark free cells whose centre lies inside the circle as held by t (keeps farms / envs off it). */
+  occupyCircle(t: T, x: number, y: number, rad: number) {
+    const a = this.worldToCell({ x: x - rad, y: y - rad }), b = this.worldToCell({ x: x + rad, y: y + rad });
+    const own = this.worldToCell({ x, y });
+    for (let r = a.r; r <= b.r; r++) for (let c = a.c; c <= b.c; c++) {
+      if (!this.inBounds(c, r)) continue;
+      const p = this.cellCenter(c, r), i = this.idx(c, r);
+      if ((Math.hypot(p.x - x, p.y - y) <= rad || (c === own.c && r === own.r)) && !this.occ[i] && !this.blocked.has(i)) this.occ[i] = t;
+    }
   }
   private idx(c: number, r: number) { return r * this.cols + c; }
   inBounds(c: number, r: number) { return c >= 0 && r >= 0 && c < this.cols && r < this.rows; }

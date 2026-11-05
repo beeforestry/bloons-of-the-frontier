@@ -14,7 +14,7 @@ with sync_playwright() as p:
     pg.goto(URL + '?v=t36'); pg.wait_for_selector('.mode-pick', timeout=30000)
     bundle = pg.evaluate("[...document.scripts].map(s => s.src).find(s => s.includes('/assets/index-')) || ''")
     print('bundle', bundle); check(pg.locator('.mode-pick').count() == 3 and pg.locator('.map-pick').count() >= 4, 'main menu: 3 modes, 4+ maps')
-    pg.click('.map-pick[data-map="garden"]'); pg.wait_for_function('window.__game')
+    pg.click('.map-pick[data-map="tropical"]'); pg.wait_for_function('window.__game')
     G = lambda js: pg.evaluate(f'(() => {{ const H = window.__game; return {js}; }})()')
     G('H.addCredits(5000)')
     cell = G("""(() => { const g = H.g, p = H.lanePoint(0, 0.35); let best = null, bd = 1e18;

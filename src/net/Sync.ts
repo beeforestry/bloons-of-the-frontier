@@ -406,7 +406,7 @@ export class Sync {
       hq: [r1(g.hq.health.hp), Math.round(g.hq.health.max)],
       all: this.players.map((p) => [p.pid, Math.floor(this.creditsOf(p.pid))]),
       E: [...g.enemies.filter((e) => e.alive).map(en), ...g.allies.filter((e) => e.alive).map(en)],
-      T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0, t.possessedBy, r1(t.aim)]),
+      T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0, t.possessedBy, r1(t.aim), Math.round(t.x), Math.round(t.y)]),
       S: g.squads.filter((s) => s.alive).map((s) => [s.uid, s.data.id, s.owner, s.stance, s.targeting, Math.round(s.rally.x), Math.round(s.rally.y), s.units.filter((u) => u.alive).map((u) => [u.uid, u.index, Math.round(u.x), Math.round(u.y), r1(u.health.hp), u.stars, garCode(u), u.dropT > 0 ? 1 : 0, u.possessedBy]), (s.auto ? 1 : 0) | (s.manual ? 2 : 0), s.autoTask]),
       B: g.buildings.filter((b) => b.alive).map((b) => [b.isHQ ? -1 : b.pad!.index, b.data.id, b.tier, r1(b.health.hp), b.build ? [r1(b.build.t), b.build.dur, b.build.to] : 0, b.queue.map((q) => [q.unitId, r1(q.t), q.dur, q.held]), Math.round(b.rally.x), Math.round(b.rally.y), b.owner]),
       X: g.barriers.filter((b) => b.alive).map((b) => [b.uid, b.data.id, Math.round(b.x), Math.round(b.y), b.lane, r1(b.hp), b.owner]),
@@ -491,14 +491,14 @@ export class Sync {
   private syncTowers(T: unknown[][]) {
     const g = this.g, seen = new Set<number>();
     for (const row of T) {
-      const [uid, id, c, r, tier, owner, targeting, hp, dis, acd, sweep, crates, pby, aim] = row as [number, string, number, number, number, number, Tower['targeting'], number, number, number, number, number, number, number];
+      const [uid, id, c, r, tier, owner, targeting, hp, dis, acd, sweep, crates, pby, aim, tx, ty] = row as [number, string, number, number, number, number, Tower['targeting'], number, number, number, number, number, number, number, number?, number?];
       seen.add(uid);
       let t = this.h2l.get(uid) as Tower | undefined;
       if (!t) {
         const fp = towerById(id).footprint ?? 1;
         for (const q of g.grid.area(c, r, fp)) { const occ = g.grid.occupant(q.c, q.r); if (occ && !this.l2h.has(occ)) g.grid.release(q.c, q.r); }
-        t = new Tower(towerById(id), { c, r }, g);
-        for (const q of g.grid.area(c, r, fp)) if (g.grid.isFree(q.c, q.r)) g.grid.occupy(t, q.c, q.r);
+        t = new Tower(towerById(id), tx !== undefined && !g.gridKind(id) ? { c, r, x: tx, y: ty } : { c, r }, g);
+        g.occupyTower(t);
         g.towers.push(t); this.map(uid, t);
         g.fx({ kind: 'dust', x: t.x, y: t.y + 16, r: 26, color: '#e8d8b0', dur: 0.4 });
       }
@@ -523,7 +523,7 @@ export class Sync {
       if (t.farm) t.farm.crates = crates;
       if (!(t.manual && pby === this.localPid)) { t.possessedBy = pby ?? -1; if (pby >= 0 && aim != null) t.aim = aim; }
     }
-    for (const t of [...g.towers]) { const u = this.l2h.get(t); if (u === undefined || !seen.has(u)) { g.grid.releaseArea(t.cell.c, t.cell.r, t.data.footprint ?? 1); t.remove(); if (u !== undefined) this.h2l.delete(u); } }
+    for (const t of [...g.towers]) { const u = this.l2h.get(t); if (u === undefined || !seen.has(u)) { g.grid.releaseOwner(t); t.remove(); if (u !== undefined) this.h2l.delete(u); } }
     g.towers = g.towers.filter((t) => t.alive);
   }
   private syncSquads(S: unknown[][]) {

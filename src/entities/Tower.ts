@@ -62,9 +62,10 @@ export class Tower implements Buffable, Garrisonable {
   /** Player id possessing this tower (-1 = none; synced so allies see the 👁 badge). */
   possessedBy = -1;
 
-  constructor(readonly data: TowerData, public cell: Cell, g: Game) {
+  constructor(readonly data: TowerData, public cell: Cell & { x?: number; y?: number }, g: Game) {
     const c = g.grid.cellCenter(cell.c, cell.r);
-    this.x = c.x; this.y = c.y;
+    this.x = cell.x ?? c.x; this.y = cell.y ?? c.y;
+    this.cell = { c: cell.c, r: cell.r };
     this.invested = data.tiers[0].cost;
     this.health = new Health(data.tiers[0].maxHp);
     this.buffs.onChange = (t) => this.health.setBonus(t.bonusMaxHp);

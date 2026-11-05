@@ -6,7 +6,7 @@ import argparse, functools, http.server, json, os, socketserver, threading
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ap = argparse.ArgumentParser(); ap.add_argument('--map', default='garden'); args = ap.parse_args()
+ap = argparse.ArgumentParser(); ap.add_argument('--map', default='tropical'); args = ap.parse_args()
 OUT = os.path.join(ROOT, 'screenshots', 't28'); os.makedirs(OUT, exist_ok=True)
 M = args.map
 class Quiet(http.server.SimpleHTTPRequestHandler):

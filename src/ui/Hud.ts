@@ -447,7 +447,7 @@ export class Hud {
     const ob = $<HTMLButtonElement>('#btn-organize');
     ob.classList.toggle('ready', farms >= 2 && workers > 0);
     ob.title = `Farms: ${farms} · Farmhands: ${workers}. A Farmhand walks over and packs the farms into a tight grid near their centre, freeing build space.`;
-    $('#mode-hint').textContent = this.view.placing ? `Placing ${towerById(this.view.placing).name}: click a highlighted cell (Shift = keep placing, Esc/right-click = cancel)`
+    $('#mode-hint').textContent = this.view.placing ? `Placing ${towerById(this.view.placing).name}: click open ground — green = OK, red = blocked (Shift = keep placing, Esc/right-click = cancel)`
       : this.view.deploying ? `Deploy ${unitById(this.view.deploying).name}: click where the drop pod should land`
       : this.view.power === 'mac' ? 'MAC Blast: click a lane — the strike runs along the road (Esc cancels)'
       : this.view.power === 'heal' ? 'Heal Drop: click to drop a medical canister on your troops / towers / base'

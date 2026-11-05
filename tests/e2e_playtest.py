@@ -8,7 +8,7 @@ import argparse, functools, http.server, json, os, socketserver, sys, threading
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ap = argparse.ArgumentParser(); ap.add_argument('--map', default='garden'); ap.add_argument('--waves', type=int, default=8); args = ap.parse_args()
+ap = argparse.ArgumentParser(); ap.add_argument('--map', default='tropical'); ap.add_argument('--waves', type=int, default=8); args = ap.parse_args()
 SHOTS = os.path.join(ROOT, 'screenshots', 'expand', args.map)
 os.makedirs(SHOTS, exist_ok=True)
 
@@ -49,7 +49,7 @@ with sync_playwright() as p:
     s0 = st(); print('start', s0)
     W, Hh = G('H.g.map.width'), G('H.g.map.height')
     check(W >= 2000 and Hh >= 1400, f'big map {W}x{Hh}')
-    check(G('H.lanes()') >= 2, f'{G("H.lanes()")} enemy lanes')
+    check(G('H.lanes()') >= (1 if args.map == 'tropical' else 2), f'{G("H.lanes()")} enemy lanes')
     check(s0['hq'] > 0 and len(G('H.pads()')) >= 6, f'HQ {s0["hq"]} HP + {len(G("H.pads()"))} build pads')
     pg.wait_for_timeout(300)
     pg.screenshot(path=f'{SHOTS}/00_full_map_zoomed_out.png')

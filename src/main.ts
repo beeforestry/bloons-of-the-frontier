@@ -179,7 +179,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   canvas.addEventListener('pointermove', (ev) => {
     const l = local(ev), p = r.screenToWorld(l.x, l.y);
     if (ev.pointerType === 'mouse') {
-      view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p, towerById(view.placing).footprint ?? 1) : null; edge = l;
+      view.mouse = p; view.hoverCell = hover(p); edge = l;
       // energy orbs and credit crates collect on hover (scrap needs infantry to gather it)
       const rr = 30 / Math.max(0.5, r.cam.zoom);
       for (const pk of g.pickups) if (pk.alive && pk.kind !== 'scrap' && Math.abs(pk.x - p.x) < rr && Math.abs(pk.y - p.y) < rr && dist(pk, p) < rr) { pk.collect(g, 1, 'hover'); g.stats.hover++; }
@@ -204,7 +204,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
       else r.pan(-dx, -dy);
     }
     pt.x = l.x; pt.y = l.y;
-    if (ev.pointerType !== 'mouse') { view.mouse = p; view.hoverCell = view.placing ? g.grid.snap(p, towerById(view.placing).footprint ?? 1) : null; }
+    if (ev.pointerType !== 'mouse') { view.mouse = p; view.hoverCell = hover(p); }
   });
   const up = (ev: PointerEvent) => {
     const pt = ptrs.get(ev.pointerId); ptrs.delete(ev.pointerId);
@@ -238,8 +238,13 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     g.fx({ kind: 'ring', x: (xa + xb) / 2, y: (ya + yb) / 2, r: Math.max(xb - xa, yb - ya) / 2, color: '#7fd3ff', dur: 0.3 });
     return list.length;
   }
+  /** t56: placement ghost spot (free placement); an invalid spot still shows a red ghost at the cursor. */
+  function hover(p: Vec) {
+    if (!view.placing || towerById(view.placing).kind === 'path') return null;
+    return g.placementSpot(view.placing, p) ?? { ...g.grid.worldToCell(p), x: p.x, y: p.y, bad: true };
+  }
   function garrisonableAt(p: Vec): Garrisonable | null {
-    const c = g.grid.worldToCell(p), tw = g.grid.occupant(c.c, c.r);
+    const tw = g.towerAt(p);
     if (tw && tw.gSlots() > 0) return tw;
     return g.envs.find((e) => dist(e, p) < 70) ?? null;
   }
@@ -265,8 +270,8 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (view.rallyFor) { g.setRally(view.rallyFor, p); view.rallyFor = null; g.sfx('command'); hud.refresh(true); return; }
     if (view.placing) {
       if (towerById(view.placing).kind === 'path') { if (g.placeBarrier(view.placing, p) && !keep) view.placing = null; hud.refresh(true); return; }
-      const cell = g.grid.snap(p, towerById(view.placing).footprint ?? 1);
-      if (cell && g.placeTower(view.placing, cell)) { if (!keep) view.placing = null; }
+      const cell = g.placementSpot(view.placing, p);
+      if (cell && g.placeTower(view.placing, cell)) { if (!keep) view.placing = null; view.hoverCell = hover(p); }
       else if (!cell) { g.toast("Can't build there"); g.sfx('error'); }
       hud.refresh(true); return;
     }
@@ -288,7 +293,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (sqs.length && (keep || view.queueMode)) { g.moveGroup(sqs, p, true); g.sfx('command'); return; }
     const env = g.envs.find((e) => dist(e, p) < 70);
     if (env && sqs.length) { for (const q of sqs) g.garrisonSquad(q, env); return; }
-    const c = g.grid.worldToCell(p), tw = g.grid.occupant(c.c, c.r);
+    const tw = g.towerAt(p);
     if (tw) { hud.select(tw, null); return; }
     if (env) { g.toast(`${env.gName()}: select troops, then click/right-click it to garrison (−50% damage taken, +35% range)`); return; }
     const ob = g.obstacles.find((o) => dist(o, p) < (o.shortcut ? 80 : 50));

@@ -25,7 +25,7 @@ export interface MapDef {
   walls?: [number, number, number, number][];
   /** 3D heightfield + prop billboards for Possess (Tropical Island, El Morro). */
   terrain?: TerrainDef;
-  grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[] };
+  grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[]; land?: string; landRes?: number };
 }
 export interface TerrainDef {
   cols: number; rows: number; off: number; scale: number; water: number;

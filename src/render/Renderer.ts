@@ -30,7 +30,7 @@ export interface TowerAnim { charge: number; since: number; engaged: boolean; }
 export interface ViewState {
   placing: string | null;           // tower id being placed
   deploying: string | null;         // unit id being deployed (click sets rally)
-  hoverCell: Cell | null;
+  hoverCell: (Cell & { x?: number; y?: number; bad?: boolean }) | null;
   mouse: { x: number; y: number } | null;
   selTower: Tower | null;
   selSquad: Squad | null;
@@ -176,7 +176,7 @@ export class Renderer {
     if (bg) { this.edgeFill(c, bg as never); c.drawImage(bg, 0, 0, g.map.width, g.map.height); } else { c.fillStyle = '#6aa84f'; c.fillRect(0, 0, g.map.width, g.map.height); }
     for (const sc of g.shortcuts) this.shortcutTrail(sc);
     for (const d of g.decals) if (this.inView(d.x, d.y)) this.decal(d.x, d.y, d.r, d.ang, d.t);
-    if (v.placing || v.selTower?.isFarm) this.gridOverlay(v);
+    if ((v.placing && towerById(v.placing).kind === 'farm') || v.selTower?.isFarm) this.gridOverlay(v);
     this.auras(v);
     for (const p of g.pads) if (!p.building) this.pad(p, p === v.selPad);
     for (const p of g.pickups) if (this.inView(p.x, p.y)) this.pickup(p);
@@ -481,13 +481,17 @@ export class Renderer {
     c.fillStyle = ok ? 'rgba(255,255,255,0.12)' : 'rgba(255,60,60,0.16)'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
     this.ringAt(x, y, r, ok ? 'rgba(255,255,255,0.6)' : 'rgba(255,80,80,0.7)', 2);
   }
-  private ghost(id: string, cell: Cell) {
-    const g = this.g, d = towerById(id), t0 = d.tiers[0], p = g.grid.cellCenter(cell.c, cell.r);
+  private ghost(id: string, cell: Cell & { x?: number; y?: number; bad?: boolean }) {
+    const g = this.g, d = towerById(id), t0 = d.tiers[0], p = cell.x !== undefined ? { x: cell.x, y: cell.y! } : g.grid.cellCenter(cell.c, cell.r);
     const ok = g.canPlace(id, cell);
     const r = t0.combat?.range ?? t0.cover?.auraRadius ?? 40;
     this.range(p.x, p.y, r, ok);
     const fp = d.footprint ?? 1;
-    if (fp > 1) { const s = g.grid.cell, h = (fp * s) / 2; this.ctx.fillStyle = ok ? 'rgba(120,255,140,0.18)' : 'rgba(255,70,70,0.25)'; this.ctx.fillRect(p.x - h, p.y - h, fp * s, fp * s); this.ctx.strokeStyle = ok ? '#8f8' : '#f66'; this.ctx.lineWidth = 2; this.ctx.strokeRect(p.x - h, p.y - h, fp * s, fp * s); }
+    if (!g.gridKind(id)) { // t56 BTD6-style base circle: green = OK, red = blocked
+      const c = this.ctx, R = g.towerRadius(id);
+      c.fillStyle = ok ? 'rgba(90,255,120,0.30)' : 'rgba(255,50,50,0.38)'; c.beginPath(); c.arc(p.x, p.y, R, 0, 7); c.fill();
+      c.strokeStyle = ok ? '#7f7' : '#f55'; c.lineWidth = 2; c.stroke();
+    } else if (fp > 1) { const s = g.grid.cell, h = (fp * s) / 2; this.ctx.fillStyle = ok ? 'rgba(120,255,140,0.18)' : 'rgba(255,70,70,0.25)'; this.ctx.fillRect(p.x - h, p.y - h, fp * s, fp * s); this.ctx.strokeStyle = ok ? '#8f8' : '#f66'; this.ctx.lineWidth = 2; this.ctx.strokeRect(p.x - h, p.y - h, fp * s, fp * s); }
     this.ctx.globalAlpha = 0.65;
     this.towerImg(d.sprite, 0, p.x, p.y, t0.visual, 0, false);
     this.ctx.globalAlpha = 1;

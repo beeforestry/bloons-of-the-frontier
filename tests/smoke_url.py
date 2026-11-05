@@ -16,7 +16,7 @@ with sync_playwright() as p:
     pg.wait_for_selector('.map-pick', timeout=20000)
     imgs_ok = pg.evaluate("[...document.querySelectorAll('img')].every(i => i.complete && i.naturalWidth > 0)")
     print('menu loaded; maps:', pg.locator('.map-pick').count(), 'all <img> decoded:', imgs_ok)
-    pg.click('.map-pick[data-map="garden"]')
+    pg.click('.map-pick[data-map="tropical"]')
     pg.wait_for_function('window.__game')
     G = lambda js: pg.evaluate(f'(() => {{ const H = window.__game; return {js}; }})()')
     G('H.addCredits(3000)')

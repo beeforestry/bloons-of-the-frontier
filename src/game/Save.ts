@@ -10,12 +10,12 @@ import { unitById } from '../data/units';
 import { buildingById } from '../data/buildings';
 import { PLAYABLE_MAPS as MAPS } from '../data/maps';
 
-export const SAVE_KEY = 'bof.save', SAVE_V = 1;
+export const SAVE_KEY = 'bof.save', SAVE_V = 2; // v2 (t56): towers carry exact x, y (v1 cell saves migrate to cell centres)
 export interface SaveData {
   v: number; at: number; map: string; mapW: number; mapH: number; diff: DifficultyId;
   wave: number; freeplay: boolean; credits: number; scrap: number; energy: number; hq: number;
   unitTiers: Record<string, number>; armory: string[];
-  towers: { id: string; c: number; r: number; tier: number; tg: TargetingMode }[];
+  towers: { id: string; c: number; r: number; x?: number; y?: number; tier: number; tg: TargetingMode }[];
   buildings: { pad: number; id: string; tier: number }[];
   squads: { id: string; x: number; y: number; n: number; auto: boolean; tg: TargetingMode }[];
 }
@@ -27,7 +27,7 @@ export function snapshot(g: Game, diff: DifficultyId): SaveData {
     v: SAVE_V, at: Date.now(), map: g.map.id, mapW: g.map.width, mapH: g.map.height, diff,
     wave: g.waves.index, freeplay: g.waves.freeplay, credits: Math.floor(w.credits), scrap: Math.floor(w.scrap), energy: g.energy, hq: Math.ceil(g.hq.health.hp),
     unitTiers: { ...g.unitTiers }, armory: [...g.armory],
-    towers: g.towers.filter((t) => t.alive).map((t) => ({ id: t.data.id, c: t.cell.c, r: t.cell.r, tier: t.tier, tg: t.targeting })),
+    towers: g.towers.filter((t) => t.alive).map((t) => ({ id: t.data.id, c: t.cell.c, r: t.cell.r, x: Math.round(t.x), y: Math.round(t.y), tier: t.tier, tg: t.targeting })),
     buildings: g.buildings.filter((b) => b.alive && b.built && b.pad).map((b) => ({ pad: g.pads.indexOf(b.pad!), id: b.data.id, tier: b.tier })).filter((b) => b.pad >= 0),
     squads: g.squads.filter((s) => s.alive).map((s) => { const c = s.center; return { id: s.data.id, x: Math.round(c.x), y: Math.round(c.y), n: s.units.filter((u) => u.alive).length, auto: s.auto, tg: s.targeting }; }),
   };
@@ -42,7 +42,7 @@ export function readSave(): SaveData | null {
   const raw = ls.get(SAVE_KEY); if (!raw) return null;
   try {
     const s = JSON.parse(raw) as SaveData, m = MAPS.find((x) => x.id === s.map);
-    if (s.v === SAVE_V && m && m.width === s.mapW && m.height === s.mapH && Array.isArray(s.towers)) return s;
+    if ((s.v === SAVE_V || s.v === 1) && m && m.width === s.mapW && m.height === s.mapH && Array.isArray(s.towers)) return s;
   } catch { /* corrupt */ }
   clearSave(); return null;
 }
@@ -51,7 +51,7 @@ export function applySave(g: Game, s: SaveData) {
   g.res.load({ credits: 1e9, scrap: 1e9 }, true); // pay for the rebuild, then restore the real wallet
   for (const t of s.towers) {
     try {
-      const tw = g.placeTower(t.id, { c: t.c, r: t.r }); if (!tw) continue;
+      const tw = g.placeTower(t.id, t.x !== undefined && !g.gridKind(t.id) ? { c: t.c, r: t.r, x: t.x, y: t.y } : { c: t.c, r: t.r }); if (!tw) continue;
       while (tw.tier < t.tier && tw.upgrade(g)) { /* */ }
       tw.targeting = t.tg;
     } catch { /* tower id gone */ }

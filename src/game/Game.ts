@@ -15,7 +15,7 @@ import { DIFFICULTIES, applyCostMul, type Difficulty } from '../data/difficulty'
 import { setHQ } from '../systems/TargetingSystem';
 import { PathSystem } from '../systems/PathSystem';
 import { SHORTCUT, Shortcut, routeThrough, segDistance, type ShortcutDef } from '../systems/Shortcuts';
-import { PlacementSystem, type Cell } from '../systems/PlacementSystem';
+import { PlacementSystem, type Cell, type Spot } from '../systems/PlacementSystem';
 import { ResourceManager, type Cost } from '../systems/ResourceManager';
 import { ARMORY, ARMORY_FX, SALVAGE, type ArmoryId } from '../data/armory';
 import { WaveManager } from '../systems/WaveManager';
@@ -936,7 +936,55 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ player actions
-  canPlace(id: string, cell: Cell | null) { return !!cell && this.grid.fits(cell.c, cell.r, towerById(id).footprint ?? 1) && this.res.canAfford({ credits: towerById(id).tiers[0].cost }); }
+  // ------------------------------------------------------------------ t56 free placement (BTD6 style)
+  /** Collision radius of a tower's base (px). Big vehicles (3x3) are ~3x wider. */
+  towerRadius(id: string) { return (towerById(id).footprint ?? 1) * this.grid.cell * 0.4; }
+  /** Farms stay on the light internal grid so the Farmhand can pack them; everything else is free-placed. */
+  gridKind(id: string) { return towerById(id).kind === 'farm'; }
+  /** Is a tower of `id` allowed with its centre at (x, y)? */
+  spotOk(id: string, x: number, y: number, ignore?: Tower): boolean {
+    const R = this.towerRadius(id), m = this.map;
+    if (x < R || y < R || x > m.width - R || y > m.height - R) return false;
+    if (this.nearestLane({ x, y }).dist < m.pathWidth / 2 + R * 0.55) return false;
+    const k = R * 0.7;
+    for (const [sx, sy] of [[x, y], [x + k, y], [x - k, y], [x, y + k], [x, y - k]]) {
+      if (!this.grid.isLandAt(sx, sy)) return false;
+      const o = this.grid.occupant(...(Object.values(this.grid.worldToCell({ x: sx, y: sy })) as [number, number]));
+      if (o && o !== ignore && o.alive && this.gridKind(o.data.id)) return false;
+    }
+    for (const t of this.towers) if (t.alive && t !== ignore && Math.hypot(t.x - x, t.y - y) < (R + this.towerRadius(t.data.id)) * 0.92) return false;
+    for (const b of this.buildings) if (b.alive && Math.hypot(b.x - x, b.y - y) < R + (b.isHQ ? 110 : 50)) return false;
+    for (const e of this.envs) if (Math.hypot(e.x - x, e.y - y) < R + 34) return false;
+    return true;
+  }
+  /** Spot for the placement ghost / click: farms snap to the grid; others are free (nudged up to ~12px if just off). */
+  placementSpot(id: string, p: Vec): Spot | null {
+    const fp = towerById(id).footprint ?? 1;
+    if (this.gridKind(id)) {
+      const c = this.grid.snap(p, fp); if (!c) return null;
+      const q = this.grid.cellCenter(c.c, c.r), R = this.towerRadius(id);
+      return this.towers.some((t) => t.alive && !this.gridKind(t.data.id) && Math.hypot(t.x - q.x, t.y - q.y) < (R + this.towerRadius(t.data.id)) * 0.92) ? null : c;
+    }
+    const tryAt = (x: number, y: number): Spot | null => this.spotOk(id, x, y) ? { ...this.grid.worldToCell({ x, y }), x: Math.round(x), y: Math.round(y) } : null;
+    const s = tryAt(p.x, p.y); if (s) return s;
+    for (const d of [6, 12]) for (let a = 0; a < 8; a++) { const r = tryAt(p.x + Math.cos(a * Math.PI / 4) * d, p.y + Math.sin(a * Math.PI / 4) * d); if (r) return r; }
+    return null;
+  }
+  /** Alive tower whose base is under p (free-placed towers aren't one-per-cell). */
+  towerAt(p: Vec): Tower | null {
+    let best: Tower | null = null, bd = Infinity;
+    for (const t of this.towers) { if (!t.alive) continue; const d = Math.hypot(t.x - p.x, t.y - p.y); if (d < this.towerRadius(t.data.id) + 8 && d < bd) { bd = d; best = t; } }
+    if (best) return best;
+    const c = this.grid.worldToCell(p); return this.grid.occupant(c.c, c.r);
+  }
+  /** Validity of a spot (spot.x set = free placement; bare cell = legacy cell-centre). */
+  private spotValid(id: string, s: Spot) {
+    const fp = towerById(id).footprint ?? 1;
+    if (this.gridKind(id)) return this.grid.fits(s.c, s.r, fp);
+    const q = s.x !== undefined ? { x: s.x, y: s.y! } : this.grid.cellCenter(s.c, s.r);
+    return this.spotOk(id, q.x, q.y) || (s.x === undefined && this.grid.fits(s.c, s.r, fp));
+  }
+  canPlace(id: string, cell: Spot | null) { return !!cell && !(cell as { bad?: boolean }).bad && this.spotValid(id, cell) && this.res.canAfford({ credits: towerById(id).tiers[0].cost }); }
   /** Path objects go ON the road: returns the snapped road point or null. */
   roadSpot(p: Vec): (Vec & { lane: number }) | null {
     const nl = this.nearestLane(p);
@@ -957,15 +1005,16 @@ export class Game {
     this.sfx('command');
     return b;
   }
-  placeTower(id: string, cell: Cell): Tower | null {
+  placeTower(id: string, cell: Spot): Tower | null {
     const data = towerById(id);
     if (data.kind === 'path') return null;
     const fp = data.footprint ?? 1;
-    if (!this.grid.fits(cell.c, cell.r, fp)) { if (fp > 1) this.toast(`${data.name} needs a clear ${fp}x${fp} pad`, '#ff8a7a'); return null; }
+    if (cell.x !== undefined) cell = { ...cell, ...this.grid.worldToCell({ x: cell.x, y: cell.y! }) };
+    if (!this.spotValid(id, cell)) { if (fp > 1) this.toast(`${data.name} needs more clear ground`, '#ff8a7a'); return null; }
     if (!this.res.spend({ credits: data.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
     const t = new Tower(data, cell, this);
     t.owner = this.actingPid;
-    this.grid.occupyArea(t, cell.c, cell.r, fp);
+    this.occupyTower(t);
     this.towers.push(t); this.losVer++;
     if (data.fixedLane) {
       const nl = this.nearestLane(t), q = this.paths[nl.lane].at(nl.d);
@@ -976,10 +1025,16 @@ export class Game {
     this.fx({ kind: 'dust', x: t.x, y: t.y + 16, r: 26, color: '#e8d8b0', dur: 0.4 });
     return t;
   }
+  /** Grid kinds hold their n x n cells; free towers hold the free cells under their base circle. */
+  occupyTower(t: Tower) {
+    const fp = t.data.footprint ?? 1;
+    if (this.gridKind(t.data.id)) { for (const q of this.grid.area(t.cell.c, t.cell.r, fp)) if (this.grid.isFree(q.c, q.r)) this.grid.occupy(t, q.c, q.r); }
+    else this.grid.occupyCircle(t, t.x, t.y, this.towerRadius(t.data.id) * 0.9);
+  }
   sellTower(t: Tower) {
     if (!t.alive) return;
     this.res.add(t.sellValue);
-    this.grid.releaseArea(t.cell.c, t.cell.r, t.data.footprint ?? 1);
+    this.grid.releaseOwner(t);
     t.remove();
     this.towers = this.towers.filter((x) => x !== t); this.losVer++;
     this.fx({ kind: 'text', x: t.x, y: t.y - 20, text: `+${t.sellValue}`, color: '#ffe14d', dur: 1 });
