@@ -28,5 +28,5 @@ Live: https://beeforestry.github.io/bloons-of-the-frontier/
 - `09_3d_from_2d_comparison.png` — 2D refs above FP textured enemies
 
 ## Deploy SHAs
-- main: (pending)
-- gh-pages: (pending)
+- main: `8195a2e`
+- gh-pages: `5abca30`
