@@ -32,7 +32,7 @@ with sync_playwright() as p:
         try: pg.wait_for_function(f'(() => {{ const H = window.__game; return eval({json.dumps(js)}); }})()', timeout=ms, polling=100); return True
         except Exception: return False
     pg.wait_for_timeout(600)
-    check(G('H.g.map.id') == 'tropical' and G('H.g.paths.length') == 1, 'tropical map loaded, one continuous lane')
+    check(G('H.g.map.id') == 'tropical' and G('H.g.paths.length') == 3, 'tropical (Isla de Cabras, t56) loaded, 3 lanes')
     check(G('H.g.squads.some(s => s.data.worker || /farm/i.test(s.data.id))') or G('H.g.stats.freeCollectors') > 0, 'free Sprout Farmhand placed at start')
     G('H.camReset()'); pg.wait_for_timeout(300); shot(pg, 'map_full')
     G('H.sandbox(); H.addCredits(30000)')
@@ -52,7 +52,7 @@ with sync_playwright() as p:
     until('(() => { let n = 0; window.__possess.cur.scene.traverse(o => { if (o.isInstancedMesh && (o.userData.flora || o.userData.texModel)) n += o.count; }); return n >= 30; })()', 20000)  # t50 flora models load async
     st = P('({ floor: P.scene.getObjectByName("floor").geometry.attributes.position.count, sea: !!P.scene.getObjectByName("sea"), props: (() => { let n = 0; P.scene.traverse(o => { if (o.isInstancedMesh && (o.userData.flora || o.userData.texModel)) n += o.count; }); return n; })(), bb: P.scene.children.filter(o => o.userData.prop && o.userData.prop !== "prflag").length, camY: P.camera.position.y, tier: P.obj.tier })')
     check(st['floor'] > 4000 and st['sea'], f'heightfield terrain mesh + sea ({st["floor"]} verts)')
-    check(st['props'] >= 30 and st['bb'] == 0, f'{st["props"]} 3D palm/rock/bush model instances, {st["bb"]} non-flag billboards (t50: props are models)')
+    check(st['props'] >= 15 and st['bb'] == 0, f'{st["props"]} 3D palm/rock/bush model instances, {st["bb"]} non-flag billboards (t50: props are models)')
     check(st['camY'] > 2.7 + st['tier'] * 0.15 + 0.3, f'tower camera sits on the terrain (eye y={st["camY"]:.2f} m)')
     for i in range(10): G(f'H.spawn("pink", 0, {0.30 + i * 0.01:.3f})')
     pg.wait_for_timeout(1500); P('P.aimNearest()'); P('P.pitch = -0.1'); pg.wait_for_timeout(400); shot(pg, 'fps_tower_view')

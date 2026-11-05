@@ -52,3 +52,11 @@ Converted by art_src/tools/fp_assets_t51.mjs: LOD0 thinned to ~45 %, LOD1 ~25 % 
 - **Aerial imagery (2D map background + first-person ground texture):** NOAA National Geodetic Survey (NGS) Emergency Response Imagery, Hurricane Maria, flight of 2017-09-24, layer `20170924b-rgb`, ~25 cm GSD. XYZ tiles `https://stormscdn.ngs.noaa.gov/20170924b-rgb/{z}/{x}/{y}` (zoom 19). NOAA InPort catalog item 52283; bulk GeoTIFFs: https://coastalimagery.blob.core.windows.net/digitalcoast/HurricaneMaria_2017_8507/index.html . License: U.S. Government work, not subject to copyright — public domain / **CC0-1.0**. Resampled, rotated (map +x = 142.8° CCW from east), cropped and colour-graded by `art_src/tools/morro_real.py`. Not Google imagery.
 - **Elevation (first-person terrain + sniper line of sight):** U.S. Geological Survey 3D Elevation Program (3DEP) 1 m lidar DEM, project **PR_PRVI_E_2018**, tile `USGS_1m_x80y205_PR_PRVI_E_2018.tif` (EPSG:26919), https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/PR_PRVI_E_2018/TIFF/USGS_1m_x80y205_PR_PRVI_E_2018.tif (via The National Map). License: USGS data, **public domain** (credit: "U.S. Geological Survey"). Resampled to a 185 x 125 lattice (3 m), 0.2 m steps.
 - Detail textures blended on the terrain are the existing CC0 ground textures (see groundTex.ts / earlier sections).
+
+## Tropical Island map — Isla de Cabras, Toa Baja PR (t56)
+| Asset | Source | License |
+|---|---|---|
+| maps/tropical.jpg, ground photo (z19/z20 orthomosaic) | NOAA NGS Emergency Response Imagery, Hurricane Maria, layer 20170924b-rgb (2017-09-24) — https://storms.ngs.noaa.gov/ | CC0 / US public domain |
+| Terrain heights, LOS walls, deco mask | USGS 3DEP 1 m DEM, project PR_PRVI_E_2018, tile USGS_1m_x80y205_PR_PRVI_E_2018.tif | US public domain |
+
+No Google Earth / Google Maps imagery is used.

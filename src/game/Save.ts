@@ -51,7 +51,8 @@ export function applySave(g: Game, s: SaveData) {
   g.res.load({ credits: 1e9, scrap: 1e9 }, true); // pay for the rebuild, then restore the real wallet
   for (const t of s.towers) {
     try {
-      const tw = g.placeTower(t.id, t.x !== undefined && !g.gridKind(t.id) ? { c: t.c, r: t.r, x: t.x, y: t.y } : { c: t.c, r: t.r }); if (!tw) continue;
+      // exact spot first; fall back to the saved cell (legacy cell-centre placements can fail the stricter free-spot check)
+      const tw = (t.x !== undefined && !g.gridKind(t.id) ? g.placeTower(t.id, { c: t.c, r: t.r, x: t.x, y: t.y }) : null) ?? g.placeTower(t.id, { c: t.c, r: t.r }); if (!tw) continue;
       while (tw.tier < t.tier && tw.upgrade(g)) { /* */ }
       tw.targeting = t.tg;
     } catch { /* tower id gone */ }

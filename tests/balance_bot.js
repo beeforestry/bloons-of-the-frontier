@@ -6,14 +6,32 @@ window.__bot = (() => {
     'chomper', 'boomerang_monkey', 'sniper_monkey', 'glue_slinger', 'hypno_shroom', 'arcane_obelisk', 'star_emperor', 'unsc_rail', 'flame_melon_mortar', 'super_monkey'];
   let rot = 0, maxTowers = 0;
   // candidate cells: free cells sorted by how much path they cover (samples within 150 px)
-  const samples = []; for (const p of g.paths) for (let f = 0.04; f < 0.97; f += 0.02) samples.push(p.at(p.length * f));
+  const samples = []; g.paths.forEach((p, li) => { for (let f = 0.04; f < 0.97; f += 0.02) samples.push({ ...p.at(p.length * f), li }); });
+  const laneOf = (x, y) => { let b = 0, bd = 1e9; for (const s of samples) { const d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; b = s.li; } } return b; };
   const cells = [];
   for (let r = 0; r < g.grid.rows; r++) for (let c = 0; c < g.grid.cols; c++) if (g.grid.isFree(c, r)) {
     const q = g.grid.cellCenter(c, r); let cov = 0, near = 1e9;
     for (const s of samples) { const d = Math.hypot(s.x - q.x, s.y - q.y); if (d < 150) cov++; near = Math.min(near, d); }
     if (near > 34 && cov) cells.push({ c, r, cov });
   }
+  // t56 free placement: also lane-hugging spots (pw/2 + ~14 px off the road, both sides), like a BTD6 player
+  if (g.placementSpot) {
+    const o = g.map.pathWidth / 2 + 16;
+    for (const p of g.paths) for (let d = 60; d < p.length - 60; d += 34) { const a = p.at(d);
+      for (const sd of [1, -1]) { const x = a.x + Math.cos(a.ang + Math.PI / 2) * o * sd, y = a.y + Math.sin(a.ang + Math.PI / 2) * o * sd;
+        if (!g.grid.isLandAt(x, y)) continue; let cov = 0; for (const s of samples) if (Math.hypot(s.x - x, s.y - y) < 150) cov++;
+        cells.push({ ...g.grid.worldToCell({ x, y }), x, y, cov: cov + 0.5 }); } }
+  }
   cells.sort((a, b) => b.cov - a.cov);
+  for (const x of cells) { const q = x.x !== undefined ? x : g.grid.cellCenter(x.c, x.r); x.li = laneOf(q.x, q.y); }
+  const spotFor = (id) => {
+    // spread: weakest-covered lane first, and avoid stacking everything in one cluster
+    const per = g.paths.map(() => 0); for (const t of g.towers) per[laneOf(t.x, t.y)]++;
+    const want = per.indexOf(Math.min(...per));
+    const score = (x) => { const q = x.x !== undefined ? x : g.grid.cellCenter(x.c, x.r); let n = 0; for (const t of g.towers) if (Math.hypot(t.x - q.x, t.y - q.y) < 110) n++; return x.cov - n * 4 + (x.li === want ? 25 : 0); };
+    const order = cells.map((x) => [score(x), x]).sort((a, b) => b[0] - a[0]).map((a) => a[1]);
+    for (const x of order) { if (!g.placementSpot) { if (g.grid.isFree(x.c, x.r)) return { c: x.c, r: x.r }; continue; }
+    const q = x.x !== undefined ? x : g.grid.cellCenter(x.c, x.r), s = g.placementSpot(id, q); if (s) return s; } return null; };
   const SQ = ['paladin', 'marine', 'line_watch', 'odst', 'ranger'];
   let sqi = 0;
   const macro = () => {
@@ -45,8 +63,8 @@ window.__bot = (() => {
       const wantNew = g.towers.length < Math.min(70, 8 + g.waves.index * 0.8) && (!cheapUp || g.towers.length < 5 || cost <= cheapUp.nextTier.cost * 1.2);
       if (wantNew) {
         if (g.res.credits < cost) break;
-        const cell = cells.find((x) => g.grid.isFree(x.c, x.r));
-        if (!cell || !g.placeTower(id, { c: cell.c, r: cell.r })) { rot++; continue; }
+        const cell = spotFor(id);
+        if (!cell || !g.placeTower(id, cell)) { rot++; continue; }
         rot++; maxTowers = Math.max(maxTowers, g.towers.length);
       } else if (cheapUp) { if (!cheapUp.upgrade(g)) break; } else break;
     }

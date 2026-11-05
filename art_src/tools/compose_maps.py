@@ -182,19 +182,22 @@ def compose(M):
             if math.hypot(x - bx, y - by) < (r + br) * 0.85: return False
         return True
     if M.get('roadEdge') is False: pass
+    ps = M.get('propScale', 1.0)  # t56: real-scale maps (Isla de Cabras) shrink props to true size
     for (key, x, y, sc) in M.get('fixed', []):
-        g, r = stamp(g, key, x, y, sc); blocked.append((x, y, r))
+        if M.get('noStamp'): r = SIZE[key] * sc * ps * 0.36
+        else: g, r = stamp(g, key, x, y, sc)
+        blocked.append((x, y, r))
     items = []
     for key, n in M.get('must', []):  # t50: guaranteed counts (wrecks, bunkers...), same clearance rules
         got = t2 = 0
         while got < n and t2 < 4000:
-            t2 += 1; sc = rnd.uniform(0.9, 1.1); r = SIZE[key] * sc * 0.36; x, y = rnd.uniform(0, W), rnd.uniform(0, H)
+            t2 += 1; sc = rnd.uniform(0.9, 1.1) * ps; r = SIZE[key] * sc * 0.36; x, y = rnd.uniform(0, W), rnd.uniform(0, H)
             if clear(x, y, r): items.append((key, x, y, sc)); blocked.append((x, y, r)); got += 1
     tries = 0
     while len(items) < M['decoCount'] and tries < 6000:
         tries += 1
         key = rnd.choice(M['deco'])
-        sc = rnd.uniform(0.8, 1.15); r = SIZE[key] * sc * 0.36
+        sc = rnd.uniform(0.8, 1.15) * ps; r = SIZE[key] * sc * 0.36
         # bias to borders (forest frame)
         if rnd.random() < 0.55:
             side = rnd.randrange(4)
@@ -204,7 +207,7 @@ def compose(M):
             x, y = rnd.uniform(0, W), rnd.uniform(0, H)
         if clear(x, y, r): items.append((key, x, y, sc)); blocked.append((x, y, r))
     for key, x, y, sc in sorted(items, key=lambda t: t[2]):
-        g, _ = stamp(g, key, x, y, sc, rnd.random() < 0.5)
+        if not M.get('noStamp'): g, _ = stamp(g, key, x, y, sc, rnd.random() < 0.5)
     props = [[k, round(x), round(y), round(SIZE[k] * sc)] for (k, x, y, sc) in list(M.get('fixed', [])) + items]
     # vignette
     v = Image.new('L', (W, H), 0); d = ImageDraw.Draw(v); d.rectangle([60, 60, W - 60, H - 60], fill=255)
@@ -231,6 +234,19 @@ def compose(M):
                     if math.hypot(cx - bx, cy - (by - br * 0.6)) < br * 0.95 + 10: ok = False; break
             line += '1' if ok else '0'
         rows.append(line)
+    land = None
+    if M.get('fineLand'):  # t56 free placement: land bits at fineLand px (no lane clearance; checked per spot in game)
+        import base64
+        R = M['fineLand']; fc, fr = math.ceil(W / R), math.ceil(H / R); bits = np.zeros(fc * fr, np.uint8)
+        for row in range(fr):
+            for col in range(fc):
+                cx, cy = (col + 0.5) * R, (row + 0.5) * R; ok = True
+                if ocean is not None and ocean.getpixel((int(min(W - 1, cx)), int(min(H - 1, cy)))) > 60: ok = False
+                if ok and block is not None and block.getpixel((int(min(W - 1, cx)), int(min(H - 1, cy)))) > 60: ok = False
+                if ok and abs(cx - hq[0]) < HQ_R + 20 and abs(cy - hq[1]) < HQ_R + 20: ok = False
+                if ok and any(abs(cx - px) < PAD + 12 and abs(cy - py) < PAD + 12 for px, py in pads): ok = False
+                bits[row * fc + col] = ok
+        land = dict(land=base64.b64encode(np.packbits(bits, bitorder='little').tobytes()).decode(), landRes=R)
     # debug overlay
     dbg = g.copy().convert('RGBA'); ov = Image.new('RGBA', dbg.size); d = ImageDraw.Draw(ov)
     for r, line in enumerate(rows):
@@ -242,14 +258,14 @@ def compose(M):
     dbg.alpha_composite(ov); dbg.convert('RGB').resize((W // 2, H // 2)).save(f'/tmp/chk/map_{M["id"]}.jpg', quality=80)
     return dict(id=M['id'], name=M['name'], image=f'assets/maps/{M["id"]}.jpg', width=W, height=H, pathWidth=pw,
                 waypoints=lanes[0], lanes=lanes, hq=hq, pads=pads, rally=M['rally'],
-                grid=dict(cell=CELL, originX=0, originY=0, cols=COLS, rows=ROWS, buildable=rows),
+                grid=dict(cell=CELL, originX=0, originY=0, cols=COLS, rows=ROWS, buildable=rows, **(land or {})),
                 **({'envs': M['envs']} if M.get('envs') else {}), **({'deco': props} if not M.get('terrain') else {}), **({'flavor': M['flavor']} if M.get('flavor') else {}),
                 **({'terrain': dict(M['terrain'](M, W, H, lanes, pw), ground=f"assets/maps/{M['id'] if M.get('groundFull') else 'tropical'}/ground.jpg", props=props)} if M.get('terrain') else {}),
                 **({'mpp': M['mpp']} if M.get('mpp') else {}), **({'walls': M['walls'](W, H)} if M.get('walls') else {}))
 
 HQ_G = [1980, 744]
 import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import morro_v2, morro_real
+import morro_v2, morro_real, tropical_real
 MORRO_HQ = [1300, 830]
 MORRO_PADS = [[1120, 594], [1096, 1002], [1300, 640], [1300, 1030], [1520, 900], [1670, 880]]  # t53: flat terraces inside the real fort
 def ring(hq):  # 6 pads around HQ (left side kept open for lane entry)
@@ -302,18 +318,20 @@ MAPS = [
              [[1000, 1570], [985, 1420], [925, 1300], [865, 1180], [840, 1050], [868, 905], [940, 790], [1060, 795], [1175, 800]],
              [[-80, 112], [150, 116], [330, 150], [500, 320], [700, 520], [870, 700], [940, 778], [1060, 795], [1175, 800]],
          ]),
-    # Tropical Island (t40u): user's terrain/heightmap/grass assets; one long winding lane from the
-    # west landing dock (balloon) to the HQ by the east dock (flag).
-    # t50: warzone repaint (scorched ground, craters, oil, burnt palms, wrecks, bunkers, wire); same lane/HQ/pads.
-    dict(id='tropical', name='Tropical Island', seed=71, ground='grass', road='dryground', pathWidth=58, decoCount=40, noPlaza=True,
-         painter=tropical.paint, post=tropical.post, terrain=tropical.heightfield, dockIn=250,
-         deco=['bpalm', 'bpalm', 'bpalm2', 'deadtree2', 'trock', 'rubble', 'rubble', 'wire', 'sandbags'],
-         must=[('wtank', 2), ('wtank2', 1), ('wheli', 1), ('bunker', 2), ('sandbags', 2), ('wire', 3)],
-         hq=[1830, 770], pads=[[1640, 560], [1820, 560], [1660, 990], [1830, 990], [1960, 640], [1960, 900]], rally=[1600, 770],
-         fixed=[['prflag', 2120, 700, 0.8], ['bpalm2', 330, 640, 1.0], ['bpalm', 300, 1010, 1.0], ['trock', 1150, 330, 1.0], ['trock', 760, 1200, 1.0],
-                ['rubble', 1000, 820, 1.0], ['wheli', 1500, 1180, 0.9]],
-         lanes=[[[-80, 820], [250, 820], [400, 790], [470, 560], [650, 420], [850, 470], [980, 640], [900, 900], [1050, 1120], [1300, 1100],
-                 [1340, 880], [1250, 620], [1400, 420], [1650, 470], [1720, 620], [1700, 770]]]),
+    # t56: Tropical Island rebuilt from REAL public-domain data like El Morro: Isla de Cabras (Toa Baja), the islet at the
+    # west mouth of San Juan Bay, NOAA NGS Hurricane Maria photo (2017-09-24) + USGS 3DEP 1 m lidar. Post-storm debris
+    # and the old lazaretto ruins suit the warzone. Lanes: (0) west beach landing along the shore road; (1) north beach
+    # landing past the jetty; (2) amphibious landing across the breakwater lagoon. HQ on the lawn by the park building.
+    dict(id='tropical', name='Tropical Island', seed=71, ground='grass', road='dryground', pathWidth=58, decoCount=46, noPlaza=True,
+         painter=tropical_real.paint, terrain=tropical_real.heightfield, walls=tropical_real.walls, mpp=tropical_real.FRAME['mpp'],
+         groundFull=True, groundQ=80, roadAlpha=0.38, noStamp=True, propScale=0.35, fineLand=6,
+         deco=['bpalm', 'bpalm', 'bpalm', 'bpalm2', 'deadtree2', 'trock', 'rubble', 'wire', 'sandbags'],
+         must=[('wtank', 2), ('wtank2', 1), ('wheli', 1), ('bunker', 2), ('sandbags', 3), ('wire', 3)],
+         hq=[1300, 760], pads=[[1250, 560], [1380, 575], [1490, 860], [1360, 960], [1210, 975], [1570, 860]], rally=[1150, 760],
+         fixed=[['prflag', 1420, 700, 0.8]],
+         lanes=[[[-80, 560], [200, 565], [500, 545], [760, 520], [900, 560], [1020, 640], [1120, 720], [1185, 760]],
+                [[1640, -80], [1630, 250], [1580, 420], [1360, 445], [1130, 515], [1060, 630], [1120, 720], [1185, 760]],
+                [[980, 1570], [990, 1320], [985, 1160], [1010, 990], [1080, 860], [1185, 770]]]),
 ]
 os.makedirs('/tmp/chk', exist_ok=True)
 # `--only morro` re-composes just that map and merges it into the existing JSON
