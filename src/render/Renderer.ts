@@ -207,6 +207,15 @@ export class Renderer {
     }
     for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.enemy(e);
     this.emitAmbient(gdt);
+    // Harbor Beacon: constant lighthouse shaft (not a blink) while locked
+    for (const tw of g.towers) {
+      const bt = tw.combat?.beamTo;
+      if (!bt || !bt.alive || tw.data.id !== 'unsc_beacon') continue;
+      const lock = tw.combat!.lockT, cap = tw.t.combat?.lockRampMax ?? 2;
+      const heat = Math.min(1, lock * (tw.t.combat?.lockRamp ?? 0.25) / Math.max(0.01, cap));
+      const mx = tw.x + Math.cos(tw.aim) * 10, my = tw.y - 48 - tw.tier * 6;
+      this.lighthouseBeam(mx, my, bt.x, bt.y, 5 + tw.tier * 2.5 + heat * 6, heat);
+    }
     for (const p of g.projectiles) if (this.inView(p.x, p.y, 40)) this.projectile(p, gdt);
     for (const a of g.acids) this.acid(a);
     this.parts.update(gdt);
@@ -1069,6 +1078,20 @@ export class Renderer {
       c.beginPath(); c.arc(pl.x + Math.cos(a) * d, pl.y + Math.sin(a) * d * 0.62, 1.5 + ph * 3, 0, 7); c.globalAlpha = 0.8 * k * (1 - ph); c.fill(); }
     c.restore();
   }
+  /** Warm continuous lighthouse shaft (2D). Heat 0..1 brightens / thickens toward the burn cap. */
+  private lighthouseBeam(x: number, y: number, x2: number, y2: number, w: number, heat: number) {
+    const c = this.ctx;
+    c.save(); c.globalCompositeOperation = 'lighter';
+    c.strokeStyle = `rgba(255,${Math.round(210 - heat * 40)},${Math.round(140 - heat * 60)},${0.22 + heat * 0.2})`;
+    c.lineWidth = w * 2.4; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x2, y2); c.stroke();
+    c.strokeStyle = `rgba(255,245,210,${0.55 + heat * 0.35})`; c.lineWidth = w;
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x2, y2); c.stroke();
+    c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = Math.max(1.5, w * 0.28);
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x2, y2); c.stroke();
+    c.restore();
+    this.additive(IMG.fx_spark, x2, y2, 18 + heat * 22, heat * 4, 0.55 + heat * 0.35);
+  }
   private projectile(p: Projectile, dt: number) {
     const c = this.ctx, k = p.o.kind, s = p.o.scale ?? 1, y = p.y - p.height;
     const ang = Math.atan2(p.vy, p.vx);
@@ -1117,6 +1140,15 @@ export class Renderer {
       case 'shell':
         this.additive(IMG.fx_boom_fire, p.x - Math.cos(ang) * 8, y - Math.sin(ang) * 8, 18, p.spin, 0.6);
         c.fillStyle = '#3a3f45'; c.beginPath(); c.ellipse(p.x, y, 6, 4, ang, 0, 7); c.fill(); break;
+      case 'laser':
+      case 'rail':
+      case 'tesla': { // rare travelling energy bolt
+        c.save(); c.globalCompositeOperation = 'lighter';
+        c.strokeStyle = k === 'tesla' ? '#9fe7ff' : k === 'rail' ? '#8fd0ff' : '#ff6060';
+        c.lineWidth = 3 * s; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(p.x - Math.cos(ang) * 16 * s, y - Math.sin(ang) * 16 * s); c.lineTo(p.x, y); c.stroke();
+        c.fillStyle = '#fff'; c.beginPath(); c.arc(p.x, y, 2.5 * s, 0, 7); c.fill(); c.restore(); break;
+      }
       default: c.fillStyle = '#ffe08a'; c.beginPath(); c.arc(p.x, y, 3 * s, 0, 7); c.fill();
     }
   }

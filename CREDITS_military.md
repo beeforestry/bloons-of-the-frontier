@@ -109,3 +109,9 @@ Bugfixes (first-person meshes): Siege Gunner cupola parented to turret roof (was
 | tex/lh_slate.webp | Darkened Corrugated Iron 02 bake | CC0 |
 
 Sources staged under `art_src/tex_t65/` (jpg/zips); runtime uses WebP under `public/assets/tex/`. No Google Earth/Maps/Street View. No ripped game art.
+
+
+## t67 / t68 — projectiles, lighthouse shaft, sandbag pile, 3D-from-2D enemies
+- `public/assets/tex/sandbag.webp` + `sandbag_n.webp` — procedural hessian weave (original, CC0) for the connected sandbag berm.
+- Enemy 3D colors/textures reference the game’s own painted `public/assets/v3/bloon_*.webp` / `bug_*.webp` sprites (not third-party game rips).
+- Tower FP meshes continue to use procedural `towers3d.ts` (matched to 2D silhouettes) + prior Quaternius/Poly Haven CC0 vehicle assets.

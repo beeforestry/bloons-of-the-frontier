@@ -18,6 +18,7 @@ import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
+import { enemySpriteTex } from './enemies3d';
 import { setMatQuality, matOf } from './mats';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
@@ -34,8 +35,20 @@ const SH_R = 22; // t51: half-size (m) of the sun's shadow box
  * terrain), set in the constructor from map.mpp. Object SIZES keep the game scale SZ so units/bloons look the same. */
 export let S = 0.05;
 const SZ = 0.05;
-const BLOON_COL: Record<string, number> = { red: 0xe8352f, blue: 0x2f7ce8, green: 0x3bc24a, yellow: 0xf2d02c, pink: 0xff6fb5, lead: 0x7b8088, ceramic: 0xb5703a };
-const BUG_COL: Record<string, number> = { scavenger: 0x8a5a2b, hunter: 0x6b3a8a, charger: 0x8a2b2b, brood: 0x9a7a2b, bile_titan: 0x5f9a2b, ironback: 0x6a7480, warden: 0x2b6a8a };
+/** Fallback hex when enemy.data.color is missing — keyed to match painted v3 sprites. */
+const BLOON_COL: Record<string, number> = { red: 0xff3333, blue: 0x3388ff, green: 0x33cc33, yellow: 0xffcc00, pink: 0xff66cc, lead: 0x5b6270, ceramic: 0xe9e4dc, moab: 0x5aa0e8 };
+const BUG_COL: Record<string, number> = { scavenger: 0xd9792b, hunter: 0xc4562b, charger: 0x8a5a2b, brood: 0xb38a2e, bile_titan: 0x6a7d2a, ironback: 0x6f7780, warden: 0x46c6e8, gargoyle: 0x9a6bd1 };
+function enemyCol(e: { data: { id: string; color?: string; family?: string } }): number {
+  const hex = e.data.color;
+  if (hex && /^#?[0-9a-fA-F]{6}$/.test(hex.replace('#',''))) return parseInt(hex.replace('#',''), 16);
+  return (e.data.family === 'bloon' ? BLOON_COL : BUG_COL)[e.data.id] ?? 0xe8352f;
+}
+const SHOT_COL: Record<string, number> = {
+  dart: 0xd9c48a, pea: 0x5adf4a, gpea: 0xff5a5a, shuriken: 0xc0c6d0, magic: 0xc77dff, melon: 0xff8a3a,
+  star: 0xffe066, bullet: 0xffe08a, laser: 0xff5050, rail: 0x8fd0ff, ice: 0xa8e8ff, glue: 0xa6ff4d,
+  acid_vial: 0xa6ff4d, acid_spray: 0xa6ff4d, acid_can: 0x9cff3a, flak: 0xffa040, seed: 0xb6f78f,
+  boomerang: 0xd7a35a, tesla: 0x9fe7ff, arrow: 0xd9dde2, shell: 0x6a7078,
+};
 const BOSS_COL: Record<string, number> = { moab: 0x2f6fd8, boss_zeppelin: 0x8a3fd8, boss_leviathan: 0x1f9a8a, boss_scarab: 0xb8862b, boss_dreadnought: 0x3a3f48, gargoyle: 0x707070 };
 const coarse = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 const at = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T => { o.position.set(x, y, z); return o; };
@@ -64,7 +77,7 @@ export class Possess {
   ctl: ManualCtl = { aim: 0, fire: false, target: null, mx: 0, my: 0 };
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
-  private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
+  private bloonMeshes = new Map<string, THREE.InstancedMesh>(); private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
   private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli' | 'destroyer' | 'beacon'; tier?: number; model?: THREE.Group; base?: number }>();
   private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number }>();
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
@@ -344,18 +357,35 @@ export class Possess {
   private buildPools() {
     const bloonGeo = new THREE.SphereGeometry(0.62, 12, 9); bloonGeo.scale(1, 1.18, 1);
     const knot = new THREE.ConeGeometry(0.12, 0.2, 6).translate(0, -0.78, 0).rotateX(Math.PI);
-    this.bloonMesh = new THREE.InstancedMesh(mergeGeometries([bloonGeo, knot])!, new THREE.MeshLambertMaterial(), 800);
+    const bloonMerged = mergeGeometries([bloonGeo, knot])!;
+    // t68: per-bloon InstancedMesh painted from own v3 sprite (red/blue/green/…), not one shared red albedo
+    const BLOON_IDS = ['red', 'blue', 'green', 'yellow', 'pink', 'lead', 'ceramic'];
+    for (const id of BLOON_IDS) {
+      const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: enemySpriteTex(id) });
+      const mesh = new THREE.InstancedMesh(bloonMerged, mat, 200);
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(200 * 3), 3);
+      mesh.count = 0; mesh.frustumCulled = false; this.scene.add(mesh);
+      this.bloonMeshes.set(id, mesh);
+    }
+    // fallback mesh (unknown bloon ids) keeps red sprite + instance tint
+    const bloonMat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: enemySpriteTex('red') });
+    this.bloonMesh = new THREE.InstancedMesh(bloonMerged.clone(), bloonMat, 200);
     const body = new THREE.SphereGeometry(0.55, 10, 8).scale(1.3, 0.7, 1).translate(0, 0.55, 0);
     const headG = new THREE.SphereGeometry(0.32, 8, 6).translate(0.75, 0.62, 0);
     const legs: THREE.BufferGeometry[] = [];
     for (let i = 0; i < 6; i++) { const lx = -0.4 + (i % 3) * 0.4, s = i < 3 ? 1 : -1; legs.push(new THREE.BoxGeometry(0.08, 0.08, 0.7).translate(lx, 0.25, s * 0.55).rotateX(s * 0.3)); }
-    this.bugMesh = new THREE.InstancedMesh(mergeGeometries([body, headG, ...legs].map((x) => x.index ? x.toNonIndexed() : x))!, new THREE.MeshLambertMaterial(), 300);
+    // t68: bug body lit with own painted v3 scavenger sprite; instanceColor tints to each bug's 2D hex
+    const bugMat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: enemySpriteTex('scavenger') });
+    this.bugMesh = new THREE.InstancedMesh(mergeGeometries([body, headG, ...legs].map((x) => x.index ? x.toNonIndexed() : x))!, bugMat, 300);
     // troops: capsule body + helmet visor (t64: cloth-tint material so distant troops still read textured)
     const ub = new THREE.CapsuleGeometry(0.32, 0.9, 4, 10).translate(0, 0.78, 0), uh = new THREE.BoxGeometry(0.34, 0.14, 0.22).translate(0.2, 1.4, 0);
     const shoulder = new THREE.BoxGeometry(0.7, 0.18, 0.35).translate(0, 1.25, 0);
     const um = (matOf('cloth') as THREE.MeshStandardMaterial).clone(); um.vertexColors = true;
     this.unitMesh = new THREE.InstancedMesh(mergeGeometries([ub.toNonIndexed(), uh.toNonIndexed(), shoulder.toNonIndexed()])!, um, 300);
-    this.shotMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.14, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffe28a }), 500);
+    // t67: elongated shot body (oriented along velocity) + per-instance color for kind matching
+    const shotGeo = new THREE.CapsuleGeometry(0.08, 0.55, 3, 6); shotGeo.rotateZ(Math.PI / 2);
+    this.shotMesh = new THREE.InstancedMesh(shotGeo, new THREE.MeshBasicMaterial({ vertexColors: true }), 500);
+    this.shotMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(500 * 3), 3);
     this.bitMesh = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.16), new THREE.MeshBasicMaterial(), 500);
     for (const m of [this.bloonMesh, this.bugMesh, this.unitMesh, this.bitMesh]) m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3);
     // t45 acid: glowing green vial / jet / canister bodies + flat corrosive puddles
@@ -363,12 +393,17 @@ export class Possess {
     this.poolMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7ee02c, transparent: true, opacity: 0.6, depthWrite: false }), 48);
     for (const m of [this.acidMesh, this.poolMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
     for (const m of [this.bloonMesh, this.bugMesh, this.unitMesh, this.shotMesh, this.bitMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
-    const tm = new THREE.LineBasicMaterial({ color: 0xfff0a0, transparent: true });
-    for (let i = 0; i < 8; i++) { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), tm.clone()); line.visible = false; line.frustumCulled = false; this.scene.add(line); this.tracers.push({ line, life: 0 }); }
+    // t67: more tracers for rail/laser/beacon + other towers firing nearby
+    const tm = new THREE.LineBasicMaterial({ color: 0xfff0a0, transparent: true, depthWrite: false });
+    for (let i = 0; i < 48; i++) {
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), tm.clone());
+      line.visible = false; line.frustumCulled = false; this.scene.add(line);
+      this.tracers.push({ line, life: 0 });
+    }
   }
   private bossModel(e: Enemy): THREE.Group {
     let m = this.bossModels.get(e); if (m) return m;
-    m = new THREE.Group(); const col = BOSS_COL[e.data.id] ?? 0x8a3fd8;
+    m = new THREE.Group(); const col = enemyCol(e) || (BOSS_COL[e.data.id] ?? 0x8a3fd8);
     if (e.data.family === 'bloon' || e.data.air) { // blimp
       m.add(new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10).scale(1.9, 0.85, 0.85), lam(col)));
       for (const s of [-1, 1]) m.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.9), lam(0x222838)), -1.6, 0, s * 0.6));
@@ -590,7 +625,10 @@ export class Possess {
     if (shotNo !== this.lastShot) {
       this.lastShot = shotNo; this.shots++; this.flashT = 0.06; this.kick = 1;
       const end = best ? new THREE.Vector3(best.x * S, this.ey(best), best.y * S) : eye.clone().addScaledVector(d, Math.min(range, 40));
-      this.tracer(this.flash.getWorldPosition(new THREE.Vector3()), end); this.gunRoll = (Math.random() - 0.5) * 0.05;
+      const pk = this.obj instanceof Tower ? (this.obj.data.projectile ?? 'bullet') : 'bullet';
+      const railish = pk === 'rail' || pk === 'laser';
+      this.tracer(this.flash.getWorldPosition(new THREE.Vector3()), end, SHOT_COL[pk] ?? 0xfff0a0, railish ? 0.22 : 0.1);
+      this.gunRoll = (Math.random() - 0.5) * 0.05;
       if (best) { this.hits++; this.hitT = 0.15; }
     }
     this.hitT -= dt; this.el.cross.classList.toggle('hit', this.hitT > 0);
@@ -610,14 +648,47 @@ export class Possess {
     if (o instanceof Tower) return o.t.combat ? o.range(o.t.combat.range) : 200;
     return o.range(this.g);
   }
-  private tracer(a: THREE.Vector3, b: THREE.Vector3) {
+  private tracer(a: THREE.Vector3, b: THREE.Vector3, col = 0xfff0a0, life = 0.12) {
     const tr = this.tracers.find((t) => t.life <= 0) ?? this.tracers[0];
-    (tr.line.geometry as THREE.BufferGeometry).setFromPoints([a, b]); tr.life = 0.07; tr.line.visible = true;
+    (tr.line.geometry as THREE.BufferGeometry).setFromPoints([a, b]);
+    (tr.line.material as THREE.LineBasicMaterial).color.setHex(col);
+    (tr.line.material as THREE.LineBasicMaterial).opacity = 1;
+    tr.life = life; tr.line.visible = true;
+  }
+  /** Mirror hitscan beams + Harbor Beacon lock shaft into the Possess scene. */
+  private syncBeams(_dt: number) {
+    const g = this.g, gh = (x: number, y: number) => standH(g.map, x, y);
+    // Continuous lighthouse laser
+    for (const tw of g.towers) {
+      const bt = tw.combat?.beamTo;
+      if (!bt || !bt.alive || tw.data.id !== 'unsc_beacon') continue;
+      const lock = tw.combat!.lockT, cap = tw.t.combat?.lockRampMax ?? 2;
+      const heat = Math.min(1, lock * (tw.t.combat?.lockRamp ?? 0.25) / Math.max(0.01, cap));
+      const a = new THREE.Vector3(tw.x * S, gh(tw.x, tw.y) + 9.2 + tw.tier * 0.35, tw.y * S);
+      const b = new THREE.Vector3(bt.x * S, this.ey(bt), bt.y * S);
+      // warm white → hotter as burn ramps (reuse tracer slots each frame via short life refresh)
+      const col = heat > 0.6 ? 0xffc878 : heat > 0.25 ? 0xffe8b0 : 0xfff6e0;
+      this.tracer(a, b, col, 0.08);
+    }
+    // Brief FX beams (rail slug streaks, laser eyes, tesla, etc.)
+    for (const e of g.effects) {
+      if (e.kind !== 'beam' || (e.t ?? 0) > 0.05) continue;
+      const a = new THREE.Vector3(e.x * S, gh(e.x, e.y) + 2.2, e.y * S);
+      const b = new THREE.Vector3((e.x2 ?? e.x) * S, gh(e.x2 ?? e.x, e.y2 ?? e.y) + 1.8, (e.y2 ?? e.y) * S);
+      let col = 0xfff0a0;
+      const c = e.color ?? '';
+      if (c.includes('8fd0') || c.includes('c8f0') || c.includes('7ec8') || c.includes('9adf')) col = 0x9adfff; // rail
+      else if (c.includes('ffd2') || c.includes('ffe9') || c.includes('fff6')) col = 0xffe9a0; // beacon / sniper
+      else if (c.includes('ff4') || c.includes('ff60') || c.includes('ff50')) col = 0xff6060; // apex laser
+      else if (c.includes('9fe7')) col = 0x9fe7ff; // tesla
+      this.tracer(a, b, col, Math.max(0.12, e.dur ?? 0.1));
+    }
   }
   /** Mirror the live sim into the instanced meshes. */
   private syncEntities(dt: number) {
     const g = this.g, D = this.dummy, me = this.obj;
     let nb = 0, ng = 0; const live = new Set<Enemy>();
+    for (const m of this.bloonMeshes.values()) m.userData._n = 0; this.bloonMesh.userData._n = 0;
     for (const e of g.enemies) {
       if (!e.alive) continue; live.add(e);
       const gh = standH(g.map, e.x, e.y), x = e.x * S, z = e.y * S, y = enemyY(e) + gh, id = e.data.id;
@@ -627,25 +698,32 @@ export class Possess {
         this.seen.set(e, { x, y, z, c: BOSS_COL[id] ?? 0x8a3fd8 }); continue;
       }
       if (e.data.family === 'bloon') {
-        if (nb >= 800) continue;
+        const mesh = this.bloonMeshes.get(id) ?? this.bloonMesh;
+        const slot = (mesh.userData._n as number) || 0;
+        if (slot >= mesh.instanceMatrix.count) continue;
         const k = (enemyR(e) / 0.62) * 0.95, bob = Math.sin(performance.now() / 300 + e.uid) * 0.12;
         D.position.set(x, y + bob, z); D.rotation.set(0, 0, 0); D.scale.setScalar(k); D.updateMatrix();
-        this.bloonMesh.setMatrixAt(nb, D.matrix); const c = BLOON_COL[id] ?? 0xe8352f; this.bloonMesh.setColorAt(nb++, this.tmpC.setHex(c));
-        this.seen.set(e, { x, y, z, c });
+        // Keep instance color near-white so the painted v3 sprite albedo reads true; slight tint for variety
+        mesh.setMatrixAt(slot, D.matrix); mesh.setColorAt(slot, this.tmpC.setHex(0xffffff));
+        mesh.userData._n = slot + 1; nb++;
+        this.seen.set(e, { x, y, z, c: enemyCol(e) });
       } else {
         if (ng >= 300) continue;
         const k = Math.max(0.6, e.data.radius * SZ * 1.6);
         D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k); D.updateMatrix();
-        this.bugMesh.setMatrixAt(ng, D.matrix); const c = BUG_COL[id] ?? 0x7a4a2a; this.bugMesh.setColorAt(ng++, this.tmpC.setHex(c));
-        this.seen.set(e, { x, y: gh + 0.5, z, c });
+        this.bugMesh.setMatrixAt(ng, D.matrix); this.bugMesh.setColorAt(ng++, this.tmpC.setHex(enemyCol(e)));
+        this.seen.set(e, { x, y: gh + 0.5, z, c: enemyCol(e) });
       }
     }
     // popped / killed since last frame -> burst of bits
     for (const [e, p] of this.seen) if (!live.has(e)) { this.seen.delete(e); this.burst(p.x, p.y, p.z, p.c, e.data.boss ? 30 : 8); }
     for (const [e, m] of this.bossModels) if (!live.has(e)) { this.scene.remove(m); this.bossModels.delete(e); }
-    this.bloonMesh.count = nb; this.bugMesh.count = ng;
-    this.bloonMesh.instanceMatrix.needsUpdate = this.bugMesh.instanceMatrix.needsUpdate = true;
-    if (this.bloonMesh.instanceColor) this.bloonMesh.instanceColor.needsUpdate = true; if (this.bugMesh.instanceColor) this.bugMesh.instanceColor.needsUpdate = true;
+    for (const m of this.bloonMeshes.values()) { m.count = (m.userData._n as number) || 0; m.userData._n = 0; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+    this.bloonMesh.count = (this.bloonMesh.userData._n as number) || 0; this.bloonMesh.userData._n = 0;
+    this.bloonMesh.instanceMatrix.needsUpdate = true; if (this.bloonMesh.instanceColor) this.bloonMesh.instanceColor.needsUpdate = true;
+    this.bugMesh.count = ng;
+    this.bugMesh.instanceMatrix.needsUpdate = true;
+    if (this.bugMesh.instanceColor) this.bugMesh.instanceColor.needsUpdate = true;
     // towers
     const tl = new Set<Tower>();
     for (const t of g.towers) {
@@ -668,7 +746,7 @@ export class Possess {
     }
     for (const [u, v] of this.unitVeh) if (!u.alive || u.garrison || u === me) { if (!u.alive) { this.scene.remove(v.g); this.unitVeh.delete(u); } else v.g.visible = false; }
     this.unitMesh.count = nu; this.unitMesh.instanceMatrix.needsUpdate = true; if (this.unitMesh.instanceColor) this.unitMesh.instanceColor.needsUpdate = true;
-    // projectiles
+    // projectiles (t67: visible in FP, colored/scaled to match shooter kind)
     let np = 0;
     let na = 0;
     for (const p of g.projectiles) { const k = p.o.kind; if (!p.alive || !k.startsWith('acid') || na >= 200) continue;
@@ -680,8 +758,23 @@ export class Possess {
     let nq = 0;
     for (const pl of g.acidPools) { if (nq >= 48) break; const k = Math.min(1, (pl.dur - pl.t) / 0.6); D.position.set(pl.x * S, standH(g.map, pl.x, pl.y) + 0.06, pl.y * S); D.rotation.set(0, 0, 0); D.scale.set(pl.r * S * k, 1, pl.r * S * k); D.updateMatrix(); this.poolMesh.setMatrixAt(nq++, D.matrix); }
     this.poolMesh.count = nq; this.poolMesh.instanceMatrix.needsUpdate = true;
-    for (const p of g.projectiles) { if (!p.alive || np >= 500 || p.o.kind.startsWith('acid')) continue; D.position.set(p.x * S, standH(g.map, p.x, p.y) + 1.6, p.y * S); D.rotation.set(0, 0, 0); D.scale.setScalar(1); D.updateMatrix(); this.shotMesh.setMatrixAt(np++, D.matrix); }
+    for (const p of g.projectiles) {
+      if (!p.alive || np >= 500 || p.o.kind.startsWith('acid')) continue;
+      const k = p.o.kind, ang = Math.atan2(p.vy, p.vx), sc = p.o.scale ?? 1;
+      const y = standH(g.map, p.x, p.y) + 1.5 + p.height * SZ;
+      D.position.set(p.x * S, y, p.y * S);
+      D.rotation.set(0, -ang, 0);
+      // size by kind so darts/shells/peas read differently
+      const sx = k === 'shell' || k === 'melon' ? 2.4 * sc : k === 'boomerang' || k === 'star' ? 1.8 * sc : k === 'dart' || k === 'arrow' ? 1.6 * sc : k === 'bullet' ? 1.1 * sc : 1.35 * sc;
+      const sy = k === 'shell' ? 1.6 : k === 'pea' || k === 'gpea' || k === 'seed' ? 1.5 : 1.0;
+      D.scale.set(sx, sy, sy); D.updateMatrix();
+      this.shotMesh.setMatrixAt(np, D.matrix);
+      this.shotMesh.setColorAt(np++, this.tmpC.setHex(SHOT_COL[k] ?? 0xffe08a));
+    }
     this.shotMesh.count = np; this.shotMesh.instanceMatrix.needsUpdate = true;
+    if (this.shotMesh.instanceColor) this.shotMesh.instanceColor.needsUpdate = true;
+    // Sync 2D beam FX + continuous Harbor Beacon shaft into FP tracers
+    this.syncBeams(dt);
     // particles
     let nbits = 0;
     for (const b of this.bits) {

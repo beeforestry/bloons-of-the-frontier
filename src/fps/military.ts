@@ -375,24 +375,52 @@ export function beacon(t: number): THREE.Group {
 import type { PropKind } from '../data/props';
 export type { PropKind };
 export const PROP_KINDS: PropKind[] = ['sandbags', 'supply', 'tent', 'barrier', 'fuel'];
-/** Procedural sandbag wall (3 staggered rows of pillowy bags), SIZE.sandbags long. */
+/** One connected sandbag pile (t67): overlapping bags with no floaty gaps — reads as a single berm. */
 export function sandbagWall(): THREE.Group {
-  const g = new THREE.Group(), bag = new THREE.SphereGeometry(0.5, 10, 6).scale(0.62, 0.26, 0.34);
-  const cols = [0xb39f74, 0xa8946a, 0xbfad82].map((c) => lam(c, 'cloth'));
-  const L = SIZE.sandbags, n = 4;
-  for (let row = 0; row < 3; row++) for (let i = 0; i < n - (row % 2); i++) {
-    const m = new THREE.Mesh(bag, cols[(i + row) % 3]); m.castShadow = true;
-    m.position.set(-L / 2 + 0.33 + i * 0.62 + (row % 2) * 0.31, 0.13 + row * 0.24, 0); m.rotation.y = ((i * 7 + row * 3) % 5 - 2) * 0.04; g.add(m);
-    if (row === 0) { const m2 = m.clone(); m2.position.z = 0.3; g.add(m2); }
+  const g = new THREE.Group();
+  const bag = new THREE.SphereGeometry(0.55, 10, 7).scale(0.72, 0.3, 0.4);
+  // Cloth albedo — prefer vendored photo if present, else flat tan
+  let mat: THREE.MeshStandardMaterial;
+  try {
+    const tex = photoTex('sandbag', true, 1.4);
+    mat = new THREE.MeshStandardMaterial({ map: tex, color: 0xe8d9b0, roughness: 0.92, metalness: 0, envMapIntensity: 0.5, vertexColors: false });
+    mat.emissive = new THREE.Color(0x1a1810); mat.emissiveIntensity = 0.2;
+  } catch {
+    mat = lam(0xb39f74, 'cloth') as THREE.MeshStandardMaterial;
   }
+  const L = SIZE.sandbags;
+  // Dense overlapping grid — bags share volume so nothing floats between them
+  for (let row = 0; row < 4; row++) {
+    const n = 5 - (row % 2);
+    for (let i = 0; i < n; i++) {
+      for (let z = 0; z < 2; z++) {
+        const m = new THREE.Mesh(bag, mat); m.castShadow = true; m.receiveShadow = true;
+        const x = -L / 2 + 0.28 + i * 0.52 + (row % 2) * 0.26;
+        const y = 0.14 + row * 0.22;
+        const zz = (z - 0.5) * 0.32 + (row % 2) * 0.06;
+        m.position.set(x, y, zz);
+        m.rotation.set(((i + row) % 5 - 2) * 0.05, ((i * 7 + row) % 5 - 2) * 0.08, ((i + z) % 3 - 1) * 0.06);
+        g.add(m);
+      }
+    }
+  }
+  // Soft under-fill so the pile reads as one mass from the side
+  const fill = new THREE.Mesh(new THREE.BoxGeometry(L * 0.95, 0.35, 0.85), mat);
+  fill.position.set(0, 0.18, 0); fill.castShadow = true; g.add(fill);
   return g;
 }
-/** Horseshoe sandbag nest (3 walls), ~3.4 m across: the classic firing position. */
+/** Horseshoe nest: three connected piles meeting at the corners (no gap at the joins). */
 export function sandbags(): THREE.Group {
   const g = new THREE.Group();
-  const a = sandbagWall(); a.position.z = -1.2; g.add(a);
-  const b = sandbagWall(); b.rotation.y = Math.PI / 2.6; b.position.set(-1.7, 0, 0.1); g.add(b);
-  const c = sandbagWall(); c.rotation.y = -Math.PI / 2.6; c.position.set(1.7, 0, 0.1); g.add(c);
+  const a = sandbagWall(); a.position.z = -0.95; g.add(a);
+  const b = sandbagWall(); b.rotation.y = Math.PI / 2.5; b.position.set(-1.35, 0, 0.15); g.add(b);
+  const c = sandbagWall(); c.rotation.y = -Math.PI / 2.5; c.position.set(1.35, 0, 0.15); g.add(c);
+  // Corner plugs so the horseshoe is one continuous berm
+  const plug = photoMat({ map: 'sandbag', nor: 'sandbag_n', rep: 1.2, color: 0xe0d0a8, metal: 0, rough: 0.95 });
+  for (const [x, z] of [[-1.1, -0.7], [1.1, -0.7]] as [number, number][]) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6).scale(1.1, 0.7, 1.0), plug);
+    m.position.set(x, 0.35, z); m.castShadow = true; g.add(m);
+  }
   return g;
 }
 async function piece(name: string, len: number, x: number, z: number, ry = 0, y = 0, col?: number) {

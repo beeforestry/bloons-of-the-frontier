@@ -261,6 +261,8 @@ export class CombatTower {
   shotCount = 0;
   lockUid = -1;
   lockT = 0;
+  /** Harbor Beacon: continuous laser lock target (drawn every frame). */
+  beamTo: Enemy | null = null;
   secCd = 0;
   update(tw: Tower, g: Game, dt: number) {
     const c = tw.t.combat!;
@@ -295,6 +297,7 @@ export class CombatTower {
         const t0 = pickTargets(g.enemies, tw, tw.range(c.range), tw.targeting, f, 1)[0];
         tw.engaged = !!t0;
         if (t0) tw.aim = Math.atan2(t0.y - tw.y, t0.x - tw.x);
+        if (c.lockRamp) this.beamTo = t0 && t0.alive ? t0 : null;
       }
       return;
     }
@@ -312,7 +315,7 @@ export class CombatTower {
         return along > 0 && along < range && perp < 30 + e.data.radius;
       }).slice(0, 1);
     } else targets = pickTargets(g.enemies, tw, range, tw.targeting, filter, tw.data.hitscan ? shots : 1);
-    if (!targets.length) { this.cooldown = 0.05; tw.engaged = false; tw.charge = Math.max(0, tw.charge - dt * 3); this.lockUid = -1; this.lockT = 0; return; }
+    if (!targets.length) { this.cooldown = 0.05; tw.engaged = false; tw.charge = Math.max(0, tw.charge - dt * 3); this.lockUid = -1; this.lockT = 0; this.beamTo = null; return; }
     tw.engaged = true;
     if (tw.fixedAim === null) tw.aim = Math.atan2(targets[0].y - tw.y, targets[0].x - tw.x);
     // Harbor Beacon: ramp damage while locked on the same enemy
@@ -330,7 +333,8 @@ export class CombatTower {
     if (c.lockRamp) {
       const mul = 1 + Math.min(c.lockRampMax ?? 2, this.lockT * c.lockRamp);
       stats = { ...c, damage: c.damage * mul };
-    }
+      this.beamTo = t0; // constant lighthouse shaft while locked
+    } else this.beamTo = null;
     g.towerFire(tw, targets, stats, this.shotCount);
   }
 }

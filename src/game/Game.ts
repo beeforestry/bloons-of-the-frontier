@@ -685,11 +685,31 @@ export class Game {
     if (tw.data.hitscan) {
       const sniper = tw.data.id === 'sniper_monkey';
       const beacon = tw.data.id === 'unsc_beacon';
-      const lock = tw.combat?.lockT ?? 0;
-      const col = sniper ? '#fff6d0' : kind === 'rail' ? '#8fd0ff' : beacon ? '#ffd24a' : '#ff4040';
-      const w = sniper ? 2 : kind === 'rail' ? 5 : beacon ? 3 + Math.min(10, lock * 2.2) : 2.5;
-      for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, col, w, hit);
-      this.sfx(kind === 'rail' ? 'rail' : 'laser', tw.x, tw.y);
+      const rail = tw.data.id === 'unsc_rail';
+      // Roof MG secondary (shotNo >= 900): bullet tracers, not the main gun's shell/rail.
+      const sec = shotNo >= 900 && !!c.secondary;
+      if (sec) {
+        const ang = Math.atan2(targets[0].y - muzzle.y, targets[0].x - muzzle.x);
+        this.projectiles.push(new Projectile({
+          kind: 'bullet', x: muzzle.x, y: muzzle.y, angle: ang, speed: c.projectileSpeed ?? 1100,
+          damage: dmg0, type: 'ballistic', pierce: c.pierce, hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround, hit,
+        }));
+        this.sfx('fire', tw.x, tw.y);
+        return;
+      }
+      // Beacon: lock beam is drawn continuously from CombatTower.beamTo — only deal damage here.
+      if (beacon) {
+        for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, '#ffe9a0', 0, hit, { reach: dist(muzzle, tgt) + 40, silent: true });
+        this.sfx('laser', tw.x, tw.y);
+        return;
+      }
+      // Rail Lance: keep acquire range, but the slug travels/pierces far across the map (cooler long streak).
+      const col = sniper ? '#fff6d0' : rail ? (tw.tier >= 2 ? '#c8f0ff' : tw.tier >= 1 ? '#9adfff' : '#7ec8ff') : '#ff4040';
+      const w = sniper ? 2.2 : rail ? 5.5 + tw.tier * 2.2 : 2.5;
+      const reach = rail ? 950 + tw.tier * 280 : sniper ? 4200 : undefined;
+      const dur = rail ? 0.22 + tw.tier * 0.04 : 0.1;
+      for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, col, w, hit, { reach, dur });
+      this.sfx(rail || kind === 'rail' ? 'rail' : 'laser', tw.x, tw.y);
       return;
     }
     if (shotNo % 3 === 0) this.sfx('fire', tw.x, tw.y);
@@ -703,13 +723,16 @@ export class Game {
     }
     const shots = c.shots ?? 1;
     const base = (tw.fixedAim ?? Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x)) + (kind === 'boomerang' ? -0.8 : 0);
+    // Skyranger: chin minigun (bullet) + rocket pods on T1+ (shell every 4th volley)
+    const heliRocket = tw.data.id === 'unsc_heli' && tw.tier >= 1 && shotNo % 4 === 0;
     for (let i = 0; i < shots; i++) {
-      const spread = shots > 1 ? (i - (shots - 1) / 2) * (kind === 'shuriken' ? 0.22 : kind === 'boomerang' ? 0.5 : 0.16) : 0;
+      const spread = shots > 1 ? (i - (shots - 1) / 2) * (kind === 'shuriken' ? 0.22 : kind === 'boomerang' ? 0.5 : heliRocket ? 0.12 : 0.16) : 0;
+      const pk = special ? 'gpea' : heliRocket ? 'shell' : kind;
       this.projectiles.push(new Projectile({
-        kind: special ? 'gpea' : kind, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: c.projectileSpeed ?? 600,
-        damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? 2 : 1), type: special ? 'explosive' : type, pierce: c.pierce,
-        splash: special ? c.splash : kind === 'magic' || kind === 'flak' ? c.splash : undefined, slow: c.slow,
-        homing: kind === 'magic' ? tgt : null, scale: special ? 1.8 : tw.data.id === 'arcane_obelisk' ? 2 : 1, hit,
+        kind: pk, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: (heliRocket ? (c.projectileSpeed ?? 600) * 0.75 : c.projectileSpeed ?? 600),
+        damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? 2 : 1) * (heliRocket ? 1.6 : 1), type: special || heliRocket ? 'explosive' : type, pierce: heliRocket ? Math.max(2, c.pierce) : c.pierce,
+        splash: special ? c.splash : heliRocket ? 36 + tw.tier * 10 : kind === 'magic' || kind === 'flak' ? c.splash : undefined, slow: c.slow,
+        homing: kind === 'magic' ? tgt : null, scale: special ? 1.8 : heliRocket ? 1.5 : tw.data.id === 'arcane_obelisk' ? 2 : 1, hit,
         hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround,
       }));
     }
@@ -797,15 +820,16 @@ export class Game {
     }
     this.sfx('zap', tw.x, tw.y);
   }
-  beam(from: Vec, tgt: Enemy, dmg: number, type: DamageType, pierce: number, color: string, width: number, hit?: HitOpts) {
-    // hitscan: hit target + up to (pierce-1) enemies along the line behind it
-    const ang = Math.atan2(tgt.y - from.y, tgt.x - from.x), len = dist(from, tgt) + 60;
+  beam(from: Vec, tgt: Enemy, dmg: number, type: DamageType, pierce: number, color: string, width: number, hit?: HitOpts, opts?: { reach?: number; dur?: number; silent?: boolean }) {
+    // hitscan: hit target + up to (pierce-1) enemies along the line (reach can exceed lock range for long rail streaks)
+    const ang = Math.atan2(tgt.y - from.y, tgt.x - from.x);
+    const len = Math.max(dist(from, tgt) + 40, opts?.reach ?? (dist(from, tgt) + 60));
     const ex = from.x + Math.cos(ang) * len, ey = from.y + Math.sin(ang) * len;
     const hits = this.enemies.filter((e) => e.alive && (!e.data.air || hit?.antiAir) && segDist(e, from, { x: ex, y: ey }) < e.data.radius + 4)
       .sort((a, b) => dist2(a, from) - dist2(b, from)).slice(0, pierce);
-    if (!hits.includes(tgt)) hits.unshift(tgt);
+    if (!hits.includes(tgt) && tgt.alive) hits.unshift(tgt);
     for (const e of hits) e.takeDamage(this, dmg, type, from, hit);
-    this.fx({ kind: 'beam', x: from.x, y: from.y, x2: ex, y2: ey, color, width, dur: 0.08 });
+    if (!opts?.silent && width > 0) this.fx({ kind: 'beam', x: from.x, y: from.y, x2: ex, y2: ey, color, width, dur: opts?.dur ?? 0.1 });
   }
   /** Versus host controller (cards, threat energy, spells, telegraphs, Boss Push); null otherwise. */
   versus: { update(g: Game, dt: number): void } | null = null;
