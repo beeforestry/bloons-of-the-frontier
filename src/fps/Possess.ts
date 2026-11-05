@@ -17,7 +17,7 @@ import { PCOLORS } from '../core/players';
 import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
-import { tank, heli, prop, gun, hand, gunFor } from './military';
+import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
 import { floraField, decoTo3D, type FloraItem, type FloraKind } from './flora';
@@ -64,7 +64,7 @@ export class Possess {
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
-  private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli'; tier?: number; model?: THREE.Group; base?: number }>();
+  private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli' | 'destroyer' | 'beacon'; tier?: number; model?: THREE.Group; base?: number }>();
   private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number }>();
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
@@ -281,7 +281,7 @@ export class Possess {
     void this.loadViewmodel().catch((e) => console.warn('viewmodel', e));
   }
   /** t42 viewmodels: real CC0 gun (Kenney Weapon Pack) in gloved hands for troops, the main gun for the
-   *  Tank, the chin gun + cockpit for the Gunship, a mounted MG for UNSC gun turrets. Box gun stays as fallback. */
+   *  Tank, the chin gun + cockpit for the Gunship, a mounted MG for Vanguard gun turrets. Box gun stays as fallback. */
   private async loadViewmodel() {
     const o = this.obj, swap = (grp: THREE.Group, muzzle: THREE.Vector3, base: THREE.Vector3, kind: string, flashK = 1) => {
       if (!this.alive) return;
@@ -380,10 +380,12 @@ export class Possess {
     let m = this.towerModels.get(t);
     if (m && m.tier !== t.tier) { this.scene.remove(m.root); this.towerModels.delete(t); m = undefined; }
     if (m) return m;
-    if (t.data.id === 'unsc_tank' || t.data.id === 'unsc_heli') { // t42 real-size vehicles (~8-10 m tank, 11-13 m gunship)
-      const root = new THREE.Group(), head = new THREE.Group(), veh = t.data.id === 'unsc_tank' ? 'tank' as const : 'heli' as const; root.add(head);
-      const mm = { root, head, veh, tier: t.tier, model: undefined as THREE.Group | undefined };
-      void (veh === 'tank' ? tank(t.tier) : heli(t.tier)).then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; const z = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()); this.vm.size[veh] = [z.x, z.y, z.z].map((n) => +n.toFixed(2)); });
+    if (t.data.id === 'unsc_tank' || t.data.id === 'unsc_heli' || t.data.id === 'unsc_destroyer' || t.data.id === 'unsc_beacon') {
+      const root = new THREE.Group(), head = new THREE.Group(); root.add(head);
+      const veh = (t.data.id === 'unsc_tank' ? 'tank' : t.data.id === 'unsc_heli' ? 'heli' : t.data.id === 'unsc_destroyer' ? 'destroyer' : 'beacon') as 'tank' | 'heli' | 'destroyer' | 'beacon';
+      const mm: { root: THREE.Group; head: THREE.Group; veh: typeof veh; tier: number; model: THREE.Group | undefined; base?: number } = { root, head, veh, tier: t.tier, model: undefined };
+      const load = veh === 'tank' ? tank(t.tier) : veh === 'heli' ? heli(t.tier) : Promise.resolve(veh === 'destroyer' ? destroyer(t.tier) : beacon(t.tier));
+      void load.then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; const z = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()); this.vm.size[veh] = [z.x, z.y, z.z].map((n) => +n.toFixed(2)); });
       root.userData.veh = veh; this.scene.add(root); this.towerModels.set(t, mm); return mm;
     }
     const tm = towerMesh(t.data.id, t.tier); // t44: per-tower, per-tier procedural model (merged + cached geometry)
@@ -538,7 +540,7 @@ export class Possess {
   private eye(): THREE.Vector3 {
     const o = this.obj;
     const gh = standH(this.g.map, o.x, o.y);
-    if (o instanceof Tower) return this.v.set(o.x * S, gh + (o.data.id === 'unsc_tank' ? 3.4 : o.data.id === 'unsc_heli' ? 7.6 + Math.sin(performance.now() / 640) * 0.15 : 2.7 + o.tier * 0.15), o.y * S);
+    if (o instanceof Tower) return this.v.set(o.x * S, gh + (o.data.id === 'unsc_tank' ? 3.4 : o.data.id === 'unsc_heli' ? 7.6 + Math.sin(performance.now() / 640) * 0.15 : o.data.id === 'unsc_destroyer' ? 4.2 : o.data.id === 'unsc_beacon' ? 9.5 + o.tier * 0.4 : 2.7 + o.tier * 0.15), o.y * S);
     return this.v.set(o.x * S, gh + (o.squad.data.id === 'scorpion' ? 3.3 : o.squad.data.vehicle ? 2.4 : 1.65), o.y * S);
   }
   /** Returns false once possession ended. */
@@ -690,7 +692,7 @@ export class Possess {
     const r = this.rangePx() * S; this.ring.visible = r < 60; // t55: a huge ring on terrain reads as a cyan horizon line
     this.ring.position.set(me.x * S, standH(g.map, me.x, me.y) + 0.06, me.y * S); this.ring.scale.set(r, 1, r);
   }
-  /** Vehicle troops at real size: Scorpion = the M808 tank model, Warthog = a 4.6 m jeep. */
+  /** Vehicle troops at real size: Scorpion = the Bulwark tank model, Raider = a 4.6 m jeep. */
   private vehicleUnit(u: Unit, dt: number) {
     let v = this.unitVeh.get(u);
     if (!v) {

@@ -54,7 +54,7 @@ export const BUILDINGS: BuildingData[] = [
         stats: { maxHp: 150, trainSpeed: 1, queue: 3 } },
       { name: 'Drill Barracks', cost: 400, buildTime: 13, blurb: 'Queue 4, +40% training speed.', visual: { level: 1, scale: 1.05, glow: G1 },
         stats: { maxHp: 210, trainSpeed: 1.4, queue: 4 } },
-      { name: 'Spartan Academy', cost: 700, buildTime: 17, blurb: 'Queue 5, double training speed.', visual: { level: 2, scale: 1.1, glow: G2 },
+      { name: 'Aegis Academy', cost: 700, buildTime: 17, blurb: 'Queue 5, double training speed.', visual: { level: 2, scale: 1.1, glow: G2 },
         stats: { maxHp: 280, trainSpeed: 2, queue: 5 } },
     ],
   },
@@ -65,7 +65,7 @@ export const buildingById = (id: string) => { const b = BUILDINGS.find((x) => x.
 export const TRAIN_DISCOUNT = 0.85;
 
 export const POWERS: PowerData[] = [
-  { id: 'mac', name: 'MAC Blast', icon: '☄', energy: 60, cooldown: 25, desc: 'Orbital MAC strike along the lane under the cursor: heavy damage in a long strip and knocks enemies back. Great on straight lanes, awkward on bends.' },
+  { id: 'mac', name: 'Orbital Barrage', icon: '☄', energy: 60, cooldown: 25, desc: 'Orbital rail strike along the lane under the cursor: heavy damage in a long strip and knocks enemies back. Great on straight lanes, awkward on bends.' },
   { id: 'heal', name: 'Heal Drop', icon: '✚', energy: 35, cooldown: 15, desc: 'Drops a medical canister: heals troops, towers and buildings in a radius and brings offline towers back.' },
 ];
 export const MAX_ENERGY = 100;

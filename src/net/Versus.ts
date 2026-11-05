@@ -18,7 +18,7 @@ export const CARDS: Card[] = [
   { id: 'armored', name: 'Armored Bloons', icon: '🛡', cost: 24, desc: '2 Lead + 2 Ceramic (lead ignores sharp)', spawn: [['lead', 2], ['ceramic', 2]], gap: 0.7 },
   { id: 'shielded', name: 'Shielded Troopers', icon: '🔷', cost: 28, desc: '3 Shield Wardens + Hunters', spawn: [['warden', 3], ['hunter', 3]], gap: 0.6 },
   { id: 'siege', name: 'Siege Walkers', icon: '🦏', cost: 42, desc: '2 Ironbacks + 2 Chargers (MAJOR: telegraphed)', spawn: [['ironback', 2], ['charger', 2]], gap: 1.1, major: true },
-  { id: 'boss', name: 'Boss', icon: '💀', cost: 95, desc: 'Bile Titan + M.O.A.B. (BOSS: telegraphed)', spawn: [['bile_titan', 1], ['moab', 1]], gap: 2.5, major: true },
+  { id: 'boss', name: 'Boss', icon: '💀', cost: 95, desc: 'Bile Titan + Sky Colossus (BOSS: telegraphed)', spawn: [['bile_titan', 1], ['moab', 1]], gap: 2.5, major: true },
   { id: 'eco', name: 'Hive Supply', icon: '🧬', cost: 30, desc: '+0.4 Threat Energy / s (max 5)', eco: 0.4 },
 ];
 export interface Spell { id: 'emp' | 'surge' | 'smoke'; name: string; icon: string; cd: number; desc: string; radius?: number }

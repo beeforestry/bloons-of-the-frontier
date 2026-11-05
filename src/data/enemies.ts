@@ -15,20 +15,20 @@ const BUG = (o: Partial<EnemyData> & Pick<EnemyData, 'id' | 'name' | 'sprite' | 
 
 export const ENEMIES: Record<string, EnemyData> = Object.fromEntries(
   [
-    // ---- Bloons: popping a layer reveals the child. Flying: troops can't block them.
+    // ---- Balloons: popping a layer reveals the child. Flying: troops can't block them.
     // Sebastian's BLOON_TYPES layer model: a popped layer DOWNGRADES IN PLACE to its
     // child (same position & path progress). hp / reward / colour are his values;
     // speed = his ratio × our base red speed (62 px/s), applied with dt.
     //   RED 1hp ×1.0 · BLUE 2hp ×1.4 · GREEN 3hp ×1.8 · YELLOW 4hp ×3.2 · PINK 5hp ×3.5
     // (his PINK→PINK loop is fixed: pink downgrades to yellow.)
-    B({ id: 'red', name: 'Red Bloon', sprite: 'bloon_red', hp: 1, speed: BLOON_BASE_SPEED * 1.0, color: '#ff3333', bounty: 1 }),
-    B({ id: 'blue', name: 'Blue Bloon', sprite: 'bloon_blue', hp: 2, speed: BLOON_BASE_SPEED * 1.4, color: '#3388ff', bounty: 2, children: { id: 'red', count: 1 }, size: 48 }),
-    B({ id: 'green', name: 'Green Bloon', sprite: 'bloon_green', hp: 3, speed: BLOON_BASE_SPEED * 1.8, color: '#33cc33', bounty: 3, children: { id: 'blue', count: 1 } }),
-    B({ id: 'yellow', name: 'Yellow Bloon', sprite: 'bloon_yellow', hp: 4, speed: BLOON_BASE_SPEED * 3.2, color: '#ffcc00', bounty: 4, children: { id: 'green', count: 1 } }),
-    B({ id: 'pink', name: 'Pink Bloon', sprite: 'bloon_pink', hp: 5, speed: BLOON_BASE_SPEED * 3.5, color: '#ff66cc', bounty: 5, children: { id: 'yellow', count: 1 } }),
-    B({ id: 'lead', name: 'Lead Bloon', sprite: 'bloon_lead', hp: 6, speed: 50, color: '#5b6270', lead: true, children: { id: 'pink', count: 2 }, bounty: 3, size: 48, scrap: 2 }),
-    B({ id: 'ceramic', name: 'Ceramic Bloon', sprite: 'bloon_ceramic', hp: 22, speed: 70, color: '#e9e4dc', children: { id: 'pink', count: 2 }, bounty: 4, size: 50, radius: 16, scrap: 3 }),
-    B({ id: 'moab', name: 'M.O.A.B.', sprite: 'bloon_moab', hp: 400, speed: 24, color: '#5aa0e8', children: { id: 'ceramic', count: 4 }, bounty: 40, size: 124, radius: 36, boss: true, heavy: true, scrap: 30 }),
+    B({ id: 'red', name: 'Red Balloon', sprite: 'bloon_red', hp: 1, speed: BLOON_BASE_SPEED * 1.0, color: '#ff3333', bounty: 1 }),
+    B({ id: 'blue', name: 'Blue Balloon', sprite: 'bloon_blue', hp: 2, speed: BLOON_BASE_SPEED * 1.4, color: '#3388ff', bounty: 2, children: { id: 'red', count: 1 }, size: 48 }),
+    B({ id: 'green', name: 'Green Balloon', sprite: 'bloon_green', hp: 3, speed: BLOON_BASE_SPEED * 1.8, color: '#33cc33', bounty: 3, children: { id: 'blue', count: 1 } }),
+    B({ id: 'yellow', name: 'Yellow Balloon', sprite: 'bloon_yellow', hp: 4, speed: BLOON_BASE_SPEED * 3.2, color: '#ffcc00', bounty: 4, children: { id: 'green', count: 1 } }),
+    B({ id: 'pink', name: 'Pink Balloon', sprite: 'bloon_pink', hp: 5, speed: BLOON_BASE_SPEED * 3.5, color: '#ff66cc', bounty: 5, children: { id: 'yellow', count: 1 } }),
+    B({ id: 'lead', name: 'Lead Balloon', sprite: 'bloon_lead', hp: 6, speed: 50, color: '#5b6270', lead: true, children: { id: 'pink', count: 2 }, bounty: 3, size: 48, scrap: 2 }),
+    B({ id: 'ceramic', name: 'Ceramic Balloon', sprite: 'bloon_ceramic', hp: 22, speed: 70, color: '#e9e4dc', children: { id: 'pink', count: 2 }, bounty: 4, size: 50, radius: 16, scrap: 3 }),
+    B({ id: 'moab', name: 'Sky Colossus', sprite: 'bloon_moab', hp: 400, speed: 24, color: '#5aa0e8', children: { id: 'ceramic', count: 4 }, bounty: 40, size: 124, radius: 36, boss: true, heavy: true, scrap: 30 }),
     // ---- Hive bugs: ground units; troops block & fight them.
     BUG({ id: 'scavenger', name: 'Scavenger', sprite: 'bug_scavenger', hp: 4, speed: 92, color: '#d9792b', swarm: 16, meleeDps: 3, size: 30, radius: 10 }),
     BUG({ id: 'hunter', name: 'Hunter', sprite: 'bug_hunter', hp: 14, speed: 66, color: '#c4562b', leap: { every: 3.5, distance: 95 }, meleeDps: 7, bounty: 5, size: 42, swarm: 10 }),
@@ -43,7 +43,7 @@ export const ENEMIES: Record<string, EnemyData> = Object.fromEntries(
     BUG({ id: 'boss_scarab', name: 'Heavy Scarab Walker', sprite: 'boss_scarab', hp: 1000, shield: 200, speed: 15, color: '#8a6f4a', boss: true, heavy: true, scrap: 70,
       meleeDps: 30, bounty: 180, leak: 60, size: 230, radius: 52, swarm: 0, dropChance: 1,
       bossKit: { armor1: 0.5, armor2: 0.2, spawn: 'hunter', spawnCount: 4, spawnEvery: 7, attack: 'laser', attackEvery: 5.5, attackDamage: 50, attackRadius: 460 } }),
-    B({ id: 'boss_zeppelin', name: 'Giant Bloon-Zeppelin', sprite: 'boss_zeppelin', hp: 2000, shield: 350, speed: 13, color: '#7a5ae8', boss: true, heavy: true, scrap: 70,
+    B({ id: 'boss_zeppelin', name: 'Giant Balloon Zeppelin', sprite: 'boss_zeppelin', hp: 2000, shield: 350, speed: 13, color: '#7a5ae8', boss: true, heavy: true, scrap: 70,
       bounty: 200, leak: 70, size: 240, radius: 56, children: { id: 'moab', count: 2 }, dropChance: 1,
       bossKit: { armor1: 0.55, armor2: 0.15, spawn: 'ceramic', spawnCount: 3, spawnEvery: 6, attack: 'bombs', attackEvery: 4.5, attackDamage: 55, attackRadius: 380 } }),
     BUG({ id: 'boss_dreadnought', name: 'Zombie Dreadnought', sprite: 'boss_dreadnought', hp: 2400, shield: 300, speed: 11, color: '#5d7a3a', boss: true, heavy: true, scrap: 90,

@@ -200,7 +200,7 @@ export class Hud {
       : `<div class="sp-head"><div class="sp-icon">⛔</div><div><div class="sp-name">Blocked shortcut</div><div class="sp-sub">A rockslide chokes an old trail that cuts off ${pv.saved}px of lane ${lanes}.</div></div></div>
         <div class="sp-stats"><b class="risk">Risk:</b> enemies on lane ${lanes} take it too and arrive <b>~${pv.seconds.toFixed(1)}s sooner</b> (red-bloon speed), bypassing towers on the long road.</div>
         <div class="sp-stats"><b class="reward">Reward:</b> +${Math.round((SHORTCUT.roadSpeed - 1) * 100)}% troop speed on the new road, a short front to defend, and ~35🔩 salvage.</div>
-        <div class="sp-sub">Too solid for normal splash — only the MAC, drop-pod / Cherry blasts or a Demolish order clear it.</div>
+        <div class="sp-sub">Too solid for normal splash — only the Orbital Barrage, drop-pod / Burst Berry blasts or a Demolish order clear it.</div>
         <div class="row"><button class="btn up" id="sp-demo" ${g.res.scrap < SHORTCUT.demolishScrap ? 'disabled' : ''}>💥 Demolish <b>${SHORTCUT.demolishScrap}🔩</b></button><button class="btn" id="sp-desel">Close</button></div>`;
     const dm = $('#sp-demo', p); if (dm) dm.onclick = () => { g.demolishShortcut(sc); this.lastSel = ''; this.refresh(true); };
     $('#sp-desel', p).onclick = () => { this.selShortcut = null; this.lastSel = ''; this.refresh(true); };
@@ -285,6 +285,7 @@ export class Hud {
         ${n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
+        ${t.data.movable && this.mine(t) ? `<div class="sp-sub">Click the map to relocate${t.data.airborne ? ' (flies over water)' : ''}${t.data.autoChase && t.tier >= 2 ? ' · Hunter Patrol auto-chases' : ''}${t.t.combat?.secondary ? ' · Roof gunner active' : ''}</div>` : ''}
         <div class="row">${t.combat && this.mine(t) ? `<button class="btn possess" id="sp-possess" title="See and fight through this tower in first person (E)">👁 Possess <small>(E)</small></button>` : ''}<button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
         ${slots ? `<div class="sp-sub">Garrison: ${t.garrisoned.length}/${slots} · −${Math.round(t.gProtect() * 100)}% dmg taken · +${Math.round(t.gRange() * 100)}% range · select a squad and press Garrison</div>${t.garrisoned.length ? '<button class="btn" id="sp-eject">Eject troops</button>' : ''}` : ''}
         ${t.isFarm ? '<div class="sp-sub">Tip: your free Sprout Farmhand can pack farms — press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
@@ -349,7 +350,7 @@ export class Hud {
     $('#sp-auto', p).onclick = () => { const on = !grp.every((q) => q.auto); for (const q of grp) g.setSquadAuto(q, on); this.lastSel = ''; };
     $('#sp-desel', p).onclick = () => this.select(null, null);
   }
-  /** Ability bar with cooldown sweeps: selected squads' abilities + every Super Monkey's Laser Sweep. */
+  /** Ability bar with cooldown sweeps: selected squads' abilities + every Apex Laser Scout's Laser Sweep. */
   private abilityBar() {
     const bar = $('#abilities'); if (!bar) return;
     const g = this.g, items: { key: string; icon: string; name: string; cd: number; max: number; use: () => void; hot: number }[] = [];
@@ -449,7 +450,7 @@ export class Hud {
     ob.title = `Farms: ${farms} · Farmhands: ${workers}. A Farmhand walks over and packs the farms into a tight grid near their centre, freeing build space.`;
     $('#mode-hint').textContent = this.view.placing ? `Placing ${towerById(this.view.placing).name}: click open ground — green = OK, red = blocked (Shift = keep placing, Esc/right-click = cancel)`
       : this.view.deploying ? `Deploy ${unitById(this.view.deploying).name}: click where the drop pod should land`
-      : this.view.power === 'mac' ? 'MAC Blast: click a lane — the strike runs along the road (Esc cancels)'
+      : this.view.power === 'mac' ? 'Orbital Barrage: click a lane — the strike runs along the road (Esc cancels)'
       : this.view.power === 'heal' ? 'Heal Drop: click to drop a medical canister on your troops / towers / base'
       : this.view.rallyFor ? 'Click to set the Barracks rally point'
       : this.view.patrolMode ? `Patrol: tap points (${this.view.patrolPts.length}) then press 🔁 Patrol / P to start the loop`

@@ -183,7 +183,7 @@ export class Lobby {
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(this.link).then(ok, () => { document.execCommand('copy'); ok(); });
       else { document.execCommand('copy'); ok(); }
     };
-    const sh = $('share-link'); if (sh) sh.onclick = () => { navigator.share({ title: 'Bloons of the Frontier', text: `Join my room ${this.code}`, url: this.link }).catch(() => {}); };
+    const sh = $('share-link'); if (sh) sh.onclick = () => { navigator.share({ title: 'Balloons of the Frontier', text: `Join my room ${this.code}`, url: this.link }).catch(() => {}); };
     $('btn-leave')!.onclick = () => { if (this.net?.role === 'host') this.net.bye(); const n = this.net; setTimeout(() => { n?.close(); location.href = location.pathname; }, 150); };
     const rd = $('btn-ready'); if (rd) rd.onclick = () => { const on = !me?.ready; if (me) me.ready = on; this.net?.send(0, { t: 'ready', on }); this.renderLobby(); };
     const st = $('btn-mpstart'); if (st) st.onclick = () => { if (!this.canStart) return; for (const p of this.players) this.net!.send(p.pid, { t: 'start', settings: this.settings, players: this.players }); this.launch(); };

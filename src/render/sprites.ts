@@ -33,6 +33,7 @@ export async function loadSprites(mapImages: string[]) {
   await Promise.all([...Object.entries(FILES).map(([k, v]) => load(k, v)), ...mapImages.map((m) => load('map:' + m, m))]);
   for (const k of ['unsc_autoturret', 'unsc_rail', 'unsc_flak']) for (let t = 0; t < 3; t++) IMG[`${k}_icon_${t}`] = turretIcon(k, t);
   for (const k of ['tank', 'heli']) for (let t = 0; t < 3; t++) { const f = milFrame(`${k}_${t}`, 14); if (f) IMG[`unsc_${k}_icon_${t}`] = f; }
+  for (let t = 0; t < 3; t++) { IMG[`unsc_destroyer_icon_${t}`] = navalIcon('destroyer', t); IMG[`unsc_beacon_icon_${t}`] = navalIcon('beacon', t); }
   tint('fx_pea', 'fx_pea_cherry', [255, 70, 60]);
   tint('fx_boom', 'fx_boom_fire', [255, 150, 60]);
 }
@@ -40,6 +41,23 @@ export async function loadSprites(mapImages: string[]) {
 function canvas(w: number, h = w): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   return [c, c.getContext('2d')!];
+}
+/** Procedural HUD thumbnails for t57 naval towers. */
+function navalIcon(kind: 'destroyer' | 'beacon', t: number) {
+  const [c, g] = canvas(256);
+  g.translate(128, 140);
+  if (kind === 'beacon') {
+    g.fillStyle = '#5a6570'; g.beginPath(); g.ellipse(0, 40, 50, 22, 0, 0, 7); g.fill();
+    for (let i = 0; i < 3 + t; i++) { g.fillStyle = i % 2 ? '#c62828' : '#f5f0e6'; g.fillRect(-28, -90 + i * 28, 56, 22); }
+    g.fillStyle = '#2a3038'; g.fillRect(-36, -110, 72, 22);
+    g.fillStyle = '#ffd24a'; g.beginPath(); g.arc(0, -118, 14 + t * 2, 0, 7); g.fill();
+  } else {
+    g.rotate(-0.4);
+    g.fillStyle = '#4a5560'; g.beginPath(); g.moveTo(90, 0); g.quadraticCurveTo(40, -40, -70, -28); g.lineTo(-90, 0); g.lineTo(-70, 28); g.quadraticCurveTo(40, 40, 90, 0); g.fill();
+    g.fillStyle = '#d8dce0'; g.fillRect(-10, -22, 40, 44);
+    for (let i = 0; i < 1 + t; i++) { g.fillStyle = '#1e242c'; g.fillRect(20 - i * 35, -8, 36, 10); }
+  }
+  return c;
 }
 function tint(src: string, dst: string, rgb: number[]) {
   const im = IMG[src]; if (!im) return;

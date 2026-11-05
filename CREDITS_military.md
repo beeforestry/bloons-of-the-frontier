@@ -60,3 +60,12 @@ Converted by art_src/tools/fp_assets_t51.mjs: LOD0 thinned to ~45 %, LOD1 ~25 % 
 | Terrain heights, LOS walls, deco mask | USGS 3DEP 1 m DEM, project PR_PRVI_E_2018, tile USGS_1m_x80y205_PR_PRVI_E_2018.tif | US public domain |
 
 No Google Earth / Google Maps imagery is used.
+
+
+## t57 — naval towers + rename pass
+| Asset | Source | License |
+|---|---|---|
+| Tidebreaker Destroyer (procedural 2D + 3D) | Original geometry, metal palette matching Poly Haven / Kenney military look | Original (CC0 as project art) |
+| Harbor Beacon (procedural 2D + 3D) | Original lighthouse; lantern uses MeshBasicMaterial glow | Original (CC0 as project art) |
+| Bulwark Tank roof gunner (last tier) | Procedural add-on on Quaternius Animated Tank Pack | Quaternius CC0 + original |
+Display names were renamed away from third-party game marks (Bloons / Halo UNSC / PvZ-likes). Internal ids kept for saves. No Google imagery; no ripped commercial game art.

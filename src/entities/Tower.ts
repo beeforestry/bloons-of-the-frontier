@@ -6,7 +6,7 @@
 //   FarmTower    - periodic credit crates + wave bonus        (tier.farm)
 // e.g. the Frost Wall-Nut Bastion is Cover + (weak) Combat.
 // =============================================================================
-import { TargetingMode, type ManualCtl, type TowerData, type TowerTier } from '../core/types';
+import { TargetingMode, type CombatStats, type ManualCtl, type TowerData, type TowerTier } from '../core/types';
 import { nextId, easeInOut } from '../core/math';
 import { AuraEmitter, BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
 import { pickTargets, canHit } from '../systems/TargetingSystem';
@@ -61,6 +61,10 @@ export class Tower implements Buffable, Garrisonable {
   manual: ManualCtl | null = null;
   /** Player id possessing this tower (-1 = none; synced so allies see the 👁 badge). */
   possessedBy = -1;
+  /** t57 relocatable vehicles: destination while driving / flying. */
+  moveTo: { x: number; y: number } | null = null;
+  /** Player cancelled auto-chase with a manual move until arrival. */
+  chaseHold = false;
 
   constructor(readonly data: TowerData, public cell: Cell & { x?: number; y?: number }, g: Game) {
     const c = g.grid.cellCenter(cell.c, cell.r);
@@ -93,6 +97,7 @@ export class Tower implements Buffable, Garrisonable {
     if (this.t.hypno && !this.hypno) this.hypno = new HypnoTower();
   }
 
+  orderMove(x: number, y: number) { this.moveTo = { x, y }; this.chaseHold = true; this.slide = null; }
   upgrade(g: Game): boolean {
     const n = this.nextTier;
     if (!n || this.disabled || !g.res.spend({ credits: n.cost })) return false;
@@ -176,11 +181,63 @@ export class Tower implements Buffable, Garrisonable {
       return;
     }
     if (this.buffs.totals.regen > 0) this.health.heal(this.buffs.totals.regen * dt * 0.5);
+    this.updateMove(g, dt);
     this.combat?.update(this, g, dt);
     this.cover?.update(this, g, dt);
     this.farm?.update(this, g, dt);
     this.flora?.update(this, g, dt);
     this.hypno?.update(this, g, dt);
+  }
+  /** Drive / fly toward moveTo; last-tier gunships auto-chase when idle. */
+  private updateMove(g: Game, dt: number) {
+    const d = this.data;
+    if (!d.movable) return;
+    // Hunter Patrol auto-chase: pick the furthest-along enemy in a wide bubble when no manual order.
+    if (!this.moveTo && d.autoChase && d.airborne && this.tier >= 2 && !this.chaseHold && !this.disabled && !this.manual) {
+      let best: { x: number; y: number; score: number } | null = null;
+      for (const e of g.enemies) {
+        if (!e.alive) continue;
+        const dist = Math.hypot(e.x - this.x, e.y - this.y);
+        if (dist > 900) continue;
+        const score = e.progress * 1e6 - dist;
+        if (!best || score > best.score) best = { x: e.x, y: e.y, score };
+      }
+      if (best && Math.hypot(best.x - this.x, best.y - this.y) > 40) {
+        // hover slightly offset so we don't sit on the lane centre
+        const nl = g.nearestLane(best);
+        const ang = nl.dist > 1 ? Math.atan2(best.y - this.y, best.x - this.x) : (best.x > this.x ? 0 : Math.PI);
+        const tx = best.x - Math.cos(ang) * 50, ty = best.y - Math.sin(ang) * 50;
+        if (g.spotOk(d.id, tx, ty, this)) this.moveTo = { x: tx, y: ty };
+      }
+    }
+    if (!this.moveTo) { this.chaseHold = false; return; }
+    const spd = (d.moveSpeed ?? 60) * (d.airborne ? 1 : 1);
+    const dx = this.moveTo.x - this.x, dy = this.moveTo.y - this.y, dist = Math.hypot(dx, dy);
+    if (dist < 6) {
+      this.x = this.moveTo.x; this.y = this.moveTo.y; this.moveTo = null; this.chaseHold = false;
+      g.grid.releaseOwner(this); this.cell = g.grid.worldToCell(this); g.occupyTower(this); g.losVer++;
+      return;
+    }
+    const step = Math.min(dist, spd * dt), nx = this.x + (dx / dist) * step, ny = this.y + (dy / dist) * step;
+    // refuse to drive into an illegal cell mid-path (tank into water, etc.)
+    if (!g.spotOk(d.id, nx, ny, this) && dist > 40) {
+      // try a slight lateral nudge
+      const px = -dy / dist, py = dx / dist;
+      let ok = false;
+      for (const s of [28, -28, 48, -48]) {
+        const qx = nx + px * s, qy = ny + py * s;
+        if (g.spotOk(d.id, qx, qy, this)) { this.x = qx; this.y = qy; ok = true; break; }
+      }
+      if (!ok) { this.moveTo = null; this.chaseHold = false; return; }
+    } else { this.x = nx; this.y = ny; }
+    if (!d.airborne) this.aim = Math.atan2(dy, dx);
+    if (Math.random() < dt * (d.airborne ? 8 : 14)) g.fx({ kind: 'dust', x: this.x + (Math.random() - 0.5) * 20, y: this.y + 14, r: d.airborne ? 8 : 12, color: d.airborne ? '#cfe6ff' : '#cdb58a', dur: 0.35 });
+    // refresh occupancy every ~0.25s of travel
+    if (((this.uid + (g.time * 4) | 0) % 1) === 0) { /* noop keep lint quiet */ }
+    const cell = g.grid.worldToCell(this);
+    if (cell.c !== this.cell.c || cell.r !== this.cell.r) {
+      g.grid.releaseOwner(this); this.cell = cell; g.occupyTower(this); g.losVer++;
+    }
   }
   private updateSweep(g: Game, dt: number) {
     const s = this.sweep!, c = this.t.combat!;
@@ -202,9 +259,23 @@ export class CombatTower {
   period = 1;
   trackT = 0;
   shotCount = 0;
+  lockUid = -1;
+  lockT = 0;
+  secCd = 0;
   update(tw: Tower, g: Game, dt: number) {
     const c = tw.t.combat!;
     this.cooldown -= dt;
+    this.secCd -= dt;
+    // roof MG (independent of main gun)
+    if (c.secondary && this.secCd <= 0 && !tw.disabled && !tw.manual) {
+      const s = c.secondary, f = { hitsAir: tw.data.hitsAir ?? true, hitsGround: tw.data.hitsGround ?? true, antiAir: !!tw.data.antiAir, see: losFilter(g, tw) };
+      const tg = pickTargets(g.enemies, tw, tw.range(s.range), tw.targeting, f, 1);
+      if (tg.length) {
+        this.secCd = 1 / s.fireRate;
+        const fake = { ...c, damage: s.damage, fireRate: s.fireRate, range: s.range, pierce: s.pierce, shots: 1, splash: 0, projectileSpeed: 1100 };
+        g.towerFire(tw, tg, fake as CombatStats, this.shotCount + 900);
+      }
+    }
     // wind-up: ramps 0->1 over the last 35% of the reload while engaged
     tw.charge = tw.engaged ? Math.max(0, Math.min(1, 1 - this.cooldown / Math.max(0.05, this.period * 0.35))) : Math.max(0, tw.charge - dt * 3);
     if (tw.manual) {
@@ -241,15 +312,26 @@ export class CombatTower {
         return along > 0 && along < range && perp < 30 + e.data.radius;
       }).slice(0, 1);
     } else targets = pickTargets(g.enemies, tw, range, tw.targeting, filter, tw.data.hitscan ? shots : 1);
-    if (!targets.length) { this.cooldown = 0.05; tw.engaged = false; tw.charge = Math.max(0, tw.charge - dt * 3); return; }
+    if (!targets.length) { this.cooldown = 0.05; tw.engaged = false; tw.charge = Math.max(0, tw.charge - dt * 3); this.lockUid = -1; this.lockT = 0; return; }
     tw.engaged = true;
     if (tw.fixedAim === null) tw.aim = Math.atan2(targets[0].y - tw.y, targets[0].x - tw.x);
+    // Harbor Beacon: ramp damage while locked on the same enemy
+    const t0 = targets[0];
+    if (c.lockRamp) {
+      if (t0.uid === this.lockUid) this.lockT += this.period || (1 / c.fireRate);
+      else { this.lockUid = t0.uid; this.lockT = 0; }
+    } else { this.lockUid = -1; this.lockT = 0; }
     this.cooldown = 1 / (c.fireRate * (1 + tw.buffs.totals.ratePct));
     this.period = this.cooldown; tw.sinceFire = 0;
     this.shotCount++;
-    tw.aim = tw.fixedAim ?? Math.atan2(targets[0].y - tw.y, targets[0].x - tw.x);
+    tw.aim = tw.fixedAim ?? Math.atan2(t0.y - tw.y, t0.x - tw.x);
     tw.recoil = 1;
-    g.towerFire(tw, targets, c, this.shotCount);
+    let stats = c;
+    if (c.lockRamp) {
+      const mul = 1 + Math.min(c.lockRampMax ?? 2, this.lockT * c.lockRamp);
+      stats = { ...c, damage: c.damage * mul };
+    }
+    g.towerFire(tw, targets, stats, this.shotCount);
   }
 }
 

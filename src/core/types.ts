@@ -7,13 +7,11 @@
 
 /** Player factions. Every tower, troop and ability carries one. */
 export enum Faction {
-  Primates = 'primates', // BTD6-style monkeys
-  Flora = 'flora', // PvZ-style living plants
-  UNSC = 'unsc', // UNSC human tech (original designs)
+  Primates = 'primates', // primate towers
+  Flora = 'flora', // living plant towers
+  UNSC = 'unsc', // Vanguard human tech (display name; id kept for saves)
   Frontier = 'frontier', // Line Watch militia, paladins, arcane stonework
-  // FUTURE HOOKS - add a value here + an entry in FACTIONS (src/data/factions.ts):
-  // Covenant = 'covenant',
-  // Flood = 'flood',
+  // FUTURE HOOKS - add a value here + an entry in FACTIONS (src/data/factions.ts).
 }
 
 /** BTD-style target priority. */
@@ -84,11 +82,17 @@ export interface CombatStats {
   shieldBreak?: number;
   /** Tesla: extra enemies a bolt arcs to (each jump deals 80%). */
   chain?: number;
-  /** Chomper: instantly devours a non-boss enemy with at most this much HP (else bites for `damage`). */
+  /** Snapjaw: instantly devours a non-boss enemy with at most this much HP (else bites for `damage`). */
   devour?: number;
+  /** Harbor Beacon: damage multiplier gained per second of continuous lock on the same target. */
+  lockRamp?: number;
+  /** Cap on lockRamp bonus multiplier (added to 1). */
+  lockRampMax?: number;
+  /** Independent secondary weapon (Bulwark Tank roof MG at last tier). */
+  secondary?: { damage: number; fireRate: number; range: number; pierce: number };
 }
 
-/** Hypno-Shroom: converts non-boss enemies to fight for you at FULL health. All higher-is-better. */
+/** Charmcap: converts non-boss enemies to fight for you at FULL health. All higher-is-better. */
 export interface HypnoStats {
   /** Conversions per minute (cooldown = 60 / perMin). */
   perMin: number;
@@ -103,7 +107,7 @@ export interface HypnoStats {
 
 /** Flora / sun aura: green radius that speeds up nearby towers & troops and boosts farm income. Never stacks with itself. */
 export interface AuraStats { radius: number; ratePct: number; incomePct: number }
-/** Sunflower: energy orbs that fuel MAC Blast / Heal Drop. */
+/** Sunflower: energy orbs that fuel Orbital Barrage / Heal Drop. */
 export interface OrbStats { energy: number; perMin: number }
 
 export interface CoverStats {
@@ -145,7 +149,7 @@ export interface TowerTier {
   aura?: AuraStats;
   orbs?: OrbStats;
   hypno?: HypnoStats;
-  /** Path objects (Wall-Nut barrier / Cherry pod). */
+  /** Path objects (Oakshield barrier / Burst Berry pod). */
   barrier?: { hp: number; blockCap: number; blast?: number; blastRadius?: number };
 }
 
@@ -177,7 +181,7 @@ export interface TowerData {
   defaultTargeting?: TargetingMode;
   /** Single-use path object. */
   singleUse?: boolean;
-  /** Farm crates stack on the tower and bank at the end of the wave (Banana Drop). */
+  /** Farm crates stack on the tower and bank at the end of the wave (Orchard Drop). */
   bankCrates?: boolean;
   /** Player-triggered tower ability. */
   ability?: AbilityId;
@@ -185,6 +189,14 @@ export interface TowerData {
   footprint?: number;
   /** Hovering aircraft tower (drawn airborne, shadow on the ground). */
   airborne?: boolean;
+  /** Where the tower may be placed: land (default), open water, shoreline+water, or air (land+water). */
+  placeOn?: 'land' | 'water' | 'amphibious' | 'air';
+  /** Select + click ground to relocate (tank / gunship). */
+  movable?: boolean;
+  /** Relocation speed in px/s while moving. */
+  moveSpeed?: number;
+  /** Last-tier gunship: auto-chase the nearest enemy when idle. */
+  autoChase?: boolean;
   /** tiers[0] is the base tower; tiers[1..] are upgrades. */
   tiers: TowerTier[];
 }

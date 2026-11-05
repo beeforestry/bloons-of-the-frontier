@@ -99,7 +99,7 @@ export class Barrier {
   takeDamage(g: Game, n: number) {
     if (!this.alive || g.isClient) return;
     this.hp -= n; this.hitFlash = 0.08;
-    if (this.hp <= 0) { if (this.isPod) this.detonate(g); else { this.alive = false; g.fx({ kind: 'splat', x: this.x, y: this.y, r: 30, color: '#b5823d', dur: 0.4 }); g.toast('Wall-Nut barrier broke!', '#ffb35a'); } }
+    if (this.hp <= 0) { if (this.isPod) this.detonate(g); else { this.alive = false; g.fx({ kind: 'splat', x: this.x, y: this.y, r: 30, color: '#b5823d', dur: 0.4 }); g.toast('Oakshield barrier broke!', '#ffb35a'); } }
   }
   update(g: Game, dt: number) {
     this.hitFlash = Math.max(0, this.hitFlash - dt);

@@ -56,7 +56,7 @@ function recolor(o: THREE.Object3D, f: (name: string, c: THREE.Color) => number 
 export async function tank(t: number): Promise<THREE.Group> {
   const name = `tank_${Math.min(2, t) + 1}`, src = await raw(name);
   const g = normalise(src, SIZE.tank[Math.min(2, t)], FRONT[name]);
-  // T2 (heavy) repainted UNSC dark olive so it reads as the top tier next to the tan/olive ones
+  // T2 (heavy) repainted Vanguard dark olive so it reads as the top tier next to the tan/olive ones
   if (t === 2) recolor(g, (n) => ({ Main: 0x5a6a44, Main_Dark: 0x3c4630, Main_Light: 0x7a8a5c, Main_Details: 0x2a2f22, Wheels: 0x2e3228 } as Record<string, number>)[n] ?? null);
   else recolor(g, () => null);
   // re-parent turret + gun under a pivot at the turret centre so it can traverse
@@ -71,16 +71,26 @@ export async function tank(t: number): Promise<THREE.Group> {
     for (const p of parts) pivot.attach(p);
   }
   g.userData.turret = pivot;
-  // tier extras (visible upgrade): T1 roof MG + side skirts, T2 reactive armour blocks + antenna
+  // tier extras: T1 side skirts, T2 reactive armour + independent roof gunner (matches last-tier secondary)
   const dark = lam(0x2a2e26), olive = lam(0x56603f);
   if (t >= 1) {
-    const mg = new THREE.Group(); mg.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.18), dark), 0, 0, 0)); mg.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.1, 6).rotateZ(Math.PI / 2), dark), 0.7, 0.03, 0));
-    const top = new THREE.Box3().setFromObject(pivot); at(mg, (top.min.x + top.max.x) / 2 - 0.4 - pivot.position.x, top.max.y + 0.15, 0.45); pivot.add(mg);
+    const b0 = new THREE.Box3().setFromObject(g);
+    for (const s of [-1, 1]) for (let i = 0; i < 4; i++) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.28, 0.1), olive), b0.min.x + 1.4 + i * 1.05, b0.max.y * 0.38, s * (b0.max.z + 0.02)));
   }
   if (t >= 2) {
     const b = new THREE.Box3().setFromObject(g);
     for (const s of [-1, 1]) for (let i = 0; i < 5; i++) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.42, 0.14), olive), b.min.x + 1.3 + i * 1.05, b.max.y * 0.42, s * (b.max.z + 0.02)));
     const ant = at(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 2.6, 4), dark), -1.2, 0, -0.7); ant.position.y = new THREE.Box3().setFromObject(pivot).max.y + 1.2; pivot.add(ant);
+    // independent roof gunner cupola + MG
+    const top = new THREE.Box3().setFromObject(pivot);
+    const gunner = new THREE.Group();
+    gunner.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.35, 8), olive), 0, 0.2, 0));
+    gunner.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), lam(0x3a4030)), 0, 0.42, 0)); // helmet
+    const mg = new THREE.Group(); mg.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.2, 0.2), dark), 0, 0, 0));
+    mg.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.25, 6).rotateZ(Math.PI / 2), dark), 0.75, 0.03, 0));
+    at(mg, 0.15, 0.55, 0.35); gunner.add(mg);
+    at(gunner, (top.min.x + top.max.x) / 2 - 0.35 - pivot.position.x, top.max.y + 0.05, 0.35);
+    pivot.add(gunner); g.userData.gunner = gunner;
   }
   g.userData.kind = 'tank'; return g;
 }
@@ -126,7 +136,7 @@ export async function heli(t: number): Promise<THREE.Group> {
   for (let i = 0; i < 2; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.16, L * 0.16, 0.04), blade); m.rotation.z = i * Math.PI / 2; tail.add(m); }
   tail.position.set(b.min.x + 0.25, H * 0.72, 0.28); g.add(tail);
   g.userData.rotor = rotor; g.userData.tail = tail;
-  // weapons per tier: T0 chin gun, T1 + stub wings w/ rocket pods, T2 + Hellfire rails + 2nd pods
+  // weapons per tier: T0 chin gun, T1 + stub wings w/ rocket pods, T2 + strike rails + 2nd pods
   const dark = lam(0x22261f), pod = lam(0x3a4130);
   const nose = b.max.x - len * 0.12;
   const chin = new THREE.Group(); chin.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), dark));
@@ -144,6 +154,56 @@ export async function heli(t: number): Promise<THREE.Group> {
     }
   }
   g.userData.kind = 'heli'; return g;
+}
+
+// ---------------------------------------------------------------- naval (t57) — procedural, CC0 metal palette
+/** Tidebreaker Destroyer: waterline hull ~12-16 m, deck guns aim via userData.turret. */
+export function destroyer(t: number): THREE.Group {
+  const g = new THREE.Group(), L = [12, 14, 16][Math.min(2, t)], dark = lam(0x2a3038), hull = lam(0x4a5560), deck = lam(0x6a7888), white = lam(0xd8dce0);
+  // hull
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(L, 1.4, 3.2 + t * 0.3), hull), 0, 0.7, 0));
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(L * 0.92, 0.35, 3.0 + t * 0.25), deck), 0, 1.5, 0));
+  // bow taper
+  g.add(at(new THREE.Mesh(new THREE.ConeGeometry(1.7 + t * 0.1, 2.8, 4).rotateZ(-Math.PI / 2), hull), L / 2 + 0.4, 0.85, 0));
+  // superstructure
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.6 + t * 0.3, 2.2), white), -0.5, 2.4, 0));
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.4), dark), -0.3, 3.5 + t * 0.15, 0));
+  // mast
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 3.2 + t * 0.4, 6), dark), 0.4, 4.5 + t * 0.2, 0));
+  if (t >= 1) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.6), lam(0x8fa0b0)), 0.4, 5.6, 0));
+  if (t >= 2) g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), lam(0xffb35a)), 0.4, 6.2, 0));
+  // deck guns
+  const turret = new THREE.Group();
+  const guns = 1 + t;
+  for (let i = 0; i < guns; i++) {
+    const gx = L * 0.22 - i * 2.4;
+    const cup = new THREE.Group();
+    cup.add(new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 0.5, 10), dark));
+    cup.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 2.2 + t * 0.3, 8).rotateZ(Math.PI / 2), dark), 1.2, 0.1, 0));
+    at(cup, gx, 1.85, 0); turret.add(cup);
+  }
+  g.add(turret); g.userData.turret = turret; g.userData.kind = 'destroyer';
+  g.traverse((m) => { const mesh = m as THREE.Mesh; if (mesh.isMesh) mesh.castShadow = true; });
+  return g;
+}
+/** Harbor Beacon lighthouse: tall striped tower with glowing lantern (userData.lamp). */
+export function beacon(t: number): THREE.Group {
+  const g = new THREE.Group(), H = 8 + t * 1.5, dark = lam(0x3e4650), cream = lam(0xf4efe3), red = lam(0xc62828);
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, 0.6, 12), dark), 0, 0.3, 0)); // pier
+  const bands = 3 + t;
+  for (let i = 0; i < bands; i++) {
+    const y0 = 0.6 + i * (H * 0.7 / bands), h = H * 0.7 / bands;
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.85 - i * 0.04, 0.9 - i * 0.04, h, 12), i % 2 ? red : cream), 0, y0 + h / 2, 0));
+  }
+  const lampY = 0.6 + H * 0.72 + 0.5;
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.35, 10), dark), 0, lampY, 0));
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.55 + t * 0.08, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+  at(lamp, 0, lampY + 0.55, 0); g.add(lamp);
+  // gallery rails
+  g.add(at(new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.04, 6, 16), dark), 0, lampY, 0));
+  g.userData.lamp = lamp; g.userData.kind = 'beacon';
+  g.traverse((m) => { const mesh = m as THREE.Mesh; if (mesh.isMesh && mesh !== lamp) mesh.castShadow = true; });
+  return g;
 }
 
 // ---------------------------------------------------------------- props

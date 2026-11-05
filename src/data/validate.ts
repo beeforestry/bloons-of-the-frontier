@@ -132,6 +132,8 @@ export function validateBuilding(b: BuildingData): Issue[] {
 const ART = new Set(Object.keys(ART_MANIFEST as Record<string, number[]>));
 // t42 vehicle towers: per-tier 16-yaw sheets rendered from the GLBs (tank_0 -> unsc_tank_0 ...)
 for (const k of Object.keys(MIL_SPRITES)) ART.add('unsc_' + k);
+// t57 procedural naval towers (drawn in Renderer.naval; icons generated in sprites.ts)
+for (const id of ['unsc_destroyer', 'unsc_beacon']) for (let i = 0; i < 3; i++) ART.add(`${id}_${i}`);
 const artKey = (k: string) => k.replace(/^proc:/, '');
 export function validateArt(): Issue[] {
   const out: Issue[] = [];

@@ -11,10 +11,10 @@ const G1 = '#7fd3ff', G2 = '#ffd84a'; // tier-1 / tier-2 glow colors (blue -> go
 export const TOWERS: TowerData[] = [
   // ----------------------------------------------------------------- PRIMATES
   {
-    id: 'dart_monkey', name: 'Dart Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'dart_monkey',
+    id: 'dart_monkey', name: 'Dart Scout', faction: Faction.Primates, kind: 'combat', sprite: 'dart_monkey',
     desc: 'Cheap, reliable darts that pierce. Sharp: cannot pop Lead.', damageType: 'sharp', projectile: 'dart',
     tiers: [
-      { name: 'Dart Monkey', cost: 200, blurb: 'Single darts, pierce 2.', visual: { level: 0, scale: 1 }, maxHp: 120,
+      { name: 'Dart Scout', cost: 200, blurb: 'Single darts, pierce 2.', visual: { level: 0, scale: 1 }, maxHp: 120,
         combat: { damage: 1.03, fireRate: 1.47, range: 150, pierce: 2, projectileSpeed: 640 } },
       { name: 'Sharp Shots', cost: 240, blurb: '+1 dmg, +pierce, +range.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 150,
         combat: { damage: 2, fireRate: 1.6, range: 165, pierce: 3, projectileSpeed: 700 } },
@@ -23,10 +23,10 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'ninja_monkey', name: 'Ninja Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'ninja_monkey',
+    id: 'ninja_monkey', name: 'Shadow Scout', faction: Faction.Primates, kind: 'combat', sprite: 'ninja_monkey',
     desc: 'Fast shurikens at several targets at once.', damageType: 'sharp', projectile: 'shuriken',
     tiers: [
-      { name: 'Ninja Monkey', cost: 400, blurb: '2 shurikens.', visual: { level: 0, scale: 1 }, maxHp: 120,
+      { name: 'Shadow Scout', cost: 400, blurb: '2 shurikens.', visual: { level: 0, scale: 1 }, maxHp: 120,
         combat: { damage: 1, fireRate: 2.2, range: 160, pierce: 3, shots: 2, projectileSpeed: 620 } },
       { name: 'Ninja Discipline', cost: 380, blurb: '3 shurikens, faster.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 150,
         combat: { damage: 1.59, fireRate: 2.2, range: 175, pierce: 4, shots: 3, projectileSpeed: 680 } },
@@ -35,10 +35,10 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'wizard_monkey', name: 'Wizard Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'wizard_monkey',
+    id: 'wizard_monkey', name: 'Arcane Scout', faction: Faction.Primates, kind: 'combat', sprite: 'wizard_monkey',
     desc: 'Homing magic bolts that burst. Magic pops Lead.', damageType: 'magic', projectile: 'magic',
     tiers: [
-      { name: 'Wizard Monkey', cost: 380, blurb: 'Homing bolt, small burst.', visual: { level: 0, scale: 1 }, maxHp: 120,
+      { name: 'Arcane Scout', cost: 380, blurb: 'Homing bolt, small burst.', visual: { level: 0, scale: 1 }, maxHp: 120,
         combat: { damage: 3, fireRate: 1.2, range: 160, pierce: 1, splash: 36, projectileSpeed: 380 } },
       { name: 'Arcane Burst', cost: 365, blurb: 'Bigger bursts, more damage.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 150,
         combat: { damage: 4.05, fireRate: 1.53, range: 175, pierce: 1, splash: 46, projectileSpeed: 420 } },
@@ -47,10 +47,10 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'super_monkey', name: 'Super Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'super_monkey',
+    id: 'super_monkey', name: 'Apex Laser Scout', faction: Faction.Primates, kind: 'combat', sprite: 'super_monkey',
     desc: 'Laser eyes: insanely fast hitscan beams. Hits aircraft. Ability: Laser Sweep. Energy pops Lead.', damageType: 'energy', projectile: 'laser', hitscan: true, antiAir: true, ability: 'laser_sweep',
     tiers: [
-      { name: 'Super Monkey', cost: 1600, blurb: 'Rapid laser beams.', visual: { level: 0, scale: 1 }, maxHp: 200,
+      { name: 'Apex Laser Scout', cost: 1600, blurb: 'Rapid laser beams.', visual: { level: 0, scale: 1 }, maxHp: 200,
         combat: { damage: 1.08, fireRate: 11.23, range: 190, pierce: 2 } },
       { name: 'Plasma Vision', cost: 1510, blurb: 'Plasma beams, more pierce.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 260,
         combat: { damage: 1.97, fireRate: 11.7, range: 205, pierce: 3 } },
@@ -84,14 +84,14 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'gatling_cherry_bomber', name: 'Gatling Cherry Bomber', faction: Faction.Flora, kind: 'combat', sprite: 'gatling_cherry_bomber',
+    id: 'gatling_cherry_bomber', name: 'Gatling Berry Bomber', faction: Faction.Flora, kind: 'combat', sprite: 'gatling_cherry_bomber',
     desc: 'Rapid peas; every few shots is an exploding cherry (pops Lead).', damageType: 'sharp', projectile: 'gpea',
     tiers: [
-      { name: 'Gatling Cherry', cost: 450, blurb: 'Cherry every 6th shot.', visual: { level: 0, scale: 1 }, maxHp: 140,
+      { name: 'Gatling Berry', cost: 450, blurb: 'Berry every 6th shot.', visual: { level: 0, scale: 1 }, maxHp: 140,
         combat: { damage: 0.87, fireRate: 3.89, range: 140, pierce: 1, projectileSpeed: 620, specialRate: 1 / 6, specialDamage: 6, splash: 50 } },
       { name: 'Overspin', cost: 410, blurb: 'Faster, cherry every 5th.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 170,
         combat: { damage: 0.99, fireRate: 6.41, range: 150, pierce: 1, projectileSpeed: 660, specialRate: 1 / 5, specialDamage: 8, splash: 58 } },
-      { name: 'Cherry Storm', cost: 900, blurb: 'Cherry every 3rd shot.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
+      { name: 'Berry Storm', cost: 900, blurb: 'Berry every 3rd shot.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
         combat: { damage: 1.69, fireRate: 6.41, range: 160, pierce: 2, projectileSpeed: 700, specialRate: 1 / 3, specialDamage: 10, splash: 66 } },
     ],
   },
@@ -121,7 +121,7 @@ export const TOWERS: TowerData[] = [
   },
   {
     // COVER TOWER (composition: cover + a weak combat module).
-    id: 'frost_wallnut_bastion', name: 'Frost Wall-Nut Bastion', faction: Faction.Flora, kind: 'cover', sprite: 'frost_wallnut_bastion',
+    id: 'frost_wallnut_bastion', name: 'Frost Oakshield Bastion', faction: Faction.Flora, kind: 'cover', sprite: 'frost_wallnut_bastion',
     desc: 'COVER. Aura gives friendly towers & troops +max HP and +range. Troops can garrison. Weak slowing ice shards.',
     damageType: 'cold', projectile: 'ice',
     tiers: [
@@ -151,7 +151,7 @@ export const TOWERS: TowerData[] = [
   },
   {
     id: 'unsc_rail', name: 'Rail Lance Emplacement', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_rail',
-    desc: 'Long-range hitscan rail slugs that punch through lines. Great vs Chargers & MOABs.', damageType: 'energy', projectile: 'rail', hitscan: true,
+    desc: 'Long-range hitscan rail slugs that punch through lines. Great vs Chargers & Sky Colossi.', damageType: 'energy', projectile: 'rail', hitscan: true,
     tiers: [
       { name: 'Rail Lance', cost: 950, blurb: 'Heavy rail slug.', visual: { level: 0, scale: 1 }, maxHp: 200,
         combat: { damage: 8.57, fireRate: 0.55, range: 280, pierce: 4 } },
@@ -187,11 +187,11 @@ export const TOWERS: TowerData[] = [
   },
   // ------------------------------------------------------------ PRIMATES (t25)
   {
-    id: 'sniper_monkey', name: 'Sniper Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'sniper_monkey',
+    id: 'sniper_monkey', name: 'Marksman Scout', faction: Faction.Primates, kind: 'combat', sprite: 'sniper_monkey',
     desc: 'Infinite range. Defaults to Strongest. Armor-piercing rounds shred Ironbacks; hits aircraft.', damageType: 'ballistic', projectile: 'rail', hitscan: true,
     antiAir: true, armorPiercing: true, defaultTargeting: TargetingMode.Strong,
     tiers: [
-      { name: 'Sniper Monkey', cost: 450, blurb: 'Heavy AP round, map-wide.', visual: { level: 0, scale: 1 }, maxHp: 110,
+      { name: 'Marksman Scout', cost: 450, blurb: 'Heavy AP round, map-wide.', visual: { level: 0, scale: 1 }, maxHp: 110,
         combat: { damage: 6.57, fireRate: 0.63, range: 4000, pierce: 1 } },
       { name: 'Full Metal Jacket', cost: 455, blurb: 'Pierce 2, faster bolt.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
         combat: { damage: 9.94, fireRate: 0.69, range: 4000, pierce: 2 } },
@@ -207,7 +207,7 @@ export const TOWERS: TowerData[] = [
         combat: { damage: 1.13, fireRate: 1.32, range: 150, pierce: 2, slow: 0.4, armorShred: 0.12, splash: 26, projectileSpeed: 460 } },
       { name: 'Corrosive Glue', cost: 300, blurb: 'Acid sprayer: 3-jet stream, wider splash, more range.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
         combat: { damage: 1.82, fireRate: 1.32, range: 175, pierce: 3, slow: 0.45, armorShred: 0.2, splash: 38, projectileSpeed: 620 } },
-      { name: 'Bloon Dissolver', cost: 745, blurb: 'Hazmat cannon: acid canisters, big splash + pool.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
+      { name: 'Balloon Dissolver', cost: 745, blurb: 'Hazmat cannon: acid canisters, big splash + pool.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
         combat: { damage: 2.92, fireRate: 1.54, range: 205, pierce: 4, slow: 0.5, armorShred: 0.3, splash: 56, projectileSpeed: 660 } },
     ],
   },
@@ -217,50 +217,50 @@ export const TOWERS: TowerData[] = [
     tiers: [
       { name: 'Banana Drop', cost: 420, blurb: 'Crates bank at wave end.', visual: { level: 0, scale: 1 }, maxHp: 110,
         farm: { income: 18, payoutsPerMin: 6, waveBonus: 45 } },
-      { name: 'Banana Republic', cost: 480, blurb: 'Bigger crates.', visual: { level: 1, scale: 1.05, glow: G1 }, maxHp: 140,
+      { name: 'Orchard Republic', cost: 480, blurb: 'Bigger crates.', visual: { level: 1, scale: 1.05, glow: G1 }, maxHp: 140,
         farm: { income: 30, payoutsPerMin: 7.5, waveBonus: 95 } },
-      { name: 'Banana Central', cost: 980, blurb: 'Crate airlift.', visual: { level: 2, scale: 1.1, glow: G2 }, maxHp: 170,
+      { name: 'Orchard Central', cost: 980, blurb: 'Crate airlift.', visual: { level: 2, scale: 1.1, glow: G2 }, maxHp: 170,
         farm: { income: 48, payoutsPerMin: 9.5, waveBonus: 180 } },
     ],
   },
   // --------------------------------------------------------------- FLORA (t25)
   {
     id: 'sunflower', name: 'Sunflower', faction: Faction.Flora, kind: 'support', sprite: 'sunflower',
-    desc: 'SUPPORT. Green sun aura: +attack speed for towers & troops and +farm income. Grows energy orbs that fuel MAC Blast & Heal (click or they auto-collect). Flora auras never stack.',
+    desc: 'SUPPORT. Green sun aura: +attack speed for towers & troops and +farm income. Grows energy orbs that fuel Orbital Barrage & Heal (click or they auto-collect). Flora auras never stack.',
     tiers: [
       { name: 'Sunflower', cost: 300, blurb: '+12% rate, +10% income aura.', visual: { level: 0, scale: 1 }, maxHp: 110,
         aura: { radius: 140, ratePct: 0.12, incomePct: 0.1 }, orbs: { energy: 6, perMin: 3 } },
-      { name: 'Twin Sunflower', cost: 320, blurb: '+18% rate, +15% income.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
+      { name: 'Twin Solara', cost: 320, blurb: '+18% rate, +15% income.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
         aura: { radius: 160, ratePct: 0.18, incomePct: 0.15 }, orbs: { energy: 8, perMin: 4 } },
       { name: 'Solar Bloom', cost: 700, blurb: '+25% rate, +22% income.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
         aura: { radius: 185, ratePct: 0.25, incomePct: 0.22 }, orbs: { energy: 10, perMin: 5 } },
     ],
   },
   {
-    id: 'repeater_gatling', name: 'Repeater Seed Gatling', faction: Faction.Flora, kind: 'combat', sprite: 'repeater_gatling',
+    id: 'repeater_gatling', name: 'Seedstream Gatling', faction: Faction.Flora, kind: 'combat', sprite: 'repeater_gatling',
     desc: 'Locks to the nearest lane direction at placement and hoses it with seeds: very high damage density down that line.', damageType: 'sharp', projectile: 'seed', fixedLane: true,
     tiers: [
-      { name: 'Repeater Gatling', cost: 520, blurb: 'Fixed-lane seed stream.', visual: { level: 0, scale: 1 }, maxHp: 140,
+      { name: 'Seedstream Gatling', cost: 520, blurb: 'Fixed-lane seed stream.', visual: { level: 0, scale: 1 }, maxHp: 140,
         combat: { damage: 1, fireRate: 6.5, range: 240, pierce: 2, projectileSpeed: 700 } },
-      { name: 'Twin Repeater', cost: 495, blurb: 'Twin streams.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 170,
+      { name: 'Twin Seedstream', cost: 495, blurb: 'Twin streams.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 170,
         combat: { damage: 1.27, fireRate: 6.5, range: 260, pierce: 2, shots: 2, projectileSpeed: 760 } },
       { name: 'Seed Minigun', cost: 1175, blurb: 'Triple seed torrent.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
         combat: { damage: 1.63, fireRate: 6.59, range: 280, pierce: 3, shots: 3, projectileSpeed: 820 } },
     ],
   },
   {
-    id: 'wallnut_barrier', name: 'Wall-Nut Barrier Sprout', faction: Faction.Flora, kind: 'path', sprite: 'wallnut_barrier', singleUse: true,
+    id: 'wallnut_barrier', name: 'Oakshield Barrier Sprout', faction: Faction.Flora, kind: 'path', sprite: 'wallnut_barrier', singleUse: true,
     desc: 'PATH. Place ON the road: a high-HP blocker that holds up to 6 ground bugs. Dies when chewed through.',
     tiers: [
-      { name: 'Wall-Nut Barrier', cost: 180, blurb: '600 HP road block.', visual: { level: 0, scale: 1 }, maxHp: 600,
+      { name: 'Oakshield Barrier', cost: 180, blurb: '600 HP road block.', visual: { level: 0, scale: 1 }, maxHp: 600,
         barrier: { hp: 600, blockCap: 6 } },
     ],
   },
   {
-    id: 'cherry_pod', name: 'Cherry Bomb Blast Pod', faction: Faction.Flora, kind: 'path', sprite: 'cherry_pod', singleUse: true,
+    id: 'cherry_pod', name: 'Burst Berry Blast Pod', faction: Faction.Flora, kind: 'path', sprite: 'cherry_pod', singleUse: true,
     desc: 'PATH, single use. Place ON the road; when an enemy gets close the fuse burns (0.7s) and it erupts in a huge fire blast. Also clears rocks & logs.',
     tiers: [
-      { name: 'Cherry Pod', cost: 240, blurb: 'Huge fire AoE.', visual: { level: 0, scale: 1 }, maxHp: 80,
+      { name: 'Burst Berry Pod', cost: 240, blurb: 'Huge fire AoE.', visual: { level: 0, scale: 1 }, maxHp: 80,
         barrier: { hp: 80, blockCap: 0, blast: 60, blastRadius: 120 } },
     ],
   },
@@ -281,29 +281,62 @@ export const TOWERS: TowerData[] = [
   // ------------------------------------------------- UNSC heavy vehicles (t42)
   // Real-size vehicles on a 3x3-cell pad (7.2 m): ~8 m tank, ~11 m gunship. Balanced to the DPS/100c curve (balance/static.md).
   {
-    id: 'unsc_tank', name: 'M808 Battle Tank', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_tank', footprint: 3,
-    desc: 'Heavy armour on a 3x3 pad. Slow, crushing high-explosive shells with big splash. Ground targets only.', damageType: 'explosive', projectile: 'shell',
+    id: 'unsc_tank', name: 'Bulwark Battle Tank', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_tank', footprint: 3,
+    placeOn: 'land', movable: true, moveSpeed: 55,
+    desc: 'Heavy armour you can relocate. Click ground while selected to drive there. Slow, crushing HE shells. Ground only. Last upgrade adds an independent roof gunner.', damageType: 'explosive', projectile: 'shell',
     hitsAir: false, defaultTargeting: TargetingMode.Strong,
     tiers: [
-      { name: 'Light Tank', cost: 1100, blurb: 'Desert-tan light tank, 90 mm gun.', visual: { level: 0, scale: 1 }, maxHp: 600,
+      { name: 'Light Tank', cost: 1100, blurb: 'Desert-tan light tank, 90 mm gun. Relocatable.', visual: { level: 0, scale: 1 }, maxHp: 600,
         combat: { damage: 7, fireRate: 0.5, range: 230, pierce: 3, splash: 45, projectileSpeed: 620 } },
-      { name: 'Main Battle Tank', cost: 950, blurb: 'Olive MBT: 120 mm, roof MG, more armour.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 800,
+      { name: 'Main Battle Tank', cost: 950, blurb: 'Olive MBT: 120 mm gun, more armour.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 800,
         combat: { damage: 11, fireRate: 0.6, range: 250, pierce: 4, splash: 55, projectileSpeed: 680 } },
-      { name: 'Siege Tank', cost: 2200, blurb: 'Heavy siege gun, reactive armour, shreds plating.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 1050,
-        combat: { damage: 20, fireRate: 0.75, range: 275, pierce: 5, splash: 65, armorShred: 1, projectileSpeed: 740 } },
+      { name: 'Siege Gunner', cost: 2200, blurb: 'Siege gun + independent roof MG, reactive armour.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 1050,
+        combat: { damage: 20, fireRate: 0.75, range: 275, pierce: 5, splash: 65, armorShred: 1, projectileSpeed: 740,
+          secondary: { damage: 1.5, fireRate: 6, range: 200, pierce: 1 } } },
     ],
   },
   {
-    id: 'unsc_heli', name: 'AH-9 Gunship', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_heli', footprint: 3, airborne: true,
-    desc: 'Hovering attack helicopter on a 3x3 helipad. Chin gun hits ground AND air (incl. Gargoyles).', damageType: 'ballistic', projectile: 'bullet',
+    id: 'unsc_heli', name: 'Skyranger Gunship', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_heli', footprint: 3, airborne: true,
+    placeOn: 'air', movable: true, moveSpeed: 110, autoChase: true,
+    desc: 'Hovering attack helicopter. Places over land or water. Click ground/water while selected to fly there. Chin gun hits ground AND air. Last upgrade auto-patrols chasing enemies.', damageType: 'ballistic', projectile: 'bullet',
     antiAir: true,
     tiers: [
-      { name: 'Scout Gunship', cost: 900, blurb: 'Chin cannon.', visual: { level: 0, scale: 1 }, maxHp: 380,
+      { name: 'Scout Gunship', cost: 900, blurb: 'Chin cannon. Relocatable over land or water.', visual: { level: 0, scale: 1 }, maxHp: 380,
         combat: { damage: 2, fireRate: 5, range: 200, pierce: 1, projectileSpeed: 1000 } },
       { name: 'Attack Gunship', cost: 800, blurb: 'Stub wings + rocket pods, twin fire.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 480,
         combat: { damage: 2, fireRate: 6, range: 220, pierce: 1, shots: 2, projectileSpeed: 1050 } },
-      { name: 'Hellfire Gunship', cost: 1900, blurb: 'Hellfire rails, heavy rounds, pierce 2.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 600,
+      { name: 'Hunter Patrol', cost: 1900, blurb: 'Rocket rails, pierce 2. Auto-chases enemies when idle.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 600,
         combat: { damage: 3, fireRate: 7, range: 245, pierce: 2, shots: 2, projectileSpeed: 1100 } },
+    ],
+  },
+
+  // ------------------------------------------------- Vanguard naval / coastal (t57)
+  {
+    id: 'unsc_destroyer', name: 'Tidebreaker Destroyer', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_destroyer', footprint: 3,
+    placeOn: 'water',
+    desc: 'Water-only destroyer. Dual deck guns with splash; hits air and ground. Place on open water near the lanes.', damageType: 'explosive', projectile: 'shell',
+    antiAir: true, defaultTargeting: TargetingMode.First,
+    tiers: [
+      { name: 'Patrol Corvette', cost: 850, blurb: 'Single deck gun on a light hull.', visual: { level: 0, scale: 1 }, maxHp: 420,
+        combat: { damage: 4, fireRate: 1.1, range: 220, pierce: 2, splash: 36, projectileSpeed: 700 } },
+      { name: 'Coast Destroyer', cost: 780, blurb: 'Twin turrets, deeper magazine.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 540,
+        combat: { damage: 6, fireRate: 1.35, range: 245, pierce: 3, splash: 48, shots: 2, projectileSpeed: 760 } },
+      { name: 'Tidebreaker Flagship', cost: 1850, blurb: 'Heavy dual mounts + flak burst.', visual: { level: 2, scale: 1.14, glow: G2 }, maxHp: 720,
+        combat: { damage: 9, fireRate: 1.6, range: 275, pierce: 4, splash: 60, shots: 2, projectileSpeed: 820 } },
+    ],
+  },
+  {
+    id: 'unsc_beacon', name: 'Harbor Beacon', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_beacon', footprint: 2,
+    placeOn: 'amphibious', hitscan: true,
+    desc: 'Shoreline or water lighthouse. Hitscan laser beam; damage ramps the longer it stays locked on the same target.', damageType: 'energy', projectile: 'laser',
+    antiAir: true, defaultTargeting: TargetingMode.Strong,
+    tiers: [
+      { name: 'Harbor Lantern', cost: 700, blurb: 'Steady laser, light ramp.', visual: { level: 0, scale: 1 }, maxHp: 280,
+        combat: { damage: 2.5, fireRate: 4, range: 240, pierce: 3, lockRamp: 0.25, lockRampMax: 1.5 } },
+      { name: 'Coastal Beacon', cost: 650, blurb: 'Hotter beam, faster ramp.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 360,
+        combat: { damage: 3.5, fireRate: 5, range: 265, pierce: 4, lockRamp: 0.4, lockRampMax: 2.2 } },
+      { name: 'Lighthouse Laser', cost: 1550, blurb: 'Blinding ramp laser, long pierce.', visual: { level: 2, scale: 1.14, glow: G2 }, maxHp: 480,
+        combat: { damage: 5, fireRate: 6, range: 300, pierce: 6, lockRamp: 0.55, lockRampMax: 3.0 } },
     ],
   },
   // ------------------------------------------------------------ FRONTIER (t24/25)
@@ -320,10 +353,10 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'boomerang_monkey', name: 'Boomerang Monkey', faction: Faction.Primates, kind: 'combat', sprite: 'boomerang_monkey',
+    id: 'boomerang_monkey', name: 'Glaive Scout', faction: Faction.Primates, kind: 'combat', sprite: 'boomerang_monkey',
     desc: 'Curving boomerangs slice through a crowd on the way out AND back. Sharp: cannot pop Lead.', damageType: 'sharp', projectile: 'boomerang',
     tiers: [
-      { name: 'Boomerang Monkey', cost: 325, blurb: 'Out-and-back blade, pierce 5.', visual: { level: 0, scale: 1 }, maxHp: 130,
+      { name: 'Glaive Scout', cost: 325, blurb: 'Out-and-back blade, pierce 5.', visual: { level: 0, scale: 1 }, maxHp: 130,
         combat: { damage: 1.13, fireRate: 1.32, range: 165, pierce: 5, projectileSpeed: 480 } },
       { name: 'Glaive Thrower', cost: 325, blurb: 'Razor glaives: +dmg, pierce 8.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 160,
         combat: { damage: 2.23, fireRate: 1.65, range: 180, pierce: 8, projectileSpeed: 540 } },
@@ -332,26 +365,26 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'hypno_shroom', name: 'Hypno-Shroom', faction: Faction.Flora, kind: 'hypno', sprite: 'hypno_shroom',
+    id: 'hypno_shroom', name: 'Charmcap', faction: Faction.Flora, kind: 'hypno', sprite: 'hypno_shroom',
     desc: 'Puffs hypnotic spores: the strongest non-boss enemy in range switches sides at FULL health and marches back down the road fighting its old friends.',
     tiers: [
-      { name: 'Hypno-Shroom', cost: 450, blurb: '1 convert at a time, up to 30 HP enemies.', visual: { level: 0, scale: 1 }, maxHp: 90,
+      { name: 'Charmcap', cost: 450, blurb: '1 convert at a time, up to 30 HP enemies.', visual: { level: 0, scale: 1 }, maxHp: 90,
         hypno: { perMin: 4.3, maxConverted: 1, maxHp: 30, range: 150, power: 1 } },
-      { name: 'Mesmer-Shroom', cost: 550, blurb: '2 converts, up to 120 HP, faster spores.', visual: { level: 1, scale: 1.08, glow: G1 }, maxHp: 120,
+      { name: 'Mesmer Cap', cost: 550, blurb: '2 converts, up to 120 HP, faster spores.', visual: { level: 1, scale: 1.08, glow: G1 }, maxHp: 120,
         hypno: { perMin: 6, maxConverted: 2, maxHp: 120, range: 170, power: 1.4 } },
       { name: 'Grand Hypnotist', cost: 1200, blurb: '4 converts, up to 400 HP (Ironbacks, Chargers), x2 power.', visual: { level: 2, scale: 1.16, glow: G2 }, maxHp: 160,
         hypno: { perMin: 8.5, maxConverted: 4, maxHp: 400, range: 190, power: 2 } },
     ],
   },
   {
-    id: 'chomper', name: 'Chomper', faction: Faction.Flora, kind: 'combat', sprite: 'chomper', hitsAir: false, damageType: 'melee',
+    id: 'chomper', name: 'Snapjaw', faction: Faction.Flora, kind: 'combat', sprite: 'chomper', hitsAir: false, damageType: 'melee',
     desc: 'Short-range snapping plant: swallows small enemies WHOLE (no bounty lost), bites big ones hard. Ground only.',
     tiers: [
-      { name: 'Chomper', cost: 300, blurb: 'Devours enemies up to 20 HP.', visual: { level: 0, scale: 1 }, maxHp: 180,
+      { name: 'Snapjaw', cost: 300, blurb: 'Devours enemies up to 20 HP.', visual: { level: 0, scale: 1 }, maxHp: 180,
         combat: { damage: 7.47, fireRate: 0.35, range: 80, pierce: 1, devour: 20 } },
-      { name: 'Big Chomper', cost: 430, blurb: 'Devours up to 60 HP, faster chewing.', visual: { level: 1, scale: 1.08, glow: G1 }, maxHp: 240,
+      { name: 'Big Snapjaw', cost: 430, blurb: 'Devours up to 60 HP, faster chewing.', visual: { level: 1, scale: 1.08, glow: G1 }, maxHp: 240,
         combat: { damage: 13.78, fireRate: 0.4, range: 90, pierce: 1, devour: 60 } },
-      { name: 'Royal Chomper', cost: 1080, blurb: 'Devours up to 160 HP; armor-cracking bite.', visual: { level: 2, scale: 1.16, glow: G2 }, maxHp: 320,
+      { name: 'Royal Snapjaw', cost: 1080, blurb: 'Devours up to 160 HP; armor-cracking bite.', visual: { level: 2, scale: 1.16, glow: G2 }, maxHp: 320,
         combat: { damage: 26.82, fireRate: 0.44, range: 100, pierce: 1, devour: 160, armorShred: 0.15 } },
     ],
   },

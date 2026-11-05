@@ -295,12 +295,16 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (env && sqs.length) { for (const q of sqs) g.garrisonSquad(q, env); return; }
     const tw = g.towerAt(p);
     if (tw) { hud.select(tw, null); return; }
+    // t57: selected relocatable vehicle — left-click ground/water to move it
+    if (view.selTower?.alive && view.selTower.data.movable && !sqs.length) {
+      if (g.moveTower(view.selTower, p)) { hud.refresh(true); return; }
+    }
     if (env) { g.toast(`${env.gName()}: select troops, then click/right-click it to garrison (−50% damage taken, +35% range)`); return; }
     const ob = g.obstacles.find((o) => dist(o, p) < (o.shortcut ? 80 : 50));
     if (ob?.shortcut && !sqs.length) { hud.selectShortcut(ob.shortcut); return; }
     const osc = g.shortcuts.find((s) => s.open && Math.hypot(s.mid.x - p.x, s.mid.y - p.y) < 60);
     if (osc && !sqs.length) { hud.selectShortcut(osc); return; }
-    if (ob && !sqs.length) { g.toast(`${ob.kind === 'rock' ? 'Boulders' : 'Fallen tree'} — clear with explosives, a Cherry Pod or the MAC to free build space`); return; }
+    if (ob && !sqs.length) { g.toast(`${ob.kind === 'rock' ? 'Boulders' : 'Fallen tree'} — clear with explosives, a Burst Berry or the Orbital Barrage to free build space`); return; }
     const bl = g.buildings.find((b) => Math.abs(b.x - p.x) < (b.isHQ ? 100 : 62) && p.y > b.y - (b.isHQ ? 150 : 110) && p.y < b.y + (b.isHQ ? 80 : 56));
     if (bl && !sqs.length) { hud.selectBase(bl, null); return; }
     const pad = g.pads.find((pd) => !pd.building && dist(pd, p) < 56);

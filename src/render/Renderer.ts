@@ -630,6 +630,7 @@ export class Renderer {
    *  idle breathing, fire recoil (squash + kick back), muzzle flash for gun-type towers. */
   private towerImg(key: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, flash: boolean, recoil = 0, phase = 0, an?: TowerAnim) {
     if (key === 'proc:unsc_tank' || key === 'proc:unsc_heli') { this.vehicle(key.slice(10), tier, x, y, vis, aim, recoil, phase); return; }
+    if (key === 'proc:unsc_destroyer' || key === 'proc:unsc_beacon') { this.naval(key.slice(10), tier, x, y, vis, aim, recoil, phase); return; }
     const c = this.ctx, sz = TOWER_PX * (vis.scale ?? 1), footY = y + 20;
     const im = body(key, tier), hd = head(key, tier), time = this.g.time + phase;
     if (vis.glow) {
@@ -687,7 +688,74 @@ export class Renderer {
       this.additive(td.id === 'wizard_monkey' ? IMG.fx_magic : IMG.fx_star, x + (flip ? -1 : 1) * w * 0.3, footY - h * 0.85, 12 + tier * 5, time, 0.35 + 0.25 * Math.sin(time * 3));
     }
   }
-  /** t42 real-scale vehicles (M808 tank ~8-10 m, AH-9 gunship ~11-13 m) from 16-yaw sheets rendered off the GLBs.
+  /** t57: procedural destroyer (top-down-ish) and Harbor Beacon lighthouse. */
+  private naval(k: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, recoil: number, phase: number) {
+    const c = this.ctx, time = this.g.time + phase, sc = (vis.scale ?? 1);
+    if (k === 'unsc_beacon' || k === 'beacon') {
+      const H = 78 * sc + tier * 10, W = 28 * sc + tier * 3;
+      this.shadowAt(x, y + 6, 26 * sc, 12 * sc, 0.35);
+      // rocky base / pier
+      c.fillStyle = '#5a6570'; c.beginPath(); c.ellipse(x, y + 4, 22 + tier * 3, 12 + tier, 0, 0, 7); c.fill();
+      c.fillStyle = '#3e4650'; c.fillRect(x - W * 0.35, y - H * 0.15, W * 0.7, H * 0.2);
+      // tower shaft
+      const g = c.createLinearGradient(x - W / 2, 0, x + W / 2, 0);
+      g.addColorStop(0, '#d8d2c4'); g.addColorStop(0.5, '#f4efe3'); g.addColorStop(1, '#b8b09e');
+      c.fillStyle = g; c.fillRect(x - W / 2, y - H, W, H * 0.85);
+      // red/white bands escalate with tier
+      const bands = 2 + tier;
+      for (let i = 0; i < bands; i++) {
+        c.fillStyle = i % 2 ? '#c62828' : '#f5f0e6';
+        c.fillRect(x - W / 2, y - H + 8 + i * (H * 0.7 / bands), W, H * 0.7 / bands * 0.55);
+      }
+      // lantern room
+      c.fillStyle = '#2a3038'; c.fillRect(x - W * 0.55, y - H - 6, W * 1.1, 14 + tier * 2);
+      c.fillStyle = `rgba(255,${200 - tier * 20},${80 + tier * 40},${0.55 + Math.sin(time * 6) * 0.2})`;
+      c.beginPath(); c.arc(x, y - H, 10 + tier * 2, 0, 7); c.fill();
+      // rotating beam preview
+      c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = `rgba(255,220,100,${0.25 + tier * 0.1})`;
+      c.lineWidth = 3 + tier; c.beginPath(); c.moveTo(x, y - H);
+      c.lineTo(x + Math.cos(aim) * (50 + tier * 12), y - H + Math.sin(aim) * (50 + tier * 12) * 0.55); c.stroke(); c.restore();
+      if (vis.glow) { c.fillStyle = vis.glow + '44'; c.beginPath(); c.arc(x, y - H, 22 + tier * 4, 0, 7); c.fill(); }
+      return;
+    }
+    // destroyer ship
+    const L = (95 + tier * 18) * sc, B = (28 + tier * 4) * sc;
+    this.shadowAt(x, y + 8, L * 0.45, B * 0.55, 0.4);
+    // wake
+    c.strokeStyle = 'rgba(180,220,255,0.35)'; c.lineWidth = 2;
+    c.beginPath(); c.ellipse(x - Math.cos(aim) * L * 0.35, y - Math.sin(aim) * L * 0.2 + 6, L * 0.35, B * 0.7, aim, 0, 7); c.stroke();
+    c.save(); c.translate(x, y); c.rotate(aim);
+    // hull
+    const hull = c.createLinearGradient(0, -B, 0, B);
+    hull.addColorStop(0, '#3a4652'); hull.addColorStop(0.5, '#6a7888'); hull.addColorStop(1, '#2e3844');
+    c.fillStyle = hull; c.beginPath();
+    c.moveTo(L * 0.48, 0); c.quadraticCurveTo(L * 0.35, -B * 0.95, -L * 0.35, -B * 0.75);
+    c.lineTo(-L * 0.48, -B * 0.2); c.lineTo(-L * 0.48, B * 0.2); c.lineTo(-L * 0.35, B * 0.75);
+    c.quadraticCurveTo(L * 0.35, B * 0.95, L * 0.48, 0); c.fill();
+    // deck
+    c.fillStyle = '#4a5560'; c.fillRect(-L * 0.32, -B * 0.35, L * 0.55, B * 0.7);
+    // superstructure
+    c.fillStyle = '#d8dce0'; c.fillRect(-L * 0.08, -B * 0.28, L * 0.22, B * 0.56);
+    c.fillStyle = '#2a3340'; c.fillRect(-L * 0.02, -B * 0.18, L * 0.1, B * 0.36);
+    // turrets (tier = more)
+    const guns = 1 + tier;
+    for (let i = 0; i < guns; i++) {
+      const gx = L * (0.18 - i * 0.2) - recoil * 4;
+      c.fillStyle = '#1e242c'; c.beginPath(); c.arc(gx, 0, 6 + tier, 0, 7); c.fill();
+      c.fillStyle = '#11151a'; c.fillRect(gx, -2.5, 18 + tier * 3, 5);
+    }
+    // mast / radar escalate
+    c.strokeStyle = '#cfd5da'; c.lineWidth = 2; c.beginPath(); c.moveTo(L * 0.02, 0); c.lineTo(L * 0.02, -B * (0.9 + tier * 0.15)); c.stroke();
+    if (tier >= 1) { c.fillStyle = '#8fa0b0'; c.fillRect(-4, -B * 1.05, 12, 5); }
+    if (tier >= 2) { c.fillStyle = '#ffb35a'; c.beginPath(); c.arc(L * 0.02, -B * 1.15, 4, 0, 7); c.fill(); }
+    c.restore();
+    if (vis.glow) {
+      const gr = c.createRadialGradient(x, y, 4, x, y, L * 0.5);
+      gr.addColorStop(0, vis.glow + '55'); gr.addColorStop(1, vis.glow + '00');
+      c.fillStyle = gr; c.beginPath(); c.ellipse(x, y, L * 0.5, B * 0.9, 0, 0, 7); c.fill();
+    }
+  }
+    /** t42 real-scale vehicles (M808 tank ~8-10 m, AH-9 gunship ~11-13 m) from 16-yaw sheets rendered off the GLBs.
    *  The whole hull yaws to the aim; the gunship hovers with a bob, a ground shadow and a spinning rotor disc. */
   private vehicle(k: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, recoil: number, phase: number) {
     const c = this.ctx, m = MIL[`${k}_${tier}`], im = IMG[`mil:${k}_${tier}`], time = this.g.time + phase, heli = k === 'heli';

@@ -38,10 +38,10 @@ type Wallet = { res: ReturnType<Game['res']['dump']>; energy: number; powerCd: R
 type Ref = { $: string; u?: number; i?: number; p?: number; x?: number; y?: number };
 
 /** Game methods that become network commands on a client (and permission-checked on the host). */
-const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
+const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'moveTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
   'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl'] as const;
 /** Applied optimistically on the client too (instant response; the snapshot corrects). */
-const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
+const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'moveTower', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
 /** Proto methods (Tower / Building instances). */
 const P_METHODS: [typeof Tower | typeof Building, string, string][] = [[Tower, 'upgrade', 'tw.upgrade'], [Tower, 'useAbility', 'tw.useAbility'], [Building, 'upgrade', 'bd.upgrade'], [Building, 'enqueue', 'bd.enqueue'], [Building, 'cancel', 'bd.cancel']];
 let ACTIVE: Sync | null = null;
@@ -175,7 +175,7 @@ export class Sync {
     if (name === 'startFreeplay' && pid !== 0) return 'Only the host can start Freeplay';
     const a0 = args[0];
     const ownTower = (t: unknown) => !(t instanceof Tower) || t.owner === pid;
-    if (['sellTower', 'cycleTargeting', 'tw.upgrade', 'tw.useAbility'].includes(name) && !ownTower(a0)) return `That's P${(a0 as Tower).owner + 1}'s tower — only its owner can upgrade or sell it`;
+    if (['sellTower', 'moveTower', 'cycleTargeting', 'tw.upgrade', 'tw.useAbility'].includes(name) && !ownTower(a0)) return `That's P${(a0 as Tower).owner + 1}'s tower — only its owner can upgrade or sell it`;
     if (name === 'setTargeting' && a0 instanceof Tower && !ownTower(a0)) return `That's P${a0.owner + 1}'s tower`;
     if (['demolish', 'setRally', 'bd.upgrade', 'bd.enqueue', 'bd.cancel'].includes(name) && a0 instanceof Building && !a0.isHQ && a0.owner !== pid) return `That's P${a0.owner + 1}'s building`;
     const canSq = (s: unknown) => !(s instanceof Squad) || s.owner === pid || !!this.allowAlly.get(s.owner);
@@ -502,9 +502,12 @@ export class Sync {
         g.towers.push(t); this.map(uid, t);
         g.fx({ kind: 'dust', x: t.x, y: t.y + 16, r: 26, color: '#e8d8b0', dur: 0.4 });
       }
-      if (t.cell.c !== c || t.cell.r !== r) { // moved by Organize Farms
-        g.grid.release(t.cell.c, t.cell.r); const fx = t.x, fy = t.y; t.cell = { c, r };
-        const q = g.grid.cellCenter(c, r); t.x = q.x; t.y = q.y; g.grid.occupy(t, c, r);
+      if (tx !== undefined && ty !== undefined && !g.gridKind(id)) {
+        if (t.cell.c !== c || t.cell.r !== r) { g.grid.releaseOwner(t); t.cell = { c, r }; g.occupyTower(t); }
+        if (Math.hypot(t.x - tx, t.y - ty) > 1.5) { t.x += (tx - t.x) * 0.45; t.y += (ty - t.y) * 0.45; }
+      } else if (t.cell.c !== c || t.cell.r !== r) { // moved by Organize Farms
+        g.grid.releaseOwner(t); const fx = t.x, fy = t.y; t.cell = { c, r };
+        const q = g.grid.cellCenter(c, r); t.x = q.x; t.y = q.y; g.occupyTower(t);
         t.slide = { fx, fy, tx: q.x, ty: q.y, t: 0, dur: 0.6 };
       }
       if (t.tier > tier && t.data.tiers[tier]) { // client got ahead (rejected optimistic upgrade / corruption): host wins

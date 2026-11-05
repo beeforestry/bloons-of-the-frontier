@@ -12,6 +12,7 @@ import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
 import { buildWaves } from '../data/waves';
 import { DIFFICULTIES, applyCostMul, type Difficulty } from '../data/difficulty';
+import { groundH } from '../data/terrain';
 import { setHQ } from '../systems/TargetingSystem';
 import { PathSystem } from '../systems/PathSystem';
 import { SHORTCUT, Shortcut, routeThrough, segDistance, type ShortcutDef } from '../systems/Shortcuts';
@@ -420,7 +421,7 @@ export class Game {
     if ((this.powerCd[id] ?? 0) > 0) { this.toast(`${p.name} recharging`); return false; }
     if (this.energy < p.energy) { this.toast(`Need ${p.energy} energy`, '#ff8a7a'); return false; }
     this.energy -= p.energy; this.powerCd[id] = p.cooldown; this.stats.powers++;
-    this.voice(id === 'mac' ? 'MAC round inbound!' : 'Medic drop away!');
+    this.voice(id === 'mac' ? 'Orbital Barrage inbound!' : 'Medic drop away!');
     let ang = 0, x = at.x, y = at.y;
     if (id === 'mac') {
       const nl = this.nearestLane(at);
@@ -428,7 +429,7 @@ export class Game {
       else { const prev = this.paths[nl.lane].at(nl.d); ang = prev.ang; }
     }
     this.strikes.push({ kind: id, x, y, ang, t: 0, hit: new Set(), segs: 0, owner: this.actingPid, aim: { x: at.x, y: at.y } });
-    this.toast(id === 'mac' ? 'MAC round inbound!' : 'Medical canister away!', id === 'mac' ? '#ffd84a' : '#9ff7b0');
+    this.toast(id === 'mac' ? 'Orbital Barrage inbound!' : 'Medical canister away!', id === 'mac' ? '#ffd84a' : '#9ff7b0');
     return true;
   }
   private updateStrikes(dt: number) {
@@ -683,7 +684,11 @@ export class Game {
     }
     if (tw.data.hitscan) {
       const sniper = tw.data.id === 'sniper_monkey';
-      for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, sniper ? '#fff6d0' : kind === 'rail' ? '#8fd0ff' : '#ff4040', sniper ? 2 : kind === 'rail' ? 5 : 2.5, hit);
+      const beacon = tw.data.id === 'unsc_beacon';
+      const lock = tw.combat?.lockT ?? 0;
+      const col = sniper ? '#fff6d0' : kind === 'rail' ? '#8fd0ff' : beacon ? '#ffd24a' : '#ff4040';
+      const w = sniper ? 2 : kind === 'rail' ? 5 : beacon ? 3 + Math.min(10, lock * 2.2) : 2.5;
+      for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, col, w, hit);
       this.sfx(kind === 'rail' ? 'rail' : 'laser', tw.x, tw.y);
       return;
     }
@@ -941,6 +946,31 @@ export class Game {
   towerRadius(id: string) { return (towerById(id).footprint ?? 1) * this.grid.cell * 0.4; }
   /** Farms stay on the light internal grid so the Farmhand can pack them; everything else is free-placed. */
   gridKind(id: string) { return towerById(id).kind === 'farm'; }
+  /** Open water (terrain below the water plane). Flat maps without terrain have no water pads. */
+  isWaterAt(x: number, y: number) {
+    const ter = this.map.terrain; if (!ter) return false;
+    return groundH(this.map, x, y) < ter.water + 0.55;
+  }
+  /** Land cell within `r` px of open water (shoreline for Harbor Beacon). */
+  nearWater(x: number, y: number, r = 36) {
+    if (this.isWaterAt(x, y)) return true;
+    for (let a = 0; a < 8; a++) {
+      const nx = x + Math.cos(a * Math.PI / 4) * r, ny = y + Math.sin(a * Math.PI / 4) * r;
+      if (this.isWaterAt(nx, ny)) return true;
+    }
+    return false;
+  }
+  /** Surface allowed by the tower's placeOn (default land; airborne defaults to air). */
+  surfaceOk(id: string, x: number, y: number) {
+    const d = towerById(id);
+    const place = d.placeOn ?? (d.airborne ? 'air' : 'land');
+    const water = this.isWaterAt(x, y), land = this.grid.isLandAt(x, y);
+    if (place === 'land') return land;
+    if (place === 'water') return water;
+    if (place === 'air') return water || land;
+    if (place === 'amphibious') return water || (land && this.nearWater(x, y));
+    return land;
+  }
   /** Is a tower of `id` allowed with its centre at (x, y)? */
   spotOk(id: string, x: number, y: number, ignore?: Tower): boolean {
     const R = this.towerRadius(id), m = this.map;
@@ -948,7 +978,7 @@ export class Game {
     if (this.nearestLane({ x, y }).dist < m.pathWidth / 2 + R * 0.55) return false;
     const k = R * 0.7;
     for (const [sx, sy] of [[x, y], [x + k, y], [x - k, y], [x, y + k], [x, y - k]]) {
-      if (!this.grid.isLandAt(sx, sy)) return false;
+      if (!this.surfaceOk(id, sx, sy)) return false;
       const o = this.grid.occupant(...(Object.values(this.grid.worldToCell({ x: sx, y: sy })) as [number, number]));
       if (o && o !== ignore && o.alive && this.gridKind(o.data.id)) return false;
     }
@@ -1010,7 +1040,7 @@ export class Game {
     if (data.kind === 'path') return null;
     const fp = data.footprint ?? 1;
     if (cell.x !== undefined) cell = { ...cell, ...this.grid.worldToCell({ x: cell.x, y: cell.y! }) };
-    if (!this.spotValid(id, cell)) { if (fp > 1) this.toast(`${data.name} needs more clear ground`, '#ff8a7a'); return null; }
+    if (!this.spotValid(id, cell)) { const need = data.placeOn === 'water' ? 'open water' : data.placeOn === 'amphibious' ? 'shore or water' : data.placeOn === 'air' ? 'clear land or water' : 'clear ground'; if (fp > 1 || data.placeOn) this.toast(`${data.name} needs ${need}`, '#ff8a7a'); return null; }
     if (!this.res.spend({ credits: data.tiers[0].cost })) { this.toast('Not enough credits', '#ff8a7a'); return null; }
     const t = new Tower(data, cell, this);
     t.owner = this.actingPid;
@@ -1038,6 +1068,15 @@ export class Game {
     t.remove();
     this.towers = this.towers.filter((x) => x !== t); this.losVer++;
     this.fx({ kind: 'text', x: t.x, y: t.y - 20, text: `+${t.sellValue}`, color: '#ffe14d', dur: 1 });
+  }
+  /** Relocate a movable vehicle (tank / gunship). Cancels auto-chase until it arrives. */
+  moveTower(t: Tower, at: Vec): boolean {
+    if (!t.alive || !t.data.movable || t.disabled) return false;
+    if (!this.spotOk(t.data.id, at.x, at.y, t)) { this.toast(`Can't move ${t.data.name} there`, '#ff8a7a'); this.sfx('error'); return false; }
+    t.orderMove(at.x, at.y);
+    this.sfx('command');
+    this.fx({ kind: 'ring', x: at.x, y: at.y, r: 28, color: '#7fd3ff', dur: 0.45 });
+    return true;
   }
   cycleTargeting(t: Tower) {
     const order = TARGETING_ORDER;
