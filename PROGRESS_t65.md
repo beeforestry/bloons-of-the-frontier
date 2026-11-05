@@ -23,5 +23,5 @@ User (t65u / t66u): Siege Gunner floating off the Bulwark roof; Skyranger blades
 - Gunner is a small procedural cupola (not a full seated monkey mesh); visible on roof in mid exterior shot but easy to miss in pure side silhouette.
 
 ## SHAs
-- **main** (see tip) — t65 attach + photoreal + brightness pass
-- **gh-pages** — Deploy matching main (kept `.nojekyll`; no force push)
+- **main** `a2a5a6f` — t65 attach + photoreal + brightness
+- **gh-pages** `976ac47` — Deploy a2a5a6f (kept `.nojekyll`; no force push)
