@@ -45,3 +45,18 @@ Repo URL / gh-pages path `/bloons-of-the-frontier/` unchanged. Faction enum `Fac
 - `npm run validate` + `tsc` + vite build clean.
 - `tests/e2e_t57.py` — water place, destroyer, beacon ramp, heli water move + chase, tank move + MG, rename table, Sky Colossus.
 - Screenshots: `screenshots/t57/`.
+
+
+## Commits
+- **main** `cfb8973` — full A–D implementation
+- **gh-pages** `7e4eb0c` — Deploy cfb8973
+- Live: https://beeforestry.github.io/bloons-of-the-frontier/
+
+## Screenshots (local, gitignored)
+screenshots/t57/: destroyer_water, beacon_laser, heli_move, tank_gunner, tropical_naval_overview, destroyer_fp, beacon_fp, heli_fp, tank_fp
+
+## Known gaps
+- Procedural (not photo-scanned) destroyer/beacon 3D hulls; matching 2D naval look
+- Code comments still mention a few old marks (Wall-Nut, Hypno, etc.); user-facing strings cleaned
+- El Morro roadside still tight for free placement; Tropical water lanes are the destroyer/beacon playground
+- Full plant/monkey 3D reskin deferred (touched units first)
