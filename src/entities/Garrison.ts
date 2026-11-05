@@ -74,7 +74,7 @@ export class Obstacle {
    *  so opening it is always a deliberate choice. */
   blast(g: Game, n: number) {
     if (!this.alive || g.isClient) return;
-    if (this.shortcut && n < 999) { if (Math.random() < 0.05) g.fx({ kind: 'text', x: this.x, y: this.y - 40, text: 'too solid — MAC or Demolish', color: '#d8c8a8', dur: 0.8 }); return; }
+    if (this.shortcut && n < 999) { if (Math.random() < 0.05) g.fx({ kind: 'text', x: this.x, y: this.y - 40, text: 'too solid — Orbital Barrage or Demolish', color: '#d8c8a8', dur: 0.8 }); return; }
     this.hp -= n; this.hitFlash = 0.1;
     if (this.hp <= 0) g.clearObstacle(this);
   }

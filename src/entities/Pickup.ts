@@ -1,7 +1,7 @@
 // Dropped loot.
 //  credit: farm crates / bug shards. Farmhands collect for full value; click to
 //          collect; left alone they auto-deposit at 60% after 14 s.
-//  orb:    Sunflower / Farmhand energy orbs (fuel MAC + Heal). Click or they
+//  orb:    Sunflower / Farmhand energy orbs (fuel Orbital Barrage + Heal). Click or they
 //          float home on their own after 7 s.
 //  scrap:  heavy enemies, ceramic/lead bloons and cleared terrain drop scrap
 //          piles. Scrap is its OWN currency (never converted to credits): troops
