@@ -48,8 +48,8 @@ Repo URL / gh-pages path `/bloons-of-the-frontier/` unchanged. Faction enum `Fac
 
 
 ## Commits
-- **main** `cfb8973` — full A–D implementation
-- **gh-pages** `7e4eb0c` — Deploy cfb8973
+- **main** `a7b922c` (feature `cfb8973` + polish)
+- **gh-pages** `fa54b36` — Deploy a7b922c
 - Live: https://beeforestry.github.io/bloons-of-the-frontier/
 
 ## Screenshots (local, gitignored)
