@@ -16,3 +16,7 @@ User (t65u / t66u): Siege Gunner floating off the Bulwark roof; Skyranger blades
 - Quaternius tank UVs are game-low-poly; photo tiling reads as painted steel up close but is not a scanned MBT. Under SwiftShader / flat dusk lighting the olive still goes quite dark at distance.
 - Lighthouse is procedural geometry (not photogrammetry); close-up cream/red bands + gallery + lantern read correctly. Distant views can still silhouette.
 - Heli blades spin fast in-game; frozen-frame shots needed to see the hub clearly. Geometry is parented correctly (probe: rotorY ≈ 3.4 on fuselage ~3.07).
+
+## SHAs
+- **main** `460c774` — t65 attach + photoreal
+- **gh-pages** `60bbb43` — Deploy 460c774 (kept `.nojekyll`; no force push)
