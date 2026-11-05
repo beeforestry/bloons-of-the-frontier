@@ -61,13 +61,16 @@ function photoMat(opts: {
     color: opts.color ?? 0xffffff,
     metalness: opts.metal ?? 0.1,
     roughness: opts.rough ?? 0.7,
-    envMapIntensity: 1.05,
+    envMapIntensity: 0.85,
     flatShading: !!opts.flat,
     vertexColors: false,
   });
   // Clamp so medium-quality / no-HDRI never crushes to a black silhouette.
-  m.metalness = Math.min(m.metalness, 0.35);
-  m.roughness = Math.max(m.roughness, 0.4);
+  m.metalness = Math.min(m.metalness, 0.22);
+  m.roughness = Math.max(m.roughness, 0.55);
+  // Soft fill — dusk + SwiftShader have almost no env light; keep painted steel readable.
+  m.emissive = new THREE.Color(0x1a1c14);
+  m.emissiveIntensity = 0.35;
   return m;
 }
 
@@ -117,7 +120,7 @@ export async function tank(t: number): Promise<THREE.Group> {
   const hullMap = t >= 2 ? 'tank_olive' : 'tank_tan';
   const hull = photoMat({ map: hullMap, nor: 'tank_n', roughMap: 'tank_rough', rep: 2.4, color: 0xffffff, metal: 0.08, rough: 0.72 });
   const hullDark = photoMat({ map: hullMap, nor: 'tank_n', roughMap: 'tank_rough', rep: 2.8, color: 0xd8dcc8, metal: 0.1, rough: 0.75 });
-  const track = photoMat({ map: 'tank_track', nor: 'tank_track_n', rep: 3.2, color: 0x3a3a38, metal: 0.05, rough: 0.92 });
+  const track = photoMat({ map: 'tank_track', nor: 'tank_track_n', rep: 3.2, color: 0x6a6860, metal: 0.05, rough: 0.92 });
   const iron = photoMat({ map: 'tank_iron', nor: 'tank_iron_n', rep: 1.8, color: 0xc8c8c0, metal: 0.22, rough: 0.55 });
   g.traverse((o) => {
     const mesh = o as THREE.Mesh; if (!mesh.isMesh) return;
@@ -172,7 +175,7 @@ export async function tank(t: number): Promise<THREE.Group> {
     // Base ring sunk into the turret roof so the cupola clearly reads as mounted, not hovering.
     gunner.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.4, 0.12, 10), olive), 0, 0.04, 0));
     gunner.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.32, 8), olive), 0, 0.26, 0));
-    gunner.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), photoMat({ map: 'tank_track', nor: 'tank_track_n', rep: 1.5, color: 0x5a6048, metal: 0.05, rough: 0.85 })), 0, 0.48, 0)); // helmet
+    gunner.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), photoMat({ map: 'tank_track', nor: 'tank_track_n', rep: 1.5, color: 0x8a9068, metal: 0.05, rough: 0.85 })), 0, 0.48, 0)); // helmet
     const mg = new THREE.Group(); mg.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.2), dark), 0, 0, 0));
     mg.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.15, 6).rotateZ(Math.PI / 2), dark), 0.7, 0.02, 0));
     at(mg, 0.12, 0.48, 0.28); gunner.add(mg);
