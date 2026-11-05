@@ -1,0 +1,158 @@
+13:15:05 | INFO: Data are loaded, start creating Blender stuff
+13:15:05 | INFO: Blender create Mesh node Sphere
+13:15:05 | INFO: glTF import finished in 0.00s
+Blender 4.3.2
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:22.16 | Rendering 1 / 64 samples
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:24.67 | Rendering 25 / 64 samples
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:26.64 | Rendering 50 / 64 samples
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:27.69 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_bloon_red.png'
+Time: 00:27.87 (Saving: 00:00.16)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_bloon_red.png
+13:15:33 | INFO: Data are loaded, start creating Blender stuff
+13:15:33 | INFO: Blender create Mesh node Sphere
+13:15:33 | INFO: glTF import finished in 0.01s
+Fra:1 Mem:54.33M (Peak 54.33M) | Time:00:00.69 | Rendering 1 / 64 samples
+Fra:1 Mem:54.33M (Peak 54.33M) | Time:00:02.69 | Rendering 25 / 64 samples
+Fra:1 Mem:54.33M (Peak 54.33M) | Time:00:04.47 | Rendering 50 / 64 samples
+Fra:1 Mem:54.33M (Peak 54.33M) | Time:00:05.49 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_bloon_lead.png'
+Time: 00:05.53 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_bloon_lead.png
+13:15:39 | INFO: Data are loaded, start creating Blender stuff
+13:15:39 | INFO: Blender create Mesh node Sphere
+13:15:39 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:00.65 | Rendering 1 / 64 samples
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:02.39 | Rendering 25 / 64 samples
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:04.08 | Rendering 50 / 64 samples
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:05.17 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_bloon_ceramic.png'
+Time: 00:05.21 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_bloon_ceramic.png
+13:15:44 | INFO: Data are loaded, start creating Blender stuff
+13:15:44 | INFO: Blender create Mesh node Sphere
+13:15:44 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:00.58 | Rendering 1 / 64 samples
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:02.26 | Rendering 25 / 64 samples
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:03.95 | Rendering 50 / 64 samples
+Fra:1 Mem:54.27M (Peak 54.27M) | Time:00:05.03 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_bloon_blue.png'
+Time: 00:05.08 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_bloon_blue.png
+13:15:49 | INFO: Data are loaded, start creating Blender stuff
+13:15:49 | INFO: Blender create Mesh node Cube
+13:15:49 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.39M (Peak 54.39M) | Time:00:00.64 | Rendering 1 / 64 samples
+Fra:1 Mem:54.39M (Peak 54.39M) | Time:00:02.32 | Rendering 25 / 64 samples
+Fra:1 Mem:54.39M (Peak 54.39M) | Time:00:04.03 | Rendering 50 / 64 samples
+Fra:1 Mem:54.39M (Peak 54.39M) | Time:00:05.07 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_tower_dart.png'
+Time: 00:05.11 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_tower_dart.png
+13:15:54 | INFO: Data are loaded, start creating Blender stuff
+13:15:54 | INFO: Blender create Mesh node Cube
+13:15:54 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.49M (Peak 54.49M) | Time:00:00.73 | Rendering 1 / 64 samples
+Fra:1 Mem:54.49M (Peak 54.49M) | Time:00:02.45 | Rendering 25 / 64 samples
+Fra:1 Mem:54.49M (Peak 54.49M) | Time:00:04.18 | Rendering 50 / 64 samples
+Fra:1 Mem:54.49M (Peak 54.49M) | Time:00:05.21 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_tower_ninja.png'
+Time: 00:05.26 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_tower_ninja.png
+13:16:00 | INFO: Data are loaded, start creating Blender stuff
+13:16:00 | INFO: Blender create Mesh node Cube
+13:16:00 | INFO: glTF import finished in 0.01s
+Fra:1 Mem:54.63M (Peak 54.63M) | Time:00:00.66 | Rendering 1 / 64 samples
+Fra:1 Mem:54.63M (Peak 54.63M) | Time:00:02.37 | Rendering 25 / 64 samples
+Fra:1 Mem:54.63M (Peak 54.63M) | Time:00:04.20 | Rendering 50 / 64 samples
+Fra:1 Mem:54.63M (Peak 54.63M) | Time:00:05.22 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_tower_wizard.png'
+Time: 00:05.26 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_tower_wizard.png
+13:16:05 | INFO: Data are loaded, start creating Blender stuff
+13:16:05 | INFO: Blender create Mesh node Cube
+13:16:05 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:00.63 | Rendering 1 / 64 samples
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:02.30 | Rendering 25 / 64 samples
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:04.11 | Rendering 50 / 64 samples
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:05.02 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_tower_sniper.png'
+Time: 00:05.07 (Saving: 00:00.02)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_tower_sniper.png
+13:16:10 | INFO: Data are loaded, start creating Blender stuff
+13:16:10 | INFO: Blender create Mesh node Cube
+13:16:10 | INFO: glTF import finished in 0.01s
+Fra:1 Mem:54.75M (Peak 54.75M) | Time:00:00.63 | Rendering 1 / 64 samples
+Fra:1 Mem:54.75M (Peak 54.75M) | Time:00:02.23 | Rendering 25 / 64 samples
+Fra:1 Mem:54.75M (Peak 54.75M) | Time:00:03.94 | Rendering 50 / 64 samples
+Fra:1 Mem:54.75M (Peak 54.75M) | Time:00:04.92 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_tower_apex.png'
+Time: 00:04.97 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_tower_apex.png
+13:16:15 | INFO: Data are loaded, start creating Blender stuff
+13:16:15 | INFO: Blender create Mesh node Cube
+13:16:15 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:00.61 | Rendering 1 / 64 samples
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:02.20 | Rendering 25 / 64 samples
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:03.84 | Rendering 50 / 64 samples
+Fra:1 Mem:54.41M (Peak 54.41M) | Time:00:04.81 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_tower_glue.png'
+Time: 00:04.85 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_tower_glue.png
+13:16:20 | INFO: Data are loaded, start creating Blender stuff
+13:16:20 | INFO: Blender create Mesh node Sphere
+13:16:20 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:01.18 | Rendering 1 / 64 samples
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:02.84 | Rendering 25 / 64 samples
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:04.63 | Rendering 50 / 64 samples
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:05.61 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_bug_scavenger.png'
+Time: 00:05.66 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_bug_scavenger.png
+13:16:25 | INFO: Data are loaded, start creating Blender stuff
+13:16:25 | INFO: Blender create Mesh node Cylinder
+13:16:25 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:01.25 | Rendering 1 / 64 samples
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:03.04 | Rendering 25 / 64 samples
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:04.88 | Rendering 50 / 64 samples
+Fra:1 Mem:54.22M (Peak 54.22M) | Time:00:05.77 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_gun_dart.png'
+Time: 00:05.81 (Saving: 00:00.02)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_gun_dart.png
+13:16:31 | INFO: Data are loaded, start creating Blender stuff
+13:16:31 | INFO: Blender create Mesh node Cylinder
+13:16:31 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.35M (Peak 54.35M) | Time:00:00.63 | Rendering 1 / 64 samples
+Fra:1 Mem:54.35M (Peak 54.35M) | Time:00:02.26 | Rendering 25 / 64 samples
+Fra:1 Mem:54.35M (Peak 54.35M) | Time:00:03.77 | Rendering 50 / 64 samples
+Fra:1 Mem:54.35M (Peak 54.35M) | Time:00:04.66 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_gun_sniper.png'
+Time: 00:04.71 (Saving: 00:00.02)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_gun_sniper.png
+13:16:36 | INFO: Data are loaded, start creating Blender stuff
+13:16:36 | INFO: Blender create Mesh node Cylinder
+13:16:36 | INFO: glTF import finished in 0.00s
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:00.57 | Rendering 1 / 64 samples
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:02.10 | Rendering 25 / 64 samples
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:03.82 | Rendering 50 / 64 samples
+Fra:1 Mem:54.47M (Peak 54.47M) | Time:00:04.70 | Rendering 64 / 64 samples
+Saved: '/workspace/bloons-frontier/screenshots/t71/preview_gun_laser.png'
+Time: 00:04.74 (Saving: 00:00.03)
+
+rendered /workspace/bloons-frontier/screenshots/t71/preview_gun_laser.png
+previews done
+
+Blender quit

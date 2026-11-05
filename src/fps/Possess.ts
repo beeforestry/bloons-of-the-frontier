@@ -18,7 +18,8 @@ import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
-import { enemySpriteTex } from './enemies3d';
+import { enemySpriteTex, loadBloonGeometry, loadScavengerGeometry } from './enemies3d';
+import { loadGlbClone, TOWER_GLB, GUN_GLB } from './glbModels';
 import { setMatQuality, matOf } from './mats';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
@@ -332,6 +333,25 @@ export class Possess {
       const mz = (mg.userData.muzzle as THREE.Vector3).clone().multiplyScalar(1.25);
       return swap(g, mz, new THREE.Vector3(0.12, -0.3, -0.42), 'mounted_mg');
     }
+    if (o instanceof Tower && o.t.combat) {
+      const proj = o.data.projectile ?? 'dart';
+      const gunName = GUN_GLB[proj] ?? GUN_GLB[o.data.id === 'unsc_rail' ? 'rail' : ''] ?? null;
+      if (gunName) {
+        try {
+          const model = await loadGlbClone(gunName);
+          // Our Blender guns face +X; Possess camera looks down -Z — rotate so muzzle is -Z
+          model.rotation.y = -Math.PI / 2;
+          model.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(model);
+          const size = box.getSize(new THREE.Vector3());
+          const L = Math.max(size.x, size.z, 0.4);
+          const g = new THREE.Group(); g.add(model);
+          const mz = new THREE.Vector3(0, 0.02, -L * 0.55);
+          this.vm.tex.gun++;
+          return swap(g, mz, new THREE.Vector3(0.15, -0.22, -0.35), 'glb_' + gunName, proj === 'laser' || proj === 'rail' ? 1.4 : 0.9);
+        } catch (e) { console.warn('glb gun', gunName, e); }
+      }
+    }
     if (o instanceof Unit) {
       const veh = !!o.squad.data.vehicle, kind = gunFor(o.squad.data.id, veh), gm = await gun(kind);
       // Kenney guns are chunky extruded silhouettes: flatten the profile a bit so it reads like a real rifle
@@ -393,6 +413,8 @@ export class Possess {
     this.poolMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7ee02c, transparent: true, opacity: 0.6, depthWrite: false }), 48);
     for (const m of [this.acidMesh, this.poolMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
     for (const m of [this.bloonMesh, this.bugMesh, this.unitMesh, this.shotMesh, this.bitMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
+    // t71: swap procedural bloon/bug geos for Blender GLBs when ready (keep pools usable immediately)
+    void this.upgradeEnemyGlbs();
     // t67: more tracers for rail/laser/beacon + other towers firing nearby
     const tm = new THREE.LineBasicMaterial({ color: 0xfff0a0, transparent: true, depthWrite: false });
     for (let i = 0; i < 48; i++) {
@@ -400,6 +422,19 @@ export class Possess {
       line.visible = false; line.frustumCulled = false; this.scene.add(line);
       this.tracers.push({ line, life: 0 });
     }
+  }
+  /** t71: replace InstancedMesh geometries with Blender-authored bloon/scavenger GLBs. */
+  private async upgradeEnemyGlbs() {
+    try {
+      for (const id of ['red', 'blue', 'green', 'yellow', 'pink', 'lead', 'ceramic']) {
+        const mesh = this.bloonMeshes.get(id); if (!mesh) continue;
+        const geo = await loadBloonGeometry(id); if (!this.alive) return;
+        const old = mesh.geometry; mesh.geometry = geo; old.dispose();
+      }
+      const sgeo = await loadScavengerGeometry(); if (!this.alive) return;
+      const oldB = this.bugMesh.geometry; this.bugMesh.geometry = sgeo; oldB.dispose();
+      this.vm.towers3d['glb_bloons'] = 7; this.vm.towers3d['glb_scavenger'] = 1;
+    } catch (e) { console.warn('glb enemies', e); }
   }
   private bossModel(e: Enemy): THREE.Group {
     let m = this.bossModels.get(e); if (m) return m;
@@ -426,6 +461,21 @@ export class Possess {
       const load = veh === 'tank' ? tank(t.tier) : veh === 'heli' ? heli(t.tier) : Promise.resolve(veh === 'destroyer' ? destroyer(t.tier) : beacon(t.tier));
       void load.then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; const z = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()); this.vm.size[veh] = [z.x, z.y, z.z].map((n) => +n.toFixed(2)); });
       root.userData.veh = veh; this.scene.add(root); this.towerModels.set(t, mm); return mm;
+    }
+    // t71: Blender hero GLB for key towers (sprite-projected); head group aims with turret
+    const glbName = TOWER_GLB[t.data.id];
+    if (glbName) {
+      const root = new THREE.Group(), head = new THREE.Group(); root.add(head);
+      const mm: { root: THREE.Group; head: THREE.Group; veh?: undefined; tier: number; model?: THREE.Group; base?: number } = { root, head, tier: t.tier, base: 1, model: undefined };
+      void loadGlbClone(glbName).then((model) => {
+        if (!this.alive || !this.towerModels.get(t)) return;
+        // Model stands on y=0 facing +X; put in head so aim yaw rotates the whole hero
+        model.scale.setScalar(1.15);
+        head.add(model); mm.model = model; this.vm.towers3d['glb_' + glbName] = (this.vm.towers3d['glb_' + glbName] ?? 0) + 1;
+        const z = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+        this.vm.size[glbName] = [z.x, z.y, z.z].map((n) => +n.toFixed(2));
+      });
+      this.scene.add(root); this.towerModels.set(t, mm); return mm;
     }
     const tm = towerMesh(t.data.id, t.tier); // t44: per-tower, per-tier procedural model (merged + cached geometry)
     if (tm) { this.vm.towers3d[tm.root.userData.tower3d] = (this.vm.towers3d[tm.root.userData.tower3d] ?? 0) + 1; this.scene.add(tm.root); m = { root: tm.root, head: tm.head, tier: t.tier, base: tm.root.scale.x }; this.towerModels.set(t, m); return m; }

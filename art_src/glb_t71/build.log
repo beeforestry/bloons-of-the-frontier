@@ -1,0 +1,140 @@
+=== t71 Blender mesh build ===
+bloon red
+ERROR Draco mesh compression is not available because library could not be found at /usr/bin/4.3/python/lib/python3.13/site-packages/libextern_draco.so
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.03135538101196289 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bloon_red.glb size 83128
+bloon blue
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.004985332489013672 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bloon_blue.glb size 82864
+bloon green
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.00433349609375 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bloon_green.glb size 82872
+bloon yellow
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.0075147151947021484 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bloon_yellow.glb size 82700
+bloon pink
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.00446319580078125 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bloon_pink.glb size 82856
+bloon lead
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.004604339599609375 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bloon_lead.glb size 106600
+bloon ceramic
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.005152702331542969 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bloon_ceramic.glb size 125484
+scavenger
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Sphere
+13:13:11 | INFO: Primitives created: 1
+13:13:11 | INFO: Finished glTF 2.0 export in 0.0057218074798583984 s
+
+exported /workspace/bloons-frontier/public/assets/glb/bug_scavenger.glb size 77952
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cube
+13:13:11 | INFO: Primitives created: 12
+13:13:11 | INFO: Finished glTF 2.0 export in 0.03030252456665039 s
+
+exported /workspace/bloons-frontier/public/assets/glb/tower_dart.glb size 51624
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cube
+13:13:11 | INFO: Primitives created: 12
+13:13:11 | INFO: Finished glTF 2.0 export in 0.03367280960083008 s
+
+exported /workspace/bloons-frontier/public/assets/glb/tower_ninja.glb size 58360
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cube
+13:13:11 | INFO: Primitives created: 14
+13:13:11 | INFO: Finished glTF 2.0 export in 0.03623819351196289 s
+
+exported /workspace/bloons-frontier/public/assets/glb/tower_wizard.glb size 125176
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cube
+13:13:11 | INFO: Primitives created: 14
+13:13:11 | INFO: Finished glTF 2.0 export in 0.03299593925476074 s
+
+exported /workspace/bloons-frontier/public/assets/glb/tower_sniper.glb size 64712
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cube
+13:13:11 | INFO: Primitives created: 14
+13:13:11 | INFO: Finished glTF 2.0 export in 0.03404974937438965 s
+
+exported /workspace/bloons-frontier/public/assets/glb/tower_apex.glb size 132184
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cube
+13:13:11 | INFO: Primitives created: 12
+13:13:11 | INFO: Finished glTF 2.0 export in 0.027663469314575195 s
+
+exported /workspace/bloons-frontier/public/assets/glb/tower_glue.glb size 52920
+gun dart
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cylinder
+13:13:11 | INFO: Primitives created: 3
+13:13:11 | INFO: Finished glTF 2.0 export in 0.008012056350708008 s
+
+exported /workspace/bloons-frontier/public/assets/glb/gun_dart.glb size 9536
+gun sniper
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cylinder
+13:13:11 | INFO: Primitives created: 4
+13:13:11 | INFO: Finished glTF 2.0 export in 0.008953332901000977 s
+
+exported /workspace/bloons-frontier/public/assets/glb/gun_sniper.glb size 10260
+gun laser
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cylinder
+13:13:11 | INFO: Primitives created: 3
+13:13:11 | INFO: Finished glTF 2.0 export in 0.009432077407836914 s
+
+exported /workspace/bloons-frontier/public/assets/glb/gun_laser.glb size 75816
+gun glue
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cylinder
+13:13:11 | INFO: Primitives created: 3
+13:13:11 | INFO: Finished glTF 2.0 export in 0.010251760482788086 s
+
+exported /workspace/bloons-frontier/public/assets/glb/gun_glue.glb size 8668
+gun shuriken
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cylinder
+13:13:11 | INFO: Primitives created: 2
+13:13:11 | INFO: Finished glTF 2.0 export in 0.0059223175048828125 s
+
+exported /workspace/bloons-frontier/public/assets/glb/gun_shuriken.glb size 4712
+gun staff
+13:13:11 | INFO: Starting glTF 2.0 export
+13:13:11 | INFO: Extracting primitive: Cylinder
+13:13:11 | INFO: Primitives created: 2
+13:13:11 | INFO: Finished glTF 2.0 export in 0.0069043636322021484 s
+
+exported /workspace/bloons-frontier/public/assets/glb/gun_staff.glb size 73568
+DONE
+Blender 4.3.2
+
+Blender quit

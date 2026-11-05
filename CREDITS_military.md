@@ -115,3 +115,6 @@ Sources staged under `art_src/tex_t65/` (jpg/zips); runtime uses WebP under `pub
 - `public/assets/tex/sandbag.webp` + `sandbag_n.webp` — procedural hessian weave (original, CC0) for the connected sandbag berm.
 - Enemy 3D colors/textures reference the game’s own painted `public/assets/v3/bloon_*.webp` / `bug_*.webp` sprites (not third-party game rips).
 - Tower FP meshes continue to use procedural `towers3d.ts` (matched to 2D silhouettes) + prior Quaternius/Poly Haven CC0 vehicle assets.
+
+## t71 Blender hero / bloon / gun GLBs
+- `public/assets/glb/*.glb` — authored in Blender 4.3 on-box (`art_src/glb_t71/scripts/build_meshes.py`, `fix_look.py`). Unique teardrop bloons (lead straps / ceramic bands), low-poly primate tower heroes matching v3 palette, scavenger bug, viewmodel guns. Painterly colors / embedded v3 sprite mixes. No BTD/PvZ/Halo rips. No AI mesh dumps shipped raw.
