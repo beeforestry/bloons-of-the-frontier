@@ -39,5 +39,5 @@ Total pack ~1.5–2 MB.
 - FP shots from e2e (01+)
 
 ## Deploy SHAs
-- main: (pending)
-- gh-pages: (pending)
+- main: `b2f1d7b`
+- gh-pages: `81a930d56fa9b449af8150eac1d2114086379759`
