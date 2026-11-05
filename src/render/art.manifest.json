@@ -1,694 +1,742 @@
 {
-"dart_monkey_0": [
-199,
-256
-],
-"dart_monkey_1": [
-204,
-256
-],
-"dart_monkey_2": [
-194,
-256
-],
-"ninja_monkey_0": [
-190,
-256
-],
-"ninja_monkey_1": [
-203,
-256
-],
-"ninja_monkey_2": [
-247,
-256
-],
-"wizard_monkey_0": [
-155,
-256
-],
-"wizard_monkey_1": [
-218,
-256
-],
-"wizard_monkey_2": [
-160,
-256
-],
-"super_monkey_0": [
-211,
-256
-],
-"super_monkey_1": [
-217,
-256
-],
-"super_monkey_2": [
-242,
-256
-],
-"money_monkey_0": [
-209,
-256
-],
-"money_monkey_1": [
-231,
-256
-],
-"money_monkey_2": [
-232,
-256
-],
-"solar_pea_fusion_0": [
-185,
-256
-],
-"solar_pea_fusion_1": [
-214,
-256
-],
-"solar_pea_fusion_2": [
-187,
-256
-],
-"gatling_cherry_bomber_0": [
-256,
-228
-],
-"gatling_cherry_bomber_1": [
-219,
-256
-],
-"gatling_cherry_bomber_2": [
-210,
-256
-],
-"flame_melon_mortar_0": [
-192,
-256
-],
-"flame_melon_mortar_1": [
-169,
-256
-],
-"flame_melon_mortar_2": [
-212,
-256
-],
-"star_emperor_0": [
-179,
-256
-],
-"star_emperor_1": [
-171,
-256
-],
-"star_emperor_2": [
-172,
-256
-],
-"frost_wallnut_bastion_0": [
-216,
-256
-],
-"frost_wallnut_bastion_1": [
-210,
-256
-],
-"frost_wallnut_bastion_2": [
-185,
-256
-],
-"unsc_firebase_0": [
-256,
-232
-],
-"unsc_firebase_1": [
-256,
-226
-],
-"unsc_firebase_2": [
-239,
-256
-],
-"unsc_depot_0": [
-256,
-209
-],
-"unsc_depot_1": [
-256,
-235
-],
-"unsc_depot_2": [
-256,
-244
-],
-"turret_base_0": [
-256,
-217
-],
-"turret_base_1": [
-256,
-226
-],
-"turret_base_2": [
-256,
-221
-],
-"unsc_autoturret_head_0": [
-256,
-160
-],
-"unsc_autoturret_head_1": [
-256,
-152
-],
-"unsc_autoturret_head_2": [
-256,
-165
-],
-"unsc_flak_head_0": [
-256,
-167
-],
-"unsc_flak_head_1": [
-256,
-174
-],
-"unsc_flak_head_2": [
-256,
-191
-],
-"stone_wall_0": [
-256,
-195
-],
-"stone_wall_1": [
-256,
-237
-],
-"stone_wall_2": [
-210,
-256
-],
-"unsc_rail_head_0": [
-256,
-156
-],
-"unsc_rail_head_1": [
-256,
-156
-],
-"unsc_rail_head_2": [
-256,
-143
-],
-"sniper_monkey_0": [
-212,
-256
-],
-"sniper_monkey_1": [
-224,
-256
-],
-"sniper_monkey_2": [
-237,
-256
-],
-"glue_slinger_0": [
-195,
-256
-],
-"glue_slinger_1": [
-192,
-256
-],
-"glue_slinger_2": [
-198,
-256
-],
-"banana_drop_0": [
-179,
-256
-],
-"banana_drop_1": [
-159,
-256
-],
-"banana_drop_2": [
-214,
-256
-],
-"repeater_gatling_0": [
-213,
-256
-],
-"repeater_gatling_1": [
-207,
-256
-],
-"repeater_gatling_2": [
-211,
-256
-],
-"sunflower_0": [
-166,
-256
-],
-"sunflower_1": [
-146,
-256
-],
-"sunflower_2": [
-168,
-256
-],
-"arcane_obelisk_0": [
-136,
-256
-],
-"arcane_obelisk_1": [
-120,
-256
-],
-"arcane_obelisk_2": [
-128,
-256
-],
-"env_bunker": [
-256,
-239
-],
-"env_watchtower": [
-148,
-256
-],
-"env_ruins": [
-211,
-256
-],
-"obs_log": [
-224,
-203
-],
-"obs_rock": [
-224,
-218
-],
-"wallnut_barrier_0": [
-123,
-160
-],
-"cherry_pod_0": [
-91,
-128
-],
-"fx_scrap": [
-96,
-82
-],
-"hq_0": [
-384,
-383
-],
-"hq_1": [
-384,
-357
-],
-"hq_2": [
-360,
-384
-],
-"supply_0": [
-320,
-252
-],
-"supply_1": [
-320,
-317
-],
-"supply_2": [
-312,
-320
-],
-"reactor_0": [
-320,
-295
-],
-"reactor_1": [
-320,
-309
-],
-"reactor_2": [
-301,
-320
-],
-"barracks_0": [
-320,
-230
-],
-"barracks_1": [
-320,
-306
-],
-"barracks_2": [
-320,
-305
-],
-"pad_empty": [
-320,
-222
-],
-"pad_build": [
-320,
-315
-],
-"fx_heal_pod": [
-93,
-160
-],
-"fx_crater": [
-256,
-186
-],
-"marine_0": [
-124,
-160
-],
-"marine_1": [
-133,
-160
-],
-"marine_2": [
-129,
-160
-],
-"odst_0": [
-121,
-160
-],
-"odst_1": [
-130,
-160
-],
-"odst_2": [
-127,
-160
-],
-"bug_ironback": [
-176,
-149
-],
-"bug_warden": [
-162,
-176
-],
-"bug_gargoyle": [
-192,
-185
-],
-"spartan_0": [
-122,
-160
-],
-"spartan_1": [
-128,
-160
-],
-"spartan_2": [
-124,
-160
-],
-"warthog_0": [
-200,
-177
-],
-"warthog_1": [
-200,
-193
-],
-"warthog_2": [
-200,
-196
-],
-"paladin_0": [
-113,
-160
-],
-"paladin_1": [
-100,
-160
-],
-"paladin_2": [
-106,
-160
-],
-"monkey_soldier_0": [
-146,
-160
-],
-"monkey_soldier_1": [
-155,
-160
-],
-"monkey_soldier_2": [
-160,
-156
-],
-"line_watch_0": [
-113,
-160
-],
-"line_watch_1": [
-108,
-160
-],
-"line_watch_2": [
-132,
-160
-],
-"line_watch_3": [
-125,
-160
-],
-"farmhand_0": [
-123,
-160
-],
-"farmhand_1": [
-134,
-160
-],
-"drop_pod": [
-134,
-192
-],
-"bug_scavenger": [
-128,
-93
-],
-"bug_hunter": [
-158,
-160
-],
-"bug_charger": [
-224,
-171
-],
-"bug_brood": [
-224,
-180
-],
-"bug_titan": [
-384,
-252
-],
-"bloon_red": [
-71,
-128
-],
-"bloon_blue": [
-70,
-128
-],
-"bloon_green": [
-70,
-128
-],
-"bloon_yellow": [
-70,
-128
-],
-"bloon_pink": [
-71,
-128
-],
-"bloon_lead": [
-112,
-128
-],
-"bloon_ceramic": [
-114,
-128
-],
-"bloon_moab": [
-384,
-181
-],
-"fx_dart": [
-96,
-50
-],
-"fx_shuriken": [
-54,
-64
-],
-"fx_ice": [
-64,
-60
-],
-"fx_melon": [
-58,
-64
-],
-"fx_cherry": [
-28,
-48
-],
-"fx_bullet": [
-48,
-22
-],
-"fx_crate": [
-96,
-81
-],
-"fx_coin": [
-42,
-48
-],
-"hypno_shroom_0": [
-206,
-256
-],
-"hypno_shroom_1": [
-205,
-256
-],
-"hypno_shroom_2": [
-210,
-256
-],
-"boomerang_monkey_0": [
-198,
-256
-],
-"boomerang_monkey_1": [
-208,
-256
-],
-"boomerang_monkey_2": [
-205,
-256
-],
-"tesla_coil_0": [
-185,
-256
-],
-"tesla_coil_1": [
-149,
-256
-],
-"tesla_coil_2": [
-147,
-256
-],
-"chomper_0": [
-158,
-256
-],
-"chomper_1": [
-158,
-256
-],
-"chomper_2": [
-165,
-256
-],
-"scorpion_0": [
-224,
-168
-],
-"scorpion_1": [
-224,
-170
-],
-"scorpion_2": [
-224,
-167
-],
-"ranger_0": [
-121,
-160
-],
-"ranger_1": [
-98,
-160
-],
-"ranger_2": [
-108,
-160
-],
-"boss_scarab": [
-384,
-366
-],
-"boss_zeppelin": [
-384,
-254
-],
-"boss_dreadnought": [
-379,
-384
-],
-"boss_leviathan": [
-480,
-429
-],
-"env_garita": [
-99,
-220
-],
-"fx_boom": [
-192,
-182
-],
-"fx_muzzle": [
-96,
-72
-],
-"fx_magic": [
-96,
-65
-],
-"fx_spark": [
-192,
-171
-],
-"fx_acid": [
-192,
-170
-],
-"fx_pop": [
-192,
-182
-],
-"fx_pea": [
-96,
-48
-],
-"fx_star": [
-96,
-96
-]
+  "dart_monkey_0": [
+    199,
+    256
+  ],
+  "dart_monkey_1": [
+    204,
+    256
+  ],
+  "dart_monkey_2": [
+    194,
+    256
+  ],
+  "ninja_monkey_0": [
+    190,
+    256
+  ],
+  "ninja_monkey_1": [
+    203,
+    256
+  ],
+  "ninja_monkey_2": [
+    247,
+    256
+  ],
+  "wizard_monkey_0": [
+    155,
+    256
+  ],
+  "wizard_monkey_1": [
+    218,
+    256
+  ],
+  "wizard_monkey_2": [
+    160,
+    256
+  ],
+  "super_monkey_0": [
+    211,
+    256
+  ],
+  "super_monkey_1": [
+    217,
+    256
+  ],
+  "super_monkey_2": [
+    242,
+    256
+  ],
+  "money_monkey_0": [
+    209,
+    256
+  ],
+  "money_monkey_1": [
+    231,
+    256
+  ],
+  "money_monkey_2": [
+    232,
+    256
+  ],
+  "solar_pea_fusion_0": [
+    185,
+    256
+  ],
+  "solar_pea_fusion_1": [
+    214,
+    256
+  ],
+  "solar_pea_fusion_2": [
+    187,
+    256
+  ],
+  "gatling_cherry_bomber_0": [
+    256,
+    228
+  ],
+  "gatling_cherry_bomber_1": [
+    219,
+    256
+  ],
+  "gatling_cherry_bomber_2": [
+    210,
+    256
+  ],
+  "flame_melon_mortar_0": [
+    192,
+    256
+  ],
+  "flame_melon_mortar_1": [
+    169,
+    256
+  ],
+  "flame_melon_mortar_2": [
+    212,
+    256
+  ],
+  "star_emperor_0": [
+    179,
+    256
+  ],
+  "star_emperor_1": [
+    171,
+    256
+  ],
+  "star_emperor_2": [
+    172,
+    256
+  ],
+  "frost_wallnut_bastion_0": [
+    216,
+    256
+  ],
+  "frost_wallnut_bastion_1": [
+    210,
+    256
+  ],
+  "frost_wallnut_bastion_2": [
+    185,
+    256
+  ],
+  "unsc_firebase_0": [
+    256,
+    232
+  ],
+  "unsc_firebase_1": [
+    256,
+    226
+  ],
+  "unsc_firebase_2": [
+    239,
+    256
+  ],
+  "unsc_depot_0": [
+    256,
+    209
+  ],
+  "unsc_depot_1": [
+    256,
+    235
+  ],
+  "unsc_depot_2": [
+    256,
+    244
+  ],
+  "turret_base_0": [
+    256,
+    217
+  ],
+  "turret_base_1": [
+    256,
+    226
+  ],
+  "turret_base_2": [
+    256,
+    221
+  ],
+  "unsc_autoturret_head_0": [
+    256,
+    160
+  ],
+  "unsc_autoturret_head_1": [
+    256,
+    152
+  ],
+  "unsc_autoturret_head_2": [
+    256,
+    165
+  ],
+  "unsc_flak_head_0": [
+    256,
+    167
+  ],
+  "unsc_flak_head_1": [
+    256,
+    174
+  ],
+  "unsc_flak_head_2": [
+    256,
+    191
+  ],
+  "stone_wall_0": [
+    256,
+    195
+  ],
+  "stone_wall_1": [
+    256,
+    237
+  ],
+  "stone_wall_2": [
+    210,
+    256
+  ],
+  "unsc_rail_head_0": [
+    256,
+    156
+  ],
+  "unsc_rail_head_1": [
+    256,
+    156
+  ],
+  "unsc_rail_head_2": [
+    256,
+    143
+  ],
+  "sniper_monkey_0": [
+    212,
+    256
+  ],
+  "sniper_monkey_1": [
+    224,
+    256
+  ],
+  "sniper_monkey_2": [
+    237,
+    256
+  ],
+  "glue_slinger_0": [
+    195,
+    256
+  ],
+  "glue_slinger_1": [
+    192,
+    256
+  ],
+  "glue_slinger_2": [
+    198,
+    256
+  ],
+  "banana_drop_0": [
+    179,
+    256
+  ],
+  "banana_drop_1": [
+    159,
+    256
+  ],
+  "banana_drop_2": [
+    214,
+    256
+  ],
+  "repeater_gatling_0": [
+    213,
+    256
+  ],
+  "repeater_gatling_1": [
+    207,
+    256
+  ],
+  "repeater_gatling_2": [
+    211,
+    256
+  ],
+  "sunflower_0": [
+    166,
+    256
+  ],
+  "sunflower_1": [
+    146,
+    256
+  ],
+  "sunflower_2": [
+    168,
+    256
+  ],
+  "arcane_obelisk_0": [
+    136,
+    256
+  ],
+  "arcane_obelisk_1": [
+    120,
+    256
+  ],
+  "arcane_obelisk_2": [
+    128,
+    256
+  ],
+  "env_bunker": [
+    256,
+    239
+  ],
+  "env_watchtower": [
+    148,
+    256
+  ],
+  "env_ruins": [
+    211,
+    256
+  ],
+  "obs_log": [
+    224,
+    203
+  ],
+  "obs_rock": [
+    224,
+    218
+  ],
+  "wallnut_barrier_0": [
+    123,
+    160
+  ],
+  "cherry_pod_0": [
+    91,
+    128
+  ],
+  "fx_scrap": [
+    96,
+    82
+  ],
+  "hq_0": [
+    384,
+    383
+  ],
+  "hq_1": [
+    384,
+    357
+  ],
+  "hq_2": [
+    360,
+    384
+  ],
+  "supply_0": [
+    320,
+    252
+  ],
+  "supply_1": [
+    320,
+    317
+  ],
+  "supply_2": [
+    312,
+    320
+  ],
+  "reactor_0": [
+    320,
+    295
+  ],
+  "reactor_1": [
+    320,
+    309
+  ],
+  "reactor_2": [
+    301,
+    320
+  ],
+  "barracks_0": [
+    320,
+    230
+  ],
+  "barracks_1": [
+    320,
+    306
+  ],
+  "barracks_2": [
+    320,
+    305
+  ],
+  "pad_empty": [
+    320,
+    222
+  ],
+  "pad_build": [
+    320,
+    315
+  ],
+  "fx_heal_pod": [
+    93,
+    160
+  ],
+  "fx_crater": [
+    256,
+    186
+  ],
+  "marine_0": [
+    124,
+    160
+  ],
+  "marine_1": [
+    133,
+    160
+  ],
+  "marine_2": [
+    129,
+    160
+  ],
+  "odst_0": [
+    121,
+    160
+  ],
+  "odst_1": [
+    130,
+    160
+  ],
+  "odst_2": [
+    127,
+    160
+  ],
+  "bug_ironback": [
+    176,
+    149
+  ],
+  "bug_warden": [
+    162,
+    176
+  ],
+  "bug_gargoyle": [
+    192,
+    185
+  ],
+  "spartan_0": [
+    122,
+    160
+  ],
+  "spartan_1": [
+    128,
+    160
+  ],
+  "spartan_2": [
+    124,
+    160
+  ],
+  "warthog_0": [
+    200,
+    177
+  ],
+  "warthog_1": [
+    200,
+    193
+  ],
+  "warthog_2": [
+    200,
+    196
+  ],
+  "paladin_0": [
+    113,
+    160
+  ],
+  "paladin_1": [
+    100,
+    160
+  ],
+  "paladin_2": [
+    106,
+    160
+  ],
+  "monkey_soldier_0": [
+    146,
+    160
+  ],
+  "monkey_soldier_1": [
+    155,
+    160
+  ],
+  "monkey_soldier_2": [
+    160,
+    156
+  ],
+  "line_watch_0": [
+    113,
+    160
+  ],
+  "line_watch_1": [
+    108,
+    160
+  ],
+  "line_watch_2": [
+    132,
+    160
+  ],
+  "line_watch_3": [
+    125,
+    160
+  ],
+  "farmhand_0": [
+    123,
+    160
+  ],
+  "farmhand_1": [
+    134,
+    160
+  ],
+  "drop_pod": [
+    134,
+    192
+  ],
+  "bug_scavenger": [
+    128,
+    93
+  ],
+  "bug_hunter": [
+    158,
+    160
+  ],
+  "bug_charger": [
+    224,
+    171
+  ],
+  "bug_brood": [
+    224,
+    180
+  ],
+  "bug_titan": [
+    384,
+    252
+  ],
+  "bloon_red": [
+    71,
+    128
+  ],
+  "bloon_blue": [
+    70,
+    128
+  ],
+  "bloon_green": [
+    70,
+    128
+  ],
+  "bloon_yellow": [
+    70,
+    128
+  ],
+  "bloon_pink": [
+    71,
+    128
+  ],
+  "bloon_lead": [
+    112,
+    128
+  ],
+  "bloon_ceramic": [
+    114,
+    128
+  ],
+  "bloon_moab": [
+    384,
+    181
+  ],
+  "fx_dart": [
+    96,
+    50
+  ],
+  "fx_shuriken": [
+    54,
+    64
+  ],
+  "fx_ice": [
+    64,
+    60
+  ],
+  "fx_melon": [
+    58,
+    64
+  ],
+  "fx_cherry": [
+    28,
+    48
+  ],
+  "fx_bullet": [
+    48,
+    22
+  ],
+  "fx_crate": [
+    96,
+    81
+  ],
+  "fx_coin": [
+    42,
+    48
+  ],
+  "hypno_shroom_0": [
+    206,
+    256
+  ],
+  "hypno_shroom_1": [
+    205,
+    256
+  ],
+  "hypno_shroom_2": [
+    210,
+    256
+  ],
+  "boomerang_monkey_0": [
+    198,
+    256
+  ],
+  "boomerang_monkey_1": [
+    208,
+    256
+  ],
+  "boomerang_monkey_2": [
+    205,
+    256
+  ],
+  "tesla_coil_0": [
+    185,
+    256
+  ],
+  "tesla_coil_1": [
+    149,
+    256
+  ],
+  "tesla_coil_2": [
+    147,
+    256
+  ],
+  "chomper_0": [
+    158,
+    256
+  ],
+  "chomper_1": [
+    158,
+    256
+  ],
+  "chomper_2": [
+    165,
+    256
+  ],
+  "scorpion_0": [
+    224,
+    168
+  ],
+  "scorpion_1": [
+    224,
+    170
+  ],
+  "scorpion_2": [
+    224,
+    167
+  ],
+  "ranger_0": [
+    121,
+    160
+  ],
+  "ranger_1": [
+    98,
+    160
+  ],
+  "ranger_2": [
+    108,
+    160
+  ],
+  "boss_scarab": [
+    384,
+    366
+  ],
+  "boss_zeppelin": [
+    384,
+    254
+  ],
+  "boss_dreadnought": [
+    379,
+    384
+  ],
+  "boss_leviathan": [
+    480,
+    429
+  ],
+  "env_garita": [
+    99,
+    220
+  ],
+  "fx_boom": [
+    192,
+    182
+  ],
+  "fx_muzzle": [
+    96,
+    72
+  ],
+  "fx_magic": [
+    96,
+    65
+  ],
+  "fx_spark": [
+    192,
+    171
+  ],
+  "fx_acid": [
+    192,
+    170
+  ],
+  "fx_pop": [
+    192,
+    182
+  ],
+  "fx_pea": [
+    96,
+    48
+  ],
+  "fx_star": [
+    96,
+    96
+  ],
+  "unsc_tank_0": [
+    320,
+    221
+  ],
+  "unsc_tank_1": [
+    320,
+    206
+  ],
+  "unsc_tank_2": [
+    320,
+    221
+  ],
+  "unsc_heli_0": [
+    340,
+    173
+  ],
+  "unsc_heli_1": [
+    340,
+    176
+  ],
+  "unsc_heli_2": [
+    340,
+    172
+  ],
+  "unsc_destroyer_0": [
+    420,
+    213
+  ],
+  "unsc_destroyer_1": [
+    420,
+    190
+  ],
+  "unsc_destroyer_2": [
+    419,
+    211
+  ],
+  "unsc_beacon_0": [
+    141,
+    280
+  ],
+  "unsc_beacon_1": [
+    153,
+    280
+  ],
+  "unsc_beacon_2": [
+    153,
+    280
+  ]
 }

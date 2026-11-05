@@ -688,9 +688,38 @@ export class Renderer {
       this.additive(td.id === 'wizard_monkey' ? IMG.fx_magic : IMG.fx_star, x + (flip ? -1 : 1) * w * 0.3, footY - h * 0.85, 12 + tier * 5, time, 0.35 + 0.25 * Math.sin(time * 3));
     }
   }
-  /** t57: procedural destroyer (top-down-ish) and Harbor Beacon lighthouse. */
+  /** t57/t64: painted v3 destroyer + Harbor Beacon when loaded; procedural fallback. */
   private naval(k: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, recoil: number, phase: number) {
     const c = this.ctx, time = this.g.time + phase, sc = (vis.scale ?? 1);
+    const kind = (k === 'unsc_beacon' || k === 'beacon') ? 'beacon' : 'destroyer';
+    const painted = body('unsc_' + kind, tier);
+    if (painted) {
+      const sz = (kind === 'beacon' ? 88 : 110) * sc * (vis.scale ?? 1);
+      const [w, h] = this.fitWH(painted, sz);
+      this.shadowAt(x, y + 6, w * 0.42, h * 0.18, 0.38);
+      if (kind === 'beacon') {
+        const breathe = 1 + Math.sin(time * 2.1) * 0.01;
+        this.feet(painted, x, y + 18, w, h, false, breathe, breathe);
+        // rotating lantern beam preview
+        c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = `rgba(255,220,100,${0.22 + tier * 0.1})`;
+        c.lineWidth = 3 + tier; c.beginPath(); c.moveTo(x, y + 18 - h * 0.88);
+        c.lineTo(x + Math.cos(aim) * (50 + tier * 12), y + 18 - h * 0.88 + Math.sin(aim) * (50 + tier * 12) * 0.55); c.stroke(); c.restore();
+        if (vis.glow) { c.fillStyle = vis.glow + '44'; c.beginPath(); c.arc(x, y + 18 - h * 0.88, 22 + tier * 4, 0, 7); c.fill(); }
+      } else {
+        const flip = Math.cos(aim) < -0.15;
+        const kick = recoil * 4;
+        this.feet(painted, x - (flip ? -1 : 1) * kick, y + 14, w, h, flip, 1, 1);
+        // soft wake under the hull
+        c.strokeStyle = 'rgba(180,220,255,0.28)'; c.lineWidth = 2;
+        c.beginPath(); c.ellipse(x, y + 16, w * 0.42, h * 0.12, 0, 0, 7); c.stroke();
+        if (vis.glow) {
+          const gr = c.createRadialGradient(x, y, 4, x, y, w * 0.55);
+          gr.addColorStop(0, vis.glow + '55'); gr.addColorStop(1, vis.glow + '00');
+          c.fillStyle = gr; c.beginPath(); c.ellipse(x, y, w * 0.55, h * 0.35, 0, 0, 7); c.fill();
+        }
+      }
+      return;
+    }
     if (k === 'unsc_beacon' || k === 'beacon') {
       const H = 78 * sc + tier * 10, W = 28 * sc + tier * 3;
       this.shadowAt(x, y + 6, 26 * sc, 12 * sc, 0.35);
@@ -755,10 +784,11 @@ export class Renderer {
       c.fillStyle = gr; c.beginPath(); c.ellipse(x, y, L * 0.5, B * 0.9, 0, 0, 7); c.fill();
     }
   }
-    /** t42 real-scale vehicles (M808 tank ~8-10 m, AH-9 gunship ~11-13 m) from 16-yaw sheets rendered off the GLBs.
-   *  The whole hull yaws to the aim; the gunship hovers with a bob, a ground shadow and a spinning rotor disc. */
+  /** t42/t64: painted v3 tank/heli when available (flip to face target); else 16-yaw mil sheets. */
   private vehicle(k: string, tier: number, x: number, y: number, vis: TierVisual, aim: number, recoil: number, phase: number) {
-    const c = this.ctx, m = MIL[`${k}_${tier}`], im = IMG[`mil:${k}_${tier}`], time = this.g.time + phase, heli = k === 'heli';
+    const c = this.ctx, time = this.g.time + phase, heli = k === 'heli';
+    const painted = body('unsc_' + k, tier);
+    const m = MIL[`${k}_${tier}`], im = IMG[`mil:${k}_${tier}`];
     const ppm = (m?.ppm ?? 25) * MIL_K, el = m?.elev ?? 0.72, se = Math.sin(el), ce = Math.cos(el);
     const L = (heli ? [11, 12, 13.2] : [7.6, 8.6, 9.6])[tier] * ppm;
     if (vis.glow) {
@@ -767,10 +797,28 @@ export class Renderer {
       c.fillStyle = gr; c.beginPath(); c.ellipse(x, y + 4, L * 0.6, L * 0.6 * se, 0, 0, 7); c.fill();
     }
     const hover = heli ? 60 + Math.sin(time * 1.6) * 5 : 0;
-    if (heli) { // helipad marking + soft shadow on the ground
+    if (heli) {
       c.strokeStyle = 'rgba(240,240,220,0.35)'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y + 4, 52, 52 * se, 0, 0, 7); c.stroke();
       c.font = 'bold 30px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = 'rgba(240,240,220,0.3)'; c.fillText('H', x, y + 5); c.textBaseline = 'alphabetic';
       this.shadowAt(x, y + 6, L * 0.4, L * 0.4 * se * 0.55, 0.32);
+    }
+    if (painted) {
+      const sz = (heli ? 118 : 108) * (vis.scale ?? 1);
+      const [w, h] = this.fitWH(painted, sz);
+      const flip = Math.cos(aim) < -0.15, dir = flip ? -1 : 1;
+      const kick = heli ? 0 : recoil * 6;
+      if (!heli) this.shadowAt(x, y + 6, w * 0.42, h * 0.16, 0.4);
+      this.feet(painted, x - dir * kick, y + 8 - hover, w, h, flip, 1 + (heli ? Math.sin(time * 2.2) * 0.015 : 0), 1);
+      if (heli) {
+        // soft rotor disc over the mast
+        const hx = x, hy = y + 8 - hover - h * 0.72, R = w * 0.48;
+        c.fillStyle = 'rgba(28,32,26,0.14)'; c.beginPath(); c.ellipse(hx, hy, R, R * 0.22, 0, 0, 7); c.fill();
+      }
+      if (recoil > 0.55) {
+        const mx = x + dir * w * (heli ? 0.38 : 0.48), my = y + 8 - hover - h * (heli ? 0.35 : 0.45);
+        this.additive(IMG.fx_muzzle, mx, my, heli ? 26 + tier * 4 : 50 + tier * 8, flip ? Math.PI : 0, (recoil - 0.55) / 0.45);
+      }
+      return;
     }
     if (!im || !m) { c.fillStyle = '#556b2f'; c.fillRect(x - 60, y - 40 - hover, 120, 70); return; }
     const n = m.n ?? 16, a = ((aim % TAU) + TAU) % TAU, i = Math.round(a / (TAU / n)) % n, fa = i * TAU / n;

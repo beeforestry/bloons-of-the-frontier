@@ -18,6 +18,7 @@ import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
+import { setMatQuality, matOf } from './mats';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
 import { floraField, decoTo3D, type FloraItem, type FloraKind } from './flora';
@@ -94,6 +95,7 @@ export class Possess {
     const fq = new URLSearchParams(location.search).get('fpq');
     this.vm.quality = fq === 'low' || fq === 'medium' || fq === 'high' ? fq : this.touch ? 'medium' : 'high';
     this.pinQ = !!fq; // an explicit ?fpq= disables the automatic downgrade
+    setMatQuality({ high: 2, medium: 1, low: 0 }[this.vm.quality]);
     this.root.appendChild(this.renderer.domElement);
     // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
@@ -348,9 +350,11 @@ export class Possess {
     const legs: THREE.BufferGeometry[] = [];
     for (let i = 0; i < 6; i++) { const lx = -0.4 + (i % 3) * 0.4, s = i < 3 ? 1 : -1; legs.push(new THREE.BoxGeometry(0.08, 0.08, 0.7).translate(lx, 0.25, s * 0.55).rotateX(s * 0.3)); }
     this.bugMesh = new THREE.InstancedMesh(mergeGeometries([body, headG, ...legs].map((x) => x.index ? x.toNonIndexed() : x))!, new THREE.MeshLambertMaterial(), 300);
-    // troops: capsule body + helmet visor
-    const ub = new THREE.CapsuleGeometry(0.32, 0.9, 3, 8).translate(0, 0.78, 0), uh = new THREE.BoxGeometry(0.34, 0.12, 0.2).translate(0.2, 1.4, 0);
-    this.unitMesh = new THREE.InstancedMesh(mergeGeometries([ub.toNonIndexed(), uh.toNonIndexed()])!, new THREE.MeshLambertMaterial(), 300);
+    // troops: capsule body + helmet visor (t64: cloth-tint material so distant troops still read textured)
+    const ub = new THREE.CapsuleGeometry(0.32, 0.9, 4, 10).translate(0, 0.78, 0), uh = new THREE.BoxGeometry(0.34, 0.14, 0.22).translate(0.2, 1.4, 0);
+    const shoulder = new THREE.BoxGeometry(0.7, 0.18, 0.35).translate(0, 1.25, 0);
+    const um = (matOf('cloth') as THREE.MeshStandardMaterial).clone(); um.vertexColors = true;
+    this.unitMesh = new THREE.InstancedMesh(mergeGeometries([ub.toNonIndexed(), uh.toNonIndexed(), shoulder.toNonIndexed()])!, um, 300);
     this.shotMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.14, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffe28a }), 500);
     this.bitMesh = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.16), new THREE.MeshBasicMaterial(), 500);
     for (const m of [this.bloonMesh, this.bugMesh, this.unitMesh, this.bitMesh]) m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3);
@@ -496,13 +500,13 @@ export class Possess {
   private pinQ = false;
   /** Slow frames even without bloom: no HDRI env, no sun shadows, Lambert plants. */
   private dropToLow() {
-    this.vm.quality = 'low'; this.scene.environment = null; this.sun.castShadow = false; this.renderer.shadowMap.enabled = false;
+    this.vm.quality = 'low'; setMatQuality(0); this.scene.environment = null; this.sun.castShadow = false; this.renderer.shadowMap.enabled = false;
     (this.floraGrp?.userData.setDetail as ((d: number) => void) | undefined)?.(0);
     this.scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; });
     console.info('[possess] slow frames: low quality');
   }
   private dropPost() {
-    if (!this.composer) return; this.composer.dispose(); this.composer = null; this.bloom = null; this.vm.quality = 'medium';
+    if (!this.composer) return; this.composer.dispose(); this.composer = null; this.bloom = null; this.vm.quality = 'medium'; setMatQuality(1);
     console.info('[possess] slow frames: bloom off');
   }
   /** Sun shadow box centred ~40% of its radius ahead of the eye, snapped to texels so edges don't shimmer. */
@@ -699,11 +703,16 @@ export class Possess {
       const g = new THREE.Group(); v = { g, ang: u.facing > 0 ? 0 : Math.PI, x: u.x, y: u.y }; this.unitVeh.set(u, v); this.scene.add(g);
       if (u.squad.data.id === 'scorpion') void tank(Math.min(2, this.g.unitTier(u.squad.data.id))).then((m) => { m.traverse((x) => { x.castShadow = true; }); g.add(m); this.vm.vehicles++; });
       else {
-        const body = lam(0x5d6b45), dark = lam(0x22261f);
+        const body = (() => { const m = (matOf('metal') as THREE.MeshStandardMaterial).clone(); m.color.setHex(0x6a7a52); return m; })();
+        const dark = (() => { const m = (matOf('iron') as THREE.MeshStandardMaterial).clone(); m.color.setHex(0x22261f); return m; })();
+        const rust = (() => { const m = (matOf('rust') as THREE.MeshStandardMaterial).clone(); m.color.setHex(0x6a4a30); return m; })();
         g.add(at(new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.9, 2.0), body), 0, 1.0, 0), at(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 1.9), body), 1.5, 1.6, 0));
-        for (const [wx, wz] of [[1.4, 1], [1.4, -1], [-1.4, 1], [-1.4, -1]]) g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.4, 12).rotateX(Math.PI / 2), dark), wx, 0.48, wz));
+        g.add(at(new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.12, 2.1), rust), 0, 0.55, 0));
+        for (const [wx, wz] of [[1.4, 1], [1.4, -1], [-1.4, 1], [-1.4, -1]] as [number, number][]) g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.4, 12).rotateX(Math.PI / 2), dark), wx, 0.48, wz));
         g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.0, 1.9), dark), 0.2, 2.0, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.3, 6).rotateZ(Math.PI / 2), dark), -0.6, 2.2, 0));
-        g.traverse((x) => { x.castShadow = true; });
+        // roll cage + spare
+        g.add(at(new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 6, 14), dark), -2.0, 1.3, 0));
+        g.traverse((x) => { x.castShadow = true; }); g.userData.textured = true;
       }
     }
     const dx = u.x - v.x, dy = u.y - v.y; if (dx * dx + dy * dy > 0.2) { const na = Math.atan2(dy, dx); v.ang += Math.atan2(Math.sin(na - v.ang), Math.cos(na - v.ang)) * Math.min(1, dt * 5); }

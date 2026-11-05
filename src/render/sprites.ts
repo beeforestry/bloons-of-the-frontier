@@ -32,8 +32,16 @@ function load(key: string, src: string) {
 export async function loadSprites(mapImages: string[]) {
   await Promise.all([...Object.entries(FILES).map(([k, v]) => load(k, v)), ...mapImages.map((m) => load('map:' + m, m))]);
   for (const k of ['unsc_autoturret', 'unsc_rail', 'unsc_flak']) for (let t = 0; t < 3; t++) IMG[`${k}_icon_${t}`] = turretIcon(k, t);
-  for (const k of ['tank', 'heli']) for (let t = 0; t < 3; t++) { const f = milFrame(`${k}_${t}`, 14); if (f) IMG[`unsc_${k}_icon_${t}`] = f; }
-  for (let t = 0; t < 3; t++) { IMG[`unsc_destroyer_icon_${t}`] = navalIcon('destroyer', t); IMG[`unsc_beacon_icon_${t}`] = navalIcon('beacon', t); }
+  // t64: painted v3 vehicle/naval sprites for HUD; mil yaw / procedural icons are fallbacks only.
+  for (const k of ['tank', 'heli']) for (let t = 0; t < 3; t++) {
+    const painted = IMG[`unsc_${k}_${t}`];
+    if (painted) IMG[`unsc_${k}_icon_${t}`] = painted;
+    else { const f = milFrame(`${k}_${t}`, 14); if (f) IMG[`unsc_${k}_icon_${t}`] = f; }
+  }
+  for (let t = 0; t < 3; t++) {
+    IMG[`unsc_destroyer_icon_${t}`] = IMG[`unsc_destroyer_${t}`] ?? navalIcon('destroyer', t);
+    IMG[`unsc_beacon_icon_${t}`] = IMG[`unsc_beacon_${t}`] ?? navalIcon('beacon', t);
+  }
   tint('fx_pea', 'fx_pea_cherry', [255, 70, 60]);
   tint('fx_boom', 'fx_boom_fire', [255, 150, 60]);
 }

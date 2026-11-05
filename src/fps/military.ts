@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { assetUrl } from '../assetUrl';
+import { matOf, type MatKind } from './mats';
 
 const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 const cache = new Map<string, Promise<THREE.Group>>();
@@ -15,7 +16,11 @@ function raw(name: string) {
   if (!p) { p = loader.loadAsync(assetUrl(`assets/military/${name}.glb`)).then((g) => g.scene); cache.set(name, p); }
   return p;
 }
-const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c });
+const lam = (c: number, kind: MatKind = 'paint') => {
+  const m = (matOf(kind) as THREE.MeshStandardMaterial).clone();
+  if ('color' in m) m.color.setHex(c);
+  return m;
+};
 const at = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T => { o.position.set(x, y, z); return o; };
 
 /** Real-world sizes (metres): longest horizontal extent. */
@@ -37,14 +42,18 @@ export function normalise(src: THREE.Object3D, len: number, yaw = 0, height?: nu
   mid.scale.setScalar(k); wrap.add(mid);
   return wrap;
 }
-function recolor(o: THREE.Object3D, f: (name: string, c: THREE.Color) => number | null, dropMap = false) {
+function recolor(o: THREE.Object3D, f: (name: string, c: THREE.Color) => number | null, dropMap = false, kind: MatKind = 'metal') {
+  const proto = matOf(kind) as THREE.MeshStandardMaterial;
   o.traverse((m) => {
     const mesh = m as THREE.Mesh; if (!mesh.isMesh) return;
     const mats = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as THREE.MeshStandardMaterial[];
     mesh.material = mats.map((mt) => {
       const n = f(mt.name, mt.color ?? new THREE.Color(1, 1, 1));
-      const out = new THREE.MeshLambertMaterial({ color: n ?? mt.color, map: dropMap ? null : mt.map ?? null, vertexColors: !!mesh.geometry.attributes.color });
-      out.name = mt.name; return out;
+      const out = proto.clone();
+      out.color.set(n ?? mt.color ?? 0xffffff);
+      if (!dropMap && mt.map) { out.map = mt.map; out.color.set(0xffffff); }
+      out.name = mt.name; out.vertexColors = !!mesh.geometry.attributes.color;
+      return out;
     }) as unknown as THREE.Material;
     if ((mesh.material as unknown as THREE.Material[]).length === 1) mesh.material = (mesh.material as unknown as THREE.Material[])[0];
     mesh.castShadow = true;
@@ -57,7 +66,7 @@ export async function tank(t: number): Promise<THREE.Group> {
   const name = `tank_${Math.min(2, t) + 1}`, src = await raw(name);
   const g = normalise(src, SIZE.tank[Math.min(2, t)], FRONT[name]);
   // T2 (heavy) repainted Vanguard dark olive so it reads as the top tier next to the tan/olive ones
-  if (t === 2) recolor(g, (n) => ({ Main: 0x5a6a44, Main_Dark: 0x3c4630, Main_Light: 0x7a8a5c, Main_Details: 0x2a2f22, Wheels: 0x2e3228 } as Record<string, number>)[n] ?? null);
+  if (t === 2) recolor(g, (n) => ({ Main: 0x6a7a50, Main_Dark: 0x4a5538, Main_Light: 0x8a9a68, Main_Details: 0x3a4030, Wheels: 0x3a4034 } as Record<string, number>)[n] ?? null, true, 'paint');
   else recolor(g, () => null);
   // re-parent turret + gun under a pivot at the turret centre so it can traverse
   const inner = g.children[0].children[0];
@@ -72,7 +81,7 @@ export async function tank(t: number): Promise<THREE.Group> {
   }
   g.userData.turret = pivot;
   // tier extras: T1 side skirts, T2 reactive armour + independent roof gunner (matches last-tier secondary)
-  const dark = lam(0x2a2e26), olive = lam(0x56603f);
+  const dark = lam(0x2a2e26, 'iron'), olive = lam(0x56603f, 'metal');
   if (t >= 1) {
     const b0 = new THREE.Box3().setFromObject(g);
     for (const s of [-1, 1]) for (let i = 0; i < 4; i++) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.28, 0.1), olive), b0.min.x + 1.4 + i * 1.05, b0.max.y * 0.38, s * (b0.max.z + 0.02)));
@@ -92,7 +101,7 @@ export async function tank(t: number): Promise<THREE.Group> {
     at(gunner, (top.min.x + top.max.x) / 2 - 0.35 - pivot.position.x, top.max.y + 0.05, 0.35);
     pivot.add(gunner); g.userData.gunner = gunner;
   }
-  g.userData.kind = 'tank'; return g;
+  g.userData.kind = 'tank'; g.userData.textured = true; return g;
 }
 
 /** Remove triangles lying entirely above `frac` of the model height (thin rotor blades). */
@@ -122,11 +131,12 @@ export async function heli(t: number): Promise<THREE.Group> {
   const src = await raw('heli'), L = SIZE.heli[Math.min(2, t)];
   const g = normalise(src, L, FRONT.heli);
   // hide the source rotor blades (light grey material) and replace with a big spinning rotor
-  const camo = [0x76854f, 0x667546, 0x56653c][Math.min(2, t)];
+  const camo = [0x8a9a58, 0x7a8a4e, 0x6a7a44][Math.min(2, t)];
   stripTop(g, 0.9); // drop the source's static rotor blades (replaced by the spinning rotor below)
-  recolor(g, (n) => (n === 'Material.001' ? camo : n === 'Material.003' ? 0x1c2018 : n === 'Material.004' ? 0x30352c : 0x23271f));
+  // t64: paint/cloth kinds + brighter olives so the gunship reads in FP (old near-black metal looked like a silhouette).
+  recolor(g, (n) => (n === 'Material.001' ? camo : n === 'Material.003' ? 0x3a4230 : n === 'Material.004' ? 0x4a5538 : 0x5a6840), true, 'paint');
   const b = new THREE.Box3().setFromObject(g), H = b.max.y, len = b.max.x - b.min.x;
-  const blade = lam(0x1d201c), rotor = new THREE.Group();
+  const blade = lam(0x1d201c, 'iron'), rotor = new THREE.Group();
   const nb = t >= 2 ? 5 : 4;
   for (let i = 0; i < nb; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(L * 0.47, 0.05, 0.32).translate(L * 0.235, 0, 0), blade); m.rotation.y = (i / nb) * Math.PI * 2; rotor.add(m); }
   rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.4, 8), blade));
@@ -137,7 +147,7 @@ export async function heli(t: number): Promise<THREE.Group> {
   tail.position.set(b.min.x + 0.25, H * 0.72, 0.28); g.add(tail);
   g.userData.rotor = rotor; g.userData.tail = tail;
   // weapons per tier: T0 chin gun, T1 + stub wings w/ rocket pods, T2 + strike rails + 2nd pods
-  const dark = lam(0x22261f), pod = lam(0x3a4130);
+  const dark = lam(0x22261f, 'iron'), pod = lam(0x3a4130, 'metal');
   const nose = b.max.x - len * 0.12;
   const chin = new THREE.Group(); chin.add(new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), dark));
   for (const s of [-0.07, 0.07]) chin.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.3, 6).rotateZ(Math.PI / 2), dark), 0.65, 0, s));
@@ -153,26 +163,29 @@ export async function heli(t: number): Promise<THREE.Group> {
       }
     }
   }
-  g.userData.kind = 'heli'; return g;
+  g.userData.kind = 'heli'; g.userData.textured = true; return g;
 }
 
 // ---------------------------------------------------------------- naval (t57) — procedural, CC0 metal palette
 /** Tidebreaker Destroyer: waterline hull ~12-16 m, deck guns aim via userData.turret. */
 export function destroyer(t: number): THREE.Group {
-  const g = new THREE.Group(), L = [12, 14, 16][Math.min(2, t)], dark = lam(0x2a3038), hull = lam(0x4a5560), deck = lam(0x6a7888), white = lam(0xd8dce0);
-  // hull
+  const g = new THREE.Group(), L = [12, 14, 16][Math.min(2, t)];
+  const dark = lam(0x2a3038, 'iron'), hull = lam(0x5a6a78, 'metal'), deck = lam(0x6a7888, 'metal');
+  const white = lam(0xd8dce0, 'paint'), rust = lam(0x6a4a3a, 'rust'), gold = lam(0xffb35a, 'gold');
+  // hull with slight bow rake + waterline rust streak
   g.add(at(new THREE.Mesh(new THREE.BoxGeometry(L, 1.4, 3.2 + t * 0.3), hull), 0, 0.7, 0));
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(L * 0.98, 0.18, 3.25 + t * 0.3), rust), 0, 0.12, 0));
   g.add(at(new THREE.Mesh(new THREE.BoxGeometry(L * 0.92, 0.35, 3.0 + t * 0.25), deck), 0, 1.5, 0));
-  // bow taper
   g.add(at(new THREE.Mesh(new THREE.ConeGeometry(1.7 + t * 0.1, 2.8, 4).rotateZ(-Math.PI / 2), hull), L / 2 + 0.4, 0.85, 0));
-  // superstructure
+  // deck detail plates
+  for (let i = 0; i < 3 + t; i++) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.04, 1.4), dark), -L * 0.25 + i * 1.5, 1.7, 0));
   g.add(at(new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.6 + t * 0.3, 2.2), white), -0.5, 2.4, 0));
   g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.4), dark), -0.3, 3.5 + t * 0.15, 0));
-  // mast
+  // bridge windows
+  g.add(at(new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.35, 0.08), lam(0x7ad0ff, 'paint')), -0.5, 2.9, 1.12));
   g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 3.2 + t * 0.4, 6), dark), 0.4, 4.5 + t * 0.2, 0));
-  if (t >= 1) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.6), lam(0x8fa0b0)), 0.4, 5.6, 0));
-  if (t >= 2) g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), lam(0xffb35a)), 0.4, 6.2, 0));
-  // deck guns
+  if (t >= 1) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.6), lam(0x8fa0b0, 'metal')), 0.4, 5.6, 0));
+  if (t >= 2) g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), gold), 0.4, 6.2, 0));
   const turret = new THREE.Group();
   const guns = 1 + t;
   for (let i = 0; i < guns; i++) {
@@ -180,16 +193,24 @@ export function destroyer(t: number): THREE.Group {
     const cup = new THREE.Group();
     cup.add(new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 0.5, 10), dark));
     cup.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 2.2 + t * 0.3, 8).rotateZ(Math.PI / 2), dark), 1.2, 0.1, 0));
+    if (t >= 2) cup.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.35), gold), 0, 0.32, 0));
     at(cup, gx, 1.85, 0); turret.add(cup);
   }
-  g.add(turret); g.userData.turret = turret; g.userData.kind = 'destroyer';
+  g.add(turret); g.userData.turret = turret; g.userData.kind = 'destroyer'; g.userData.textured = true;
   g.traverse((m) => { const mesh = m as THREE.Mesh; if (mesh.isMesh) mesh.castShadow = true; });
   return g;
 }
 /** Harbor Beacon lighthouse: tall striped tower with glowing lantern (userData.lamp). */
 export function beacon(t: number): THREE.Group {
-  const g = new THREE.Group(), H = 8 + t * 1.5, dark = lam(0x3e4650), cream = lam(0xf4efe3), red = lam(0xc62828);
-  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, 0.6, 12), dark), 0, 0.3, 0)); // pier
+  const g = new THREE.Group(), H = 8 + t * 1.5;
+  const dark = lam(0x3e4650, 'iron'), cream = lam(0xf4efe3, 'paint'), red = lam(0xc62828, 'paint');
+  const stone = lam(0x8a9098, 'concrete'), gold = lam(0xe0b030, 'gold');
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, 0.6, 12), stone), 0, 0.3, 0));
+  // rocky pier ring
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.35 + (i % 3) * 0.08, 8, 6), stone), Math.cos(a) * 1.7, 0.25, Math.sin(a) * 1.7));
+  }
   const bands = 3 + t;
   for (let i = 0; i < bands; i++) {
     const y0 = 0.6 + i * (H * 0.7 / bands), h = H * 0.7 / bands;
@@ -197,11 +218,14 @@ export function beacon(t: number): THREE.Group {
   }
   const lampY = 0.6 + H * 0.72 + 0.5;
   g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.35, 10), dark), 0, lampY, 0));
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.55 + t * 0.08, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+  // glass lantern cage
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.0 + t * 0.15, 10, 1, true), lam(0xa8d8ff, 'paint')), 0, lampY + 0.55, 0));
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.45 + t * 0.08, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
   at(lamp, 0, lampY + 0.55, 0); g.add(lamp);
-  // gallery rails
   g.add(at(new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.04, 6, 16), dark), 0, lampY, 0));
-  g.userData.lamp = lamp; g.userData.kind = 'beacon';
+  if (t >= 1) g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.08, 12), gold), 0, lampY + 1.05, 0));
+  if (t >= 2) g.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.55, 8), dark), 0, lampY + 1.4, 0));
+  g.userData.lamp = lamp; g.userData.kind = 'beacon'; g.userData.textured = true;
   g.traverse((m) => { const mesh = m as THREE.Mesh; if (mesh.isMesh && mesh !== lamp) mesh.castShadow = true; });
   return g;
 }
@@ -214,7 +238,7 @@ export const PROP_KINDS: PropKind[] = ['sandbags', 'supply', 'tent', 'barrier', 
 /** Procedural sandbag wall (3 staggered rows of pillowy bags), SIZE.sandbags long. */
 export function sandbagWall(): THREE.Group {
   const g = new THREE.Group(), bag = new THREE.SphereGeometry(0.5, 10, 6).scale(0.62, 0.26, 0.34);
-  const cols = [0xb39f74, 0xa8946a, 0xbfad82].map(lam);
+  const cols = [0xb39f74, 0xa8946a, 0xbfad82].map((c) => lam(c, 'cloth'));
   const L = SIZE.sandbags, n = 4;
   for (let row = 0; row < 3; row++) for (let i = 0; i < n - (row % 2); i++) {
     const m = new THREE.Mesh(bag, cols[(i + row) % 3]); m.castShadow = true;

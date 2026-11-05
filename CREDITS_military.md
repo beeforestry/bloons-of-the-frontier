@@ -69,3 +69,26 @@ No Google Earth / Google Maps imagery is used.
 | Harbor Beacon (procedural 2D + 3D) | Original lighthouse; lantern uses MeshBasicMaterial glow | Original (CC0 as project art) |
 | Bulwark Tank roof gunner (last tier) | Procedural add-on on Quaternius Animated Tank Pack | Quaternius CC0 + original |
 Display names were renamed away from third-party game marks (Bloons / Halo UNSC / PvZ-likes). Internal ids kept for saves. No Google imagery; no ripped commercial game art.
+
+## t64 — first-person PBR texture pack + painted vehicle/naval 2D (all CC0 / original)
+
+Shared FP materials live in `src/fps/mats.ts` and tile maps under `public/assets/tex/`. Diffuse + normals are Poly Haven CC0 1K maps, re-encoded to WebP; fur/leaf/skin are original procedural tiles generated for this pass.
+
+| File | Source asset | Author / license |
+|---|---|---|
+| tex/metal.webp, metal_n.webp | Metal Plate 021 — https://polyhaven.com/a/metal_plate021 | Poly Haven CC0 |
+| tex/rust.webp, rust_n.webp | Rusty Metal 02 — https://polyhaven.com/a/rusty_metal_02 | Poly Haven CC0 |
+| tex/iron.webp, iron_n.webp | Metal 006 / iron variant — https://polyhaven.com/a/metal_006 | Poly Haven CC0 |
+| tex/wood.webp, wood_n.webp | Wood Floor Cork — https://polyhaven.com/a/wood_floor_cork | Poly Haven CC0 |
+| tex/bark.webp, bark_n.webp | Bark Brown 01 — https://polyhaven.com/a/bark_brown_01 | Poly Haven CC0 |
+| tex/concrete.webp, concrete_n.webp | Concrete Floor 02 — https://polyhaven.com/a/concrete_floor_02 | Poly Haven CC0 |
+| tex/plaster.webp, plaster_n.webp | Plaster 02 — https://polyhaven.com/a/plaster_02 | Poly Haven CC0 |
+| tex/cloth.webp, cloth_n.webp | Fabric Pattern 05 / denim family — https://polyhaven.com/a/fabric_pattern_05 | Poly Haven CC0 |
+| tex/leather.webp, leather_n.webp | Brown Leather — https://polyhaven.com/a/brown_leather | Poly Haven CC0 |
+| tex/fur.webp, fur_n.webp | Original procedural fur tile (numpy) | Original CC0 |
+| tex/leaf.webp, leaf_n.webp | Original procedural leaf tile (numpy) | Original CC0 |
+| tex/skin.webp | Original procedural skin tile (numpy) | Original CC0 |
+
+Painted 2D (exception redo, matching v3 monkey quality): `public/assets/v3/unsc_{tank,heli,destroyer,beacon}_{0,1,2}.webp` — original AI-assisted digital paintings keyed to transparency; not traced from any commercial game. Sources under `art_src/military/paint_t64/`.
+
+No Google imagery. No ripped commercial game art. Monkey / plant / troop 2D sprites were left as existing v3 paintings (FP-only upgrade for those).

@@ -1,22 +1,27 @@
-// t44: low-poly procedural 3D models for every tower and tier, matched to the 2D sprites
-// (silhouette, palette, tier details). Metres, y up, front = +X (head.rotation.y = -aim).
-// Each model is built once per (id, tier) from shared unit primitives, then merged into at most four
-// vertex-coloured meshes (base / head x lit / glow), so a tower costs 2-4 draw calls and instances share geometry.
+// t44/t64: procedural 3D models for every tower and tier, matched to the 2D sprites
+// (silhouette, palette, tier details) + CC0 PBR textures (fur/metal/cloth/wood/leaf…). Metres, y up, front = +X.
+// Built once per (id, tier) from shared primitives, merged per material kind so a tower is a handful of textured meshes.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { inferMat, matOf, type MatKind } from './mats';
 
 type V3 = [number, number, number];
-interface PO { r?: V3; glow?: boolean; head?: boolean; seg?: number }
+interface PO { r?: V3; glow?: boolean; head?: boolean; seg?: number; mat?: MatKind }
 const UNIT = new Map<string, THREE.BufferGeometry>();
 function U(key: string, mk: () => THREE.BufferGeometry) {
   let g = UNIT.get(key);
-  if (!g) { const s = mk(); g = s.index ? s.toNonIndexed() : s; g.deleteAttribute('uv'); UNIT.set(key, g); }
+  if (!g) { const s = mk(); g = s.index ? s.toNonIndexed() : s; if (!g.getAttribute('uv')) {
+    // fallback planar UVs from XZ for any geo that lacks them
+    const pos = g.getAttribute('position'), uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) { uv[i * 2] = pos.getX(i); uv[i * 2 + 1] = pos.getZ(i); }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  } UNIT.set(key, g); }
   return g;
 }
 const STAR = () => { const s = new THREE.Shape(); for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? 0.45 : 1; s[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); }
   return new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5); };
 const UP = new THREE.Vector3(0, 1, 0);
-interface Part { g: THREE.BufferGeometry; m: THREE.Matrix4; c: number; glow: boolean; head: boolean }
+interface Part { g: THREE.BufferGeometry; m: THREE.Matrix4; c: number; glow: boolean; head: boolean; mat: MatKind }
 
 /** Model builder: accumulate primitives, then merge. `off` translates, `head` routes parts to the aiming head. */
 class B {
@@ -25,7 +30,8 @@ class B {
   add(g: THREE.BufferGeometry, p: V3, s: V3, c: number, o: PO = {}, q?: THREE.Quaternion) {
     const qq = q ?? new THREE.Quaternion().setFromEuler(new THREE.Euler(...(o.r ?? [0, 0, 0]), 'YZX'));
     const m = new THREE.Matrix4().compose(new THREE.Vector3(p[0] + this.off[0], p[1] + this.off[1], p[2] + this.off[2]), qq, new THREE.Vector3(...s));
-    this.parts.push({ g, m, c, glow: !!o.glow, head: o.head ?? this.head });
+    const glow = !!o.glow;
+    this.parts.push({ g, m, c, glow, head: o.head ?? this.head, mat: o.mat ?? inferMat(c, glow) });
   }
   box(w: number, h: number, d: number, p: V3, c: number, o?: PO) { this.add(U('box', () => new THREE.BoxGeometry(1, 1, 1)), p, [w, h, d], c, o); }
   cyl(rt: number, rb: number, h: number, p: V3, c: number, o: PO = {}) {
@@ -385,30 +391,39 @@ const T: Record<string, Fn> = {
   },
 };
 
-// ---------------------------------------------------------------------------------------------- merge + cache
-const LIT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-const GLOW = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
-interface Built { base: THREE.BufferGeometry[]; head: THREE.BufferGeometry[]; pivot: V3; height: number }
+// ---------------------------------------------------------------------------------------------- merge + cache (t64: textured by MatKind)
+interface Bucket { g: THREE.BufferGeometry; mat: MatKind }
+interface Built { base: Bucket[]; head: Bucket[]; pivot: V3; height: number }
 const CACHE = new Map<string, Built>();
-function merge(parts: Part[], pivot?: V3): THREE.BufferGeometry | null {
+function mergeParts(parts: Part[], pivot?: V3): THREE.BufferGeometry | null {
   if (!parts.length) return null;
   const col = new THREE.Color(), gs = parts.map((p) => {
     const g = p.g.clone(); g.applyMatrix4(p.m); if (pivot) g.translate(-pivot[0], -pivot[1], -pivot[2]);
     const n = g.attributes.position.count, a = new Float32Array(n * 3); col.setHex(p.c);
-    for (let i = 0; i < n; i++) a.set([col.r, col.g, col.b], i * 3);
+    // gold/metal tints stay bright so the texture reads as ornate plating; others slightly lifted
+    const lift = p.mat === 'gold' || p.mat === 'metal' || p.mat === 'iron' ? 1.15 : 1.05;
+    for (let i = 0; i < n; i++) a.set([Math.min(1, col.r * lift), Math.min(1, col.g * lift), Math.min(1, col.b * lift)], i * 3);
     g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g;
   });
   const m = mergeGeometries(gs, false); gs.forEach((g) => g.dispose()); return m;
+}
+function buckets(parts: Part[], pivot?: V3): Bucket[] {
+  const by = new Map<MatKind, Part[]>();
+  for (const p of parts) { const k = p.mat; const a = by.get(k); if (a) a.push(p); else by.set(k, [p]); }
+  const out: Bucket[] = [];
+  for (const [mat, ps] of by) { const g = mergeParts(ps, pivot); if (g) out.push({ g, mat }); }
+  return out;
 }
 export const HAS_3D = (id: string) => id in T;
 function build(id: string, tier: number): Built | null {
   const k = id + ':' + tier; let r = CACHE.get(k); if (r) return r;
   const fn = T[id]; if (!fn) return null;
   const b = new B(); fn(b, tier);
-  const pv = b.pivot, pick = (h: boolean, gl: boolean) => b.parts.filter((p) => p.head === h && p.glow === gl);
-  const base = [merge(pick(false, false)), merge(pick(false, true))], head = [merge(pick(true, false), pv), merge(pick(true, true), pv)];
+  const pv = b.pivot;
+  const base = buckets(b.parts.filter((p) => !p.head), undefined);
+  const head = buckets(b.parts.filter((p) => p.head), pv);
   const box = new THREE.Box3(); for (const p of b.parts) { const g = p.g; if (!g.boundingBox) g.computeBoundingBox(); box.union(g.boundingBox!.clone().applyMatrix4(p.m)); }
-  r = { base: base as THREE.BufferGeometry[], head: head as THREE.BufferGeometry[], pivot: pv, height: box.max.y };
+  r = { base, head, pivot: pv, height: box.max.y };
   CACHE.set(k, r); return r;
 }
 /** New scene objects for a tower tier: `root` (static) holding `head` (rotate head.rotation.y = -aim). */
@@ -416,8 +431,8 @@ const SCALE: Record<string, number> = { dart_monkey: 1.2, ninja_monkey: 1.2, wiz
 export function towerMesh(id: string, tier: number): { root: THREE.Group; head: THREE.Group; height: number } | null {
   const bt = build(id, tier); if (!bt) return null;
   const root = new THREE.Group(), head = new THREE.Group(); head.position.set(...bt.pivot); root.add(head); root.scale.setScalar(SCALE[id] ?? 1);
-  bt.base.forEach((g, i) => { if (g) { const m = new THREE.Mesh(g, i ? GLOW : LIT); m.castShadow = !i; root.add(m); } });
-  bt.head.forEach((g, i) => { if (g) { const m = new THREE.Mesh(g, i ? GLOW : LIT); m.castShadow = !i; head.add(m); } });
-  root.userData.tower3d = id + ':' + tier; return { root, head, height: bt.height * (SCALE[id] ?? 1) };
+  for (const b of bt.base) { const m = new THREE.Mesh(b.g, matOf(b.mat)); m.castShadow = b.mat !== 'glow'; root.add(m); }
+  for (const b of bt.head) { const m = new THREE.Mesh(b.g, matOf(b.mat)); m.castShadow = b.mat !== 'glow'; head.add(m); }
+  root.userData.tower3d = id + ':' + tier; root.userData.textured = true; return { root, head, height: bt.height * (SCALE[id] ?? 1) };
 }
 export const TOWER_3D_IDS = Object.keys(T);
