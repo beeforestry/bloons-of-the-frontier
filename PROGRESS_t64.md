@@ -22,6 +22,10 @@ Steering: FP-primary; do **not** redo monkey/plant/troop 2D. Exception: redo 2D 
 ## Not redone (by design)
 - Monkey, plant, troop, turret-head, firebase/depot 2D v3 paintings — left as-is; FP only.
 
+## Deploy
+- **main** `5febc2c`
+- **gh-pages** `f3bbfae` — Deploy 5febc2c
+
 ## Live
 - https://beeforestry.github.io/bloons-of-the-frontier/
 - BASE `/bloons-of-the-frontier/`
