@@ -54,3 +54,13 @@ body.ps-touch-on .ps-me .nm { font-size: 13px; }
 body.ps-touch-on .ps-me small { display: none; }
 body.ps-touch-on .ps-abil { bottom: auto; top: 44px; left: auto; right: 124px; transform: none; flex-direction: column; z-index: 3; }
 body.ps-touch-on .ps-abil button { min-width: 64px; padding: 4px 6px; font-size: 11px; }
+
+/* t74: Marksman Scout aim-down-scope sight picture */
+.ps-scope { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 50%, transparent 0 38vmin, #000 38.4vmin); }
+.ps-scope .lens { position: absolute; left: 50%; top: 50%; width: 76vmin; height: 76vmin; transform: translate(-50%, -50%); border-radius: 50%;
+  box-shadow: inset 0 0 6vmin #000c, 0 0 0 3px #2a2a2a; }
+.ps-scope .lens i { position: absolute; background: #111; }
+.ps-scope .lens i.h { left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; background: linear-gradient(90deg, #111 0 40%, transparent 40% 60%, #111 60%); }
+.ps-scope .lens i.v { top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: linear-gradient(180deg, #111 0 40%, transparent 40% 60%, #111 60%); }
+.ps-scope .lens b { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #ff2a1a; box-shadow: 0 0 6px #ff2a1a; }
+.ps-scope span { position: absolute; left: 50%; bottom: 7vmin; transform: translateX(-50%); color: #ff6a5a; font: 700 13px system-ui; letter-spacing: .1em; text-shadow: 0 0 3px #000; }

@@ -36,6 +36,7 @@ const SH_R = 22; // t51: half-size (m) of the sun's shadow box
  * terrain), set in the constructor from map.mpp. Object SIZES keep the game scale SZ so units/bloons look the same. */
 export let S = 0.05;
 const SZ = 0.05;
+const ADS_FOV = 14; // t74: Marksman scope zoom (~5x vs 70° hipfire)
 /** Fallback hex when enemy.data.color is missing — keyed to match painted v3 sprites. */
 const BLOON_COL: Record<string, number> = { red: 0xff3333, blue: 0x3388ff, green: 0x33cc33, yellow: 0xffcc00, pink: 0xff66cc, lead: 0x5b6270, ceramic: 0xe9e4dc, moab: 0x5aa0e8 };
 const BUG_COL: Record<string, number> = { scavenger: 0xd9792b, hunter: 0xc4562b, charger: 0x8a5a2b, brood: 0xb38a2e, bile_titan: 0x6a7d2a, ironback: 0x6f7780, warden: 0x46c6e8, gargoyle: 0x9a6bd1 };
@@ -491,13 +492,14 @@ export class Possess {
     this.root.insertAdjacentHTML('beforeend', `
       <div class="ps-hud">
         <div class="ps-cross" id="ps-cross"><i></i></div>
+        ${this.canScope ? '<div class="ps-scope" id="ps-scope" hidden><div class="lens"><i class="h"></i><i class="v"></i><b></b></div><span>SCOPED · ×5</span></div>' : ''}
         <div class="ps-top"><span class="ps-tag">👁 POSSESSED</span><span class="ps-chip">🌊 Wave <b id="ps-wave"></b></span>
           <span class="ps-chip">🏰 HQ <b id="ps-hq"></b><span class="ps-bar"><b id="ps-hqb"></b></span></span><span class="ps-chip">💰 <b id="ps-cash"></b></span><span class="ps-chip">🎯 <b id="ps-hits">0</b> hits</span></div>
         <div class="ps-btns"><button id="ps-pause" title="Pause">⏸</button><button class="ps-exit" id="ps-exit">⏏ Exit (Esc/E)</button></div>
         <div class="ps-me"><div class="nm">${name}</div><div class="hp"><b id="ps-hp"></b></div><div class="cd"><b id="ps-cd"></b></div>
           <small>${this.isTower ? 'Stationary turret' : 'WASD move · squad follows'} · direct hits +${Math.round((MANUAL_BONUS - 1) * 100)}% dmg · ammo ∞</small></div>
         <div class="ps-abil" id="ps-abil">${abil.map((id, i) => `<button data-ab="${id}">${ABILITIES[id].icon} ${ABILITIES[id].name}<br><small>${i === 0 ? 'Q / 1' : String(i + 1)}</small><i></i></button>`).join('')}</div>
-        <div class="ps-help">Mouse aim · click/hold fire${this.isTower ? '' : ' · WASD move · Q/1-2 abilities'}<br>Esc or E: back to the 2D map · P pause</div>
+        <div class="ps-help">Mouse aim · click/hold fire${this.canScope ? ' · <b>hold Right-click / Shift: aim down scope</b>' : ''}${this.isTower ? '' : ' · WASD move · Q/1-2 abilities'}<br>Esc or E: back to the 2D map · P pause</div>
         <div class="ps-msg" id="ps-msg" hidden></div>
       </div>
       <canvas class="ps-mini" id="ps-mini" width="180" height="${Math.round(180 * this.g.map.height / this.g.map.width)}"></canvas>
@@ -515,6 +517,7 @@ export class Possess {
     for (const id of ['exit', 'pause']) $(id).onpointerdown = (e) => e.stopPropagation();
     this.el.abil.querySelectorAll<HTMLButtonElement>('button').forEach((b) => { b.onpointerdown = (e) => e.stopPropagation(); b.onclick = () => this.ability(b.dataset.ab as AbilityId); });
     cv.addEventListener('mousedown', (e) => {
+      if (!this.touch && e.button === 2) { this.setAds(true); return; }
       if (this.touch || e.button !== 0) return;
       if (!this.locked) { void cv.requestPointerLock?.(); }
       this.firing = true;
@@ -542,10 +545,23 @@ export class Possess {
     fire.addEventListener('pointerdown', (e) => { e.stopPropagation(); this.firing = true; });
     fire.addEventListener('pointerup', () => { this.firing = false; }); fire.addEventListener('pointercancel', () => { this.firing = false; });
   }
-  private onUp = () => { this.firing = false; };
-  private onLock = () => { this.locked = document.pointerLockElement === this.renderer.domElement; if (!this.locked) this.firing = false; };
+  private onUp = (e?: MouseEvent) => { if (e && e.button === 2) { this.setAds(false); return; } this.firing = false; };
+  // t74: Marksman Scout aim-down-scope (hold RMB or Shift): FOV zoom, slower look, scope sight picture
+  get canScope(): boolean { return this.obj instanceof Tower && this.obj.data.id === 'sniper_monkey'; }
+  ads = false; adsK = 0;
+  setAds(on: boolean) { this.ads = on && this.canScope && this.alive; }
+  private updateAds(dt: number) {
+    const k = Math.max(0, Math.min(1, this.adsK + (this.ads ? 1 : -1) * dt * 7));
+    if (k === this.adsK) return; this.adsK = k;
+    this.camera.fov = 70 + (ADS_FOV - 70) * k; this.camera.updateProjectionMatrix();
+    this.gun.visible = k < 0.55;
+    const sc = this.root.querySelector<HTMLElement>('#ps-scope'); if (sc) { sc.hidden = k < 0.55; }
+    this.el.cross.style.display = k >= 0.55 ? 'none' : '';
+  }
+  private onLock = () => { this.locked = document.pointerLockElement === this.renderer.domElement; if (!this.locked) { this.firing = false; this.setAds(false); } };
   private onMouse = (e: MouseEvent) => { if (this.locked && !this.g.paused) this.look(e.movementX, e.movementY); };
   private look(dx: number, dy: number) {
+    const sens = 1 - 0.78 * this.adsK; dx *= sens; dy *= sens; // t74: slower look while scoped
     this.yaw -= dx * 0.0022;
     // towers: turret pitch limits (can't look straight up/down); troops: wider head range
     const [lo, hi] = this.isTower ? [-0.85, 0.45] : [-1.2, 1.2];
@@ -554,6 +570,7 @@ export class Possess {
   private onKey = (e: KeyboardEvent) => {
     if ((e.target as HTMLElement)?.closest?.('input,textarea,#bug-report,.br-overlay')) return;
     const k = e.key.toLowerCase();
+    if (k === 'shift' && this.canScope) this.setAds(true);
     e.stopImmediatePropagation(); // the 2D game's hotkeys (WASD pan, Space, Q...) don't apply while possessed
     if (k === 'escape' || k === 'e') { if (!e.repeat) this.exit(); return; }
     if (k === 'p') { this.setPause(!this.g.paused); return; }
@@ -561,7 +578,7 @@ export class Possess {
     if (k === ' ') e.preventDefault();
     if (!this.isTower) { const ab = this.g.squadAbilities((this.obj as Unit).squad); const i = k === 'q' ? 0 : /^[1-9]$/.test(k) ? +k - 1 : -1; if (i >= 0 && ab[i]) this.ability(ab[i]); }
   };
-  private onKeyUp = (e: KeyboardEvent) => { this.keys.delete(e.key.toLowerCase()); e.stopImmediatePropagation(); };
+  private onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') this.setAds(false); this.keys.delete(e.key.toLowerCase()); e.stopImmediatePropagation(); };
   private ability(id: AbilityId) { if (this.obj instanceof Unit && this.g.useAbility(this.obj.squad, id)) logEvent('possess: ability ' + id); }
   private resize = () => { const w = innerWidth, h = innerHeight; this.renderer.setSize(w, h, false); this.composer?.setPixelRatio(this.pr); this.composer?.setSize(w, h); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); };
 
@@ -689,6 +706,7 @@ export class Possess {
     this.kick = Math.max(0, this.kick - dt * 9); const big = this.vm.kind === 'tank_cannon' ? 2.5 : 1;
     this.gun.position.set(this.gunBase.x + Math.cos(this.bob) * bobA, this.gunBase.y + Math.abs(Math.sin(this.bob)) * bobA - this.kick * 0.01, this.gunBase.z + this.kick * 0.06 * big);
     this.gun.rotation.set(this.kick * 0.09, 0, this.gunRoll * this.kick);
+    this.updateAds(dt);
     this.syncEntities(dt);
     this.hud(dt);
     return true;
@@ -912,12 +930,12 @@ export class Possess {
   setMove(fwd: number, side: number) { this.joy.x = side; this.joy.y = -fwd; }
   state() {
     const o = this.obj;
-    return { kind: this.isTower ? 'tower' : 'unit', id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch };
+    return { kind: this.isTower ? 'tower' : 'unit', id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope };
   }
 
   /** Leave first person: release the entity back to its AI and restore the 2D view. */
   exit(msg?: string) {
-    if (!this.alive) return; this.alive = false;
+    if (!this.alive) return; this.ads = false; this.alive = false;
     cancelAnimationFrame(this.raf);
     removeEventListener('resize', this.resize); removeEventListener('keydown', this.onKey, true); removeEventListener('keyup', this.onKeyUp, true);
     removeEventListener('mousemove', this.onMouse); removeEventListener('mouseup', this.onUp); document.removeEventListener('pointerlockchange', this.onLock);
