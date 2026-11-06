@@ -1,6 +1,7 @@
 // t71: Blender-authored GLBs (painterly v3 look) for Possess — bloons, key towers, scavenger, viewmodel guns.
 // Built by art_src/glb_t71/scripts/build_meshes.py (+ refine_sprite_towers.py). No ripped BTD/PvZ/Halo art.
 // t72: tower_dart + gun_dart are the refined Dart Scout (art_src/glb_t72/scripts/build_dart_scout.py, matches dart_monkey_2.webp).
+// t73: tower_sniper + gun_sniper are the refined Marksman Scout (art_src/glb_t73/scripts/build_marksman.py, matches sniper_monkey_2.webp).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { assetUrl } from '../assetUrl';
