@@ -1,6 +1,7 @@
 // t71: Blender-authored GLBs (painterly v3 look) for Possess — bloons, key towers, scavenger, viewmodel guns.
 // Built by art_src/glb_t71/scripts/build_meshes.py (+ refine_sprite_towers.py). No ripped BTD/PvZ/Halo art.
 // t72: tower_dart + gun_dart are the refined Dart Scout (art_src/glb_t72/scripts/build_dart_scout.py, matches dart_monkey_2.webp).
+// t76: every first-person enemy (bloons, bugs, bosses) has its own GLB from art_src/glb_t76/scripts/build_enemies.py.
 // t73: tower_sniper + gun_sniper are the refined Marksman Scout (art_src/glb_t73/scripts/build_marksman.py, matches sniper_monkey_2.webp).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -52,6 +53,28 @@ export function loadGlbGeometry(name: string): Promise<THREE.BufferGeometry> {
       return geo;
     });
     geoCache.set(name, p);
+  }
+  return p;
+}
+
+/** t76: every mesh primitive of a GLB as world-baked {geometry, material} parts — one InstancedMesh each. */
+export type GlbPart = { geometry: THREE.BufferGeometry; material: THREE.Material };
+const partsCache = new Map<string, Promise<GlbPart[]>>();
+export function loadGlbParts(name: string): Promise<GlbPart[]> {
+  let p = partsCache.get(name);
+  if (!p) {
+    p = loadScene(name).then((root) => {
+      root.updateMatrixWorld(true);
+      const parts: GlbPart[] = [];
+      root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !m.geometry) return;
+        const g = m.geometry.clone(); g.applyMatrix4(m.matrixWorld);
+        parts.push({ geometry: g, material: Array.isArray(m.material) ? m.material[0] : m.material });
+      });
+      return parts;
+    });
+    partsCache.set(name, p);
   }
   return p;
 }

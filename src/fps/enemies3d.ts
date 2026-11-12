@@ -1,4 +1,4 @@
-// t67/t68/t71: 3D enemies from painted 2D v3 sprites — textures + Blender GLB meshes (t71).
+// t67/t68/t71/t76: 3D enemies from painted 2D v3 sprites — textures + Blender GLB meshes (t71).
 import * as THREE from 'three';
 import { assetUrl } from '../assetUrl';
 import { loadGlbGeometry, BLOON_GLB_IDS } from './glbModels';
@@ -46,3 +46,14 @@ export function loadScavengerGeometry(): Promise<THREE.BufferGeometry> {
 }
 
 export { BLOON_GLB_IDS };
+
+/** t76: enemy id -> its own Blender GLB (art_src/glb_t76), modelled from the matching v3 sprite. */
+export const ENEMY_GLB: Record<string, string> = {
+  red: 'bloon_red', blue: 'bloon_blue', green: 'bloon_green', yellow: 'bloon_yellow', pink: 'bloon_pink',
+  lead: 'bloon_lead', ceramic: 'bloon_ceramic', moab: 'bloon_moab',
+  scavenger: 'bug_scavenger', hunter: 'bug_hunter', charger: 'bug_charger', brood: 'bug_brood',
+  ironback: 'bug_ironback', warden: 'bug_warden', gargoyle: 'bug_gargoyle', bile_titan: 'bug_titan',
+  boss_scarab: 'boss_scarab', boss_zeppelin: 'boss_zeppelin', boss_dreadnought: 'boss_dreadnought', boss_leviathan: 'boss_leviathan',
+};
+/** t76: GLBs authored centred on the origin (balloons / blimps / flyer); the rest stand with feet at y=0. */
+export const CENTRED_GLB = new Set(['bloon_moab', 'boss_zeppelin', 'bug_gargoyle']);

@@ -18,8 +18,8 @@ import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
-import { enemySpriteTex, loadBloonGeometry, loadScavengerGeometry } from './enemies3d';
-import { loadGlbClone, TOWER_GLB, GUN_GLB } from './glbModels';
+import { enemySpriteTex, ENEMY_GLB, CENTRED_GLB } from './enemies3d';
+import { loadGlbClone, loadGlbParts, TOWER_GLB, GUN_GLB } from './glbModels';
 import { setMatQuality, matOf } from './mats';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
@@ -80,12 +80,14 @@ export class Possess {
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMeshes = new Map<string, THREE.InstancedMesh>(); private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
+  /** t76: per-enemy-type instanced GLB sets (one InstancedMesh per GLB primitive, shared matrices) + boss/blimp templates. */
+  private enemySets = new Map<string, { parts: THREE.InstancedMesh[]; n: number; cap: number; glb: string }>(); private bossTpl = new Map<string, THREE.Group>();
   private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli' | 'destroyer' | 'beacon'; tier?: number; model?: THREE.Group; base?: number }>();
   private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number }>();
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number> };
+  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string> };
   private seaN: THREE.Texture | null = null;
   private war: WarFx | null = null;
   private ctxLost = false;
@@ -424,21 +426,33 @@ export class Possess {
       this.tracers.push({ line, life: 0 });
     }
   }
-  /** t71: replace InstancedMesh geometries with Blender-authored bloon/scavenger GLBs. */
+  /** t76: load each enemy's own Blender GLB. Common bloons/bugs -> instanced multi-material sets; bosses/blimps/flyer -> clone templates. */
   private async upgradeEnemyGlbs() {
-    try {
-      for (const id of ['red', 'blue', 'green', 'yellow', 'pink', 'lead', 'ceramic']) {
-        const mesh = this.bloonMeshes.get(id); if (!mesh) continue;
-        const geo = await loadBloonGeometry(id); if (!this.alive) return;
-        const old = mesh.geometry; mesh.geometry = geo; old.dispose();
-      }
-      const sgeo = await loadScavengerGeometry(); if (!this.alive) return;
-      const oldB = this.bugMesh.geometry; this.bugMesh.geometry = sgeo; oldB.dispose();
-      this.vm.towers3d['glb_bloons'] = 7; this.vm.towers3d['glb_scavenger'] = 1;
-    } catch (e) { console.warn('glb enemies', e); }
+    const isBossType = (id: string) => id === 'moab' || id === 'gargoyle' || id === 'bile_titan' || id.startsWith('boss_');
+    await Promise.all(Object.entries(ENEMY_GLB).map(async ([id, glb]) => {
+      try {
+        if (isBossType(id)) {
+          const tpl = await loadGlbClone(glb); if (!this.alive) return;
+          this.bossTpl.set(id, tpl);
+        } else {
+          const parts = await loadGlbParts(glb); if (!this.alive || !parts.length) return;
+          const cap = glb.startsWith('bloon_') ? 200 : 300;
+          const meshes = parts.map((p) => { const im = new THREE.InstancedMesh(p.geometry, p.material, cap); im.count = 0; im.frustumCulled = false; this.scene.add(im); return im; });
+          this.enemySets.set(id, { parts: meshes, n: 0, cap, glb });
+        }
+        this.vm.towers3d['glb_' + glb] = 1;
+      } catch (err) { console.warn('glb enemy', glb, err); }
+    }));
   }
   private bossModel(e: Enemy): THREE.Group {
-    let m = this.bossModels.get(e); if (m) return m;
+    let m = this.bossModels.get(e);
+    const tpl = this.bossTpl.get(e.data.id);
+    if (m && (m.userData.glb || !tpl)) return m;
+    if (m) { this.scene.remove(m); this.bossModels.delete(e); } // procedural placeholder -> GLB now loaded
+    if (tpl) {
+      m = new THREE.Group(); const c = tpl.clone(true); m.add(c); m.userData.glb = ENEMY_GLB[e.data.id];
+      this.scene.add(m); this.bossModels.set(e, m); return m;
+    }
     m = new THREE.Group(); const col = enemyCol(e) || (BOSS_COL[e.data.id] ?? 0x8a3fd8);
     if (e.data.family === 'bloon' || e.data.air) { // blimp
       m.add(new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10).scale(1.9, 0.85, 0.85), lam(col)));
@@ -757,13 +771,32 @@ export class Possess {
     const g = this.g, D = this.dummy, me = this.obj;
     let nb = 0, ng = 0; const live = new Set<Enemy>();
     for (const m of this.bloonMeshes.values()) m.userData._n = 0; this.bloonMesh.userData._n = 0;
+    const eg: Record<string, string> = {};
     for (const e of g.enemies) {
       if (!e.alive) continue; live.add(e);
       const gh = standH(g.map, e.x, e.y), x = e.x * S, z = e.y * S, y = enemyY(e) + gh, id = e.data.id;
       if (e.data.boss || id === 'moab' || e.data.air) {
-        const m = this.bossModel(e), k = Math.max(1, e.data.radius * SZ * 0.9);
-        m.position.set(x, y, z); m.rotation.set(0, -e.ang, 0); m.scale.setScalar(k);
+        const m = this.bossModel(e), k = Math.max(1, e.data.radius * SZ * 0.9), glb = m.userData.glb as string | undefined;
+        // t76: walker GLBs stand on the ground; centred blimp/flyer GLBs float high enough not to clip terrain
+        const yy = !glb ? y : CENTRED_GLB.has(glb) ? Math.max(y, gh + 1.25 * k) : gh;
+        m.position.set(x, yy, z); m.rotation.set(0, -e.ang, 0); m.scale.setScalar(k);
+        if (glb) eg[id] = glb;
         this.seen.set(e, { x, y, z, c: BOSS_COL[id] ?? 0x8a3fd8 }); continue;
+      }
+      const set = this.enemySets.get(id);
+      if (set) { // t76: per-type GLB instancing
+        if (set.n >= set.cap) continue;
+        if (e.data.family === 'bloon') {
+          const k = (enemyR(e) / 0.62) * 0.95, t = performance.now() / 300 + e.uid, bob = Math.sin(t) * 0.12;
+          D.position.set(x, y + bob, z); D.rotation.set(Math.sin(t * 0.7) * 0.06, e.uid * 1.7, Math.cos(t * 0.6) * 0.06); D.scale.setScalar(k);
+          this.seen.set(e, { x, y, z, c: enemyCol(e) }); nb++;
+        } else {
+          const k = Math.max(0.6, e.data.radius * SZ * 1.6);
+          D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k);
+          this.seen.set(e, { x, y: gh + 0.5, z, c: enemyCol(e) });
+        }
+        D.updateMatrix(); for (const im of set.parts) im.setMatrixAt(set.n, D.matrix);
+        set.n++; eg[id] = set.glb; continue;
       }
       if (e.data.family === 'bloon') {
         const mesh = this.bloonMeshes.get(id) ?? this.bloonMesh;
@@ -790,6 +823,8 @@ export class Possess {
     this.bloonMesh.count = (this.bloonMesh.userData._n as number) || 0; this.bloonMesh.userData._n = 0;
     this.bloonMesh.instanceMatrix.needsUpdate = true; if (this.bloonMesh.instanceColor) this.bloonMesh.instanceColor.needsUpdate = true;
     this.bugMesh.count = ng;
+    for (const set of this.enemySets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; } set.n = 0; }
+    this.vm.enemyGlb = eg;
     this.bugMesh.instanceMatrix.needsUpdate = true;
     if (this.bugMesh.instanceColor) this.bugMesh.instanceColor.needsUpdate = true;
     // towers
