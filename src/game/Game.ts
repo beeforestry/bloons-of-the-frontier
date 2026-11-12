@@ -146,7 +146,7 @@ export class Game {
   // ------------------------------------------------------------------ multiplayer (phase 2)
   /** 'solo' = single player (untouched), 'host' = authoritative sim, 'client' = mirror that only renders/interpolates. */
   net: 'solo' | 'host' | 'client' = 'solo';
-  mode: 'solo' | 'coop' | 'versus' = 'solo';
+  mode: 'solo' | 'coop' | 'versus' | 'overrun' = 'solo';
   /** Player whose wallet / ownership applies to the action being executed (host swaps wallets per command). */
   actingPid = 0;
   /** Auto Army toggle per player (new squads inherit it). */
@@ -398,7 +398,7 @@ export class Game {
    *  spent every credit still went broke by wave 10-11 vs the first Bile Titan). */
   get bountyMul() { return this.diff.hp > 1 && this.waves.index <= 20 ? 1.25 : 1; }
   damageHQ(n: number, _src?: Enemy) {
-    if (this.state !== 'playing' || this.isClient) return;
+    if (this.state !== 'playing' || this.isClient || this.overrun) return;
     if (_src?.atBase) {
       const cap = this.hq.health.max * 0.035;
       this.hqMelee = Math.min(cap, this.hqMelee + cap * (this.time - this.hqMeleeT)); this.hqMeleeT = this.time;
@@ -739,9 +739,9 @@ export class Game {
   }
   // ------------------------------------------------------------------ first-person possession (t37)
   /** Every tower / unit currently possessed (any player). */
-  possessed(): (Tower | Unit)[] { return [...this.towers.filter((t) => t.alive && t.manual), ...this.units.filter((u) => u.alive && u.manual)]; }
+  possessed(): (Tower | Unit | Enemy)[] { return [...this.towers.filter((t) => t.alive && t.manual), ...this.units.filter((u) => u.alive && u.manual), ...this.enemies.filter((e) => e.alive && e.manual)]; }
   /** Take (ctl) or release (null) manual control of one of YOUR towers / units. Networked in co-op (Sync G_METHODS). */
-  possessCtl(o: Tower | Unit, ctl: ManualCtl | null): boolean {
+  possessCtl(o: Tower | Unit | Enemy, ctl: ManualCtl | null): boolean {
     if (!o || !o.alive) return false;
     const pid = this.actingPid ?? 0;
     if (ctl) {
@@ -759,6 +759,7 @@ export class Game {
   /** Can a possessed troop stand here? Inside the map, off rocks/logs, towers and buildings. */
   walkable(x: number, y: number): boolean {
     if (x < 12 || y < 12 || x > this.map.width - 12 || y > this.map.height - 12) return false;
+    if (this.overrun && this.isWaterAt(x, y)) return false; // t78: Overrun is fought on foot / wheels — no wading into the sea
     for (const o of this.obstacles) if (o.alive && (o.x - x) ** 2 + (o.y - y) ** 2 < 26 * 26) return false;
     for (const t of this.towers) if (t.alive && (t.x - x) ** 2 + (t.y - y) ** 2 < 20 * 20) return false;
     for (const b of this.buildings) if (b.alive && (b.x - x) ** 2 + (b.y - y) ** 2 < (b.isHQ ? 70 : 40) ** 2) return false;
@@ -833,6 +834,8 @@ export class Game {
   }
   /** Versus host controller (cards, threat energy, spells, telegraphs, Boss Push); null otherwise. */
   versus: { update(g: Game, dt: number): void } | null = null;
+  /** t78 Overrun (first-person PvEvP survival). Null in every other mode. */
+  overrun: { update(g: Game, dt: number): void; stepMonster(g: Game, e: Enemy, dt: number): void; placeOk?(id: string, at: Vec): boolean; prey?(e: Enemy, aim: number): unknown } | null = null;
   /** Owner (player id) of whatever is currently firing (towers / units / projectiles / MAC). */
   curOwner = -1;
   private comboT = 0;
@@ -1038,7 +1041,10 @@ export class Game {
     const q = s.x !== undefined ? { x: s.x, y: s.y! } : this.grid.cellCenter(s.c, s.r);
     return this.spotOk(id, q.x, q.y) || (s.x === undefined && this.grid.fits(s.c, s.r, fp));
   }
-  canPlace(id: string, cell: Spot | null) { return !!cell && !(cell as { bad?: boolean }).bad && this.spotValid(id, cell) && this.res.canAfford({ credits: towerById(id).tiers[0].cost }); }
+  canPlace(id: string, cell: Spot | null) {
+    if (this.overrun?.placeOk && cell) return !(cell as { bad?: boolean }).bad && this.spotValid(id, cell) && this.overrun.placeOk(id, cell.x !== undefined ? { x: cell.x, y: cell.y! } : this.grid.cellCenter(cell.c, cell.r));
+    return !!cell && !(cell as { bad?: boolean }).bad && this.spotValid(id, cell) && this.res.canAfford({ credits: towerById(id).tiers[0].cost });
+  }
   /** Path objects go ON the road: returns the snapped road point or null. */
   roadSpot(p: Vec): (Vec & { lane: number }) | null {
     const nl = this.nearestLane(p);
@@ -1358,7 +1364,7 @@ export class Game {
   update(dtReal: number) {
     if (this.paused !== this.wasPaused) { this.wasPaused = this.paused; this.resetShake(); }
     if (this.paused || this.state !== 'playing') { this.updateEffects(dtReal); return; }
-    if (this.speed !== 1 && (this.towers.some((t) => t.manual) || this.units.some((u) => u.manual))) this.speed = 1; // possession forces 1x
+    if (this.speed !== 1 && (this.overrun || this.towers.some((t) => t.manual) || this.units.some((u) => u.manual))) this.speed = 1; // possession forces 1x
     let left = Math.min(0.1, dtReal) * this.speed;
     while (left > 1e-6) { const dt = Math.min(1 / 60, left); left -= dt; this.step(dt); }
     this.updateEffects(dtReal);
@@ -1371,8 +1377,9 @@ export class Game {
     for (const b of [...this.buildings]) if (b.alive) b.update(this, dt);
     this.updateStrikes(dt);
     if (this.state !== 'playing') return;
-    if (!this.isClient) this.waves.update(this, dt);
+    if (!this.isClient && !this.overrun) this.waves.update(this, dt);
     this.versus?.update(this, dt);
+    this.overrun?.update(this, dt);
     for (const t of this.towers) { const n0 = this.projectiles.length; this.curOwner = t.owner; t.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = t.owner; }
     for (const u of this.units) { const n0 = this.projectiles.length; this.curOwner = u.squad.owner; u.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = u.squad.owner; }
     this.curOwner = -1;

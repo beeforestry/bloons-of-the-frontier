@@ -67,6 +67,15 @@ export class Enemy {
   /** Versus: Speed Surge (+30% speed) / Smoke Screen (untargetable) timers. */
   surgeT = 0; smokeT = 0;
   markSlow(g: Game) { this.slowBy = g.curOwner; this.slowAt = g.time; }
+  /** t78 Overrun: free-roaming monster that hunts survivors off-road (no lanes, no HQ). */
+  hunt = false;
+  /** t78 Overrun: player id controlling this monster (a turned survivor), -1 = AI. */
+  turnedBy = -1;
+  /** t78: first-person control of a turned monster (same shape as tower / troop possession). */
+  manual: import('../core/types').ManualCtl | null = null;
+  possessedBy = -1;
+  /** t78 Overrun per-monster AI / attack state (owned by the Overrun controller). */
+  ov: { biteCd: number; abilCd: number; dashT: number; spawnT: number; bites: number; stuckT: number; side: number; hpK?: number } = { biteCd: 0, abilCd: 0, dashT: 0, spawnT: 0, bites: 0, stuckT: 0, side: 1 };
 
   constructor(public data: EnemyData, progress: number, lateral = 0, lane = 0, hpMul = 1) {
     this.hpMul = hpMul;
@@ -108,6 +117,7 @@ export class Enemy {
     if (this.surgeT > 0) this.surgeT -= dt;
     if (this.smokeT > 0) { this.smokeT -= dt; this.targetable = this.smokeT <= 0; }
     if (this.stunT > 0) { this.stunT -= dt; return; }
+    if (this.hunt) { g.overrun?.stepMonster(g, this, dt); return; }
     if (d.bossKit && !g.isClient) this.updateBoss(g, dt);
     const speedMul = (1 - this.slowAmt) * (this.surgeT > 0 ? 1.3 : 1);
 

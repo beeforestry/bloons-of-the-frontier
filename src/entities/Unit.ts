@@ -97,9 +97,14 @@ export class Unit implements Buffable {
   /** First-person possession (t37): WASD move + manual fire; the rest of the squad follows. */
   manual: ManualCtl | null = null;
   possessedBy = -1;
+  /** t78 Overrun: survivor max-HP multiplier (1 everywhere else). */
+  hpMul = 1;
+  /** t78 Overrun: armour cap + damage multiplier for the survivor classes (1 / Infinity elsewhere). */
+  armorMax = Infinity; ovDmg = 1;
   private appliedTier = -1;
   private appliedStars = 0;
   private appliedPlating = false;
+  private appliedHpMul = 1;
 
   constructor(readonly data: UnitData, readonly squad: Squad, readonly index: number, g: Game, at: Vec) {
     this.x = at.x; this.y = at.y;
@@ -113,7 +118,7 @@ export class Unit implements Buffable {
   range(g: Game) { return this.t(g).stats.range * (1 + this.buffs.totals.bonusRangePct) * (this.garrison ? 1 + this.garrison.gRange() : 1); }
   get isWorker() { return this.data.role === 'worker'; }
   get blockCap() { return this.data.blockCap ?? 2; }
-  get dmgMul() { return (1 + VET.dmg * this.stars) * (this.rallyT > 0 ? 1 + RALLY.dmg : 1); }
+  get dmgMul() { return this.ovDmg * (1 + VET.dmg * this.stars) * (this.rallyT > 0 ? 1 + RALLY.dmg : 1); }
   get rateMul() { return (1 + VET.rate * this.stars) * (1 + this.buffs.totals.ratePct) * (this.stimT > 0 ? STIM.rate : 1) * (this.vetAuraT > 0 ? 1 + VET_AURA.rate : 1); }
   addXp = (n: number) => {
     if (!this.alive) return;
@@ -140,16 +145,16 @@ export class Unit implements Buffable {
   protected syncTier(g: Game) {
     const tier = this.tier(g);
     const plated = g.armory.has('plating');
-    if (tier === this.appliedTier && this.stars === this.appliedStars && plated === this.appliedPlating) return;
+    if (tier === this.appliedTier && this.stars === this.appliedStars && plated === this.appliedPlating && this.hpMul === this.appliedHpMul) return;
     if (this.appliedTier >= 0 && tier !== this.appliedTier) g.fx({ kind: 'ring', x: this.x, y: this.y, r: 24, color: this.data.tiers[tier].visual.glow ?? '#fff', dur: 0.6 });
     if (this.stars > this.appliedStars) {
       g.fx({ kind: 'ring', x: this.x, y: this.y, r: 30, color: '#ffd84a', dur: 0.7 });
       g.fx({ kind: 'text', x: this.x, y: this.y - 34, text: '★'.repeat(this.stars) + ' Veteran!', color: '#ffd84a', dur: 1.1 });
       g.stats.promotions++;
     }
-    this.appliedTier = tier; this.appliedStars = this.stars; this.appliedPlating = plated;
+    this.appliedTier = tier; this.appliedStars = this.stars; this.appliedPlating = plated; this.appliedHpMul = this.hpMul;
     const s = this.data.tiers[tier].stats;
-    this.health.setBase(s.maxHp * (1 + VET.hp * this.stars) * (plated ? 1 + ARMORY_FX.plating : 1), s.armor);
+    this.health.setBase(s.maxHp * this.hpMul * (1 + VET.hp * this.stars) * (plated ? 1 + ARMORY_FX.plating : 1), Math.min(s.armor, this.armorMax));
   }
 
   protected moveTo(p: Vec, speed: number, dt: number): boolean {

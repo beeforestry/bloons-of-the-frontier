@@ -28,8 +28,8 @@ import type { DifficultyId } from '../data/difficulty';
 import { PCOLORS } from '../core/players';
 import type { Vec } from '../core/types';
 
-export type Mode = 'coop' | 'versus';
-export interface MpSettings { mode: Mode; map: string; diff: DifficultyId; credits: number; waveTimer: number; speed: 1 | 2; matchMin: number; hostRole: 'defender' | 'invader' }
+export type Mode = 'coop' | 'versus' | 'overrun';
+export interface MpSettings { mode: Mode; map: string; diff: DifficultyId; credits: number; waveTimer: number; speed: 1 | 2; matchMin: number; hostRole: 'defender' | 'invader'; /** t78 Overrun: AI squadmates */ ovBots?: number }
 export interface PlayerInfo { pid: number; name: string; ready: boolean }
 export const DEFAULT_SETTINGS: MpSettings = { mode: 'coop', map: 'tropical', diff: 'medium', credits: 650, waveTimer: 25, speed: 1, matchMin: 8, hostRole: 'defender' };
 export const SNAP_HZ = 15;
@@ -101,6 +101,7 @@ export class Sync {
     if (this.isHost) {
       for (const p of players) if (p.pid !== this.resPid) this.wallets.set(p.pid, { res: { ...g.res.dump() }, energy: g.energy, powerCd: {}, deployCd: {}, acc: 0 });
       if (settings.mode === 'coop' && n > 1) g.res.splitHook = (amt, type) => this.split(amt, type);
+      if (settings.mode === 'overrun') g.waves.start = () => false; // t78: the Overrun director replaces waves
       if (settings.mode === 'versus') {
         this.versus = new Versus(settings.matchMin * 60, this.invaderPid, this.defenderPid);
         this.versus.emit = (ev) => this.event(ev);
@@ -109,7 +110,7 @@ export class Sync {
       }
       this.waveCountdown = settings.mode === 'coop' ? settings.waveTimer : 0;
       // t36: one free Sprout Farmhand per defending player (co-op: everyone; versus: the defender)
-      for (const pid of settings.mode === 'versus' ? [this.defenderPid] : players.map((p) => p.pid)) g.spawnFreeCollector(pid);
+      if (settings.mode !== 'overrun') for (const pid of settings.mode === 'versus' ? [this.defenderPid] : players.map((p) => p.pid)) g.spawnFreeCollector(pid);
       g.netHook.onCombo = (x, y) => this.event({ k: 'combo', x: Math.round(x), y: Math.round(y) });
       net.onMsg = (pid, m) => this.hostMsg(pid, m);
       const roster = players.map((p) => ({ ...p }));
@@ -135,9 +136,11 @@ export class Sync {
     g.waves.start = ((gm: Game) => this.local('waves.start', [gm])) as never;
   }
   get coop() { return this.settings.mode === 'coop'; }
+  /** t78: Overrun (first-person survival vs the hive). */
+  get ovr() { return this.settings.mode === 'overrun'; }
   get defenderPid() { return this.settings.hostRole === 'defender' ? 0 : 1; }
   get invaderPid() { return this.settings.hostRole === 'defender' ? 1 : 0; }
-  get localRole(): 'coop' | 'defender' | 'invader' { return this.coop ? 'coop' : this.localPid === this.defenderPid ? 'defender' : 'invader'; }
+  get localRole(): 'coop' | 'defender' | 'invader' { return this.coop || this.ovr ? 'coop' : this.localPid === this.defenderPid ? 'defender' : 'invader'; }
   color(pid: number) { return PCOLORS[pid] ?? '#fff'; }
   dispose() { if (ACTIVE === this) ACTIVE = null; this.net.close(); }
 
@@ -165,6 +168,13 @@ export class Sync {
   /** Permission rules. Returns a reason string when the action is not allowed. */
   deny(pid: number, name: string, args: unknown[]): string | null {
     const g = this.g;
+    if (this.ovr) {
+      // t78 Overrun: you drive only your own survivor / turned monster; towers are bought through the 'ov' op
+      const a0 = args[0];
+      if (name === 'possessCtl') return (a0 instanceof Unit && a0.squad.owner === pid) || (a0 instanceof Enemy && a0.turnedBy === pid) ? null : 'You can only control your own survivor or monster';
+      if (['useAbility', 'setTargeting', 'setStance'].includes(name)) return a0 instanceof Squad && a0.owner === pid ? null : 'Not your unit';
+      return 'Not available in Overrun';
+    }
     if (!this.coop) {
       const inv = pid === this.invaderPid;
       if (inv && !name.startsWith('vs.')) return 'You are the Invader — play cards and spells from your hand';
@@ -244,12 +254,15 @@ export class Sync {
   setAllow(on: boolean) { this.op('allow', { on }); }
   card(id: string, lane: number) { this.op('card', { id, lane }); }
   spell(id: string, at: Vec) { this.op('spell', { id, x: at.x, y: at.y }); }
-  pause(on: boolean) { if (this.isHost) this.setPause(this.localPid, on); else if (this.coop) this.op('pause', { on }); else this.g.toast('Only the host can pause a Versus match', '#ffd24a'); }
+  /** t78 Overrun action (pick / turn / place) — host runs it, a client asks the host. */
+  ovAct(a: string, d: Record<string, unknown>) { this.op('ov', { a, d }); }
+  pause(on: boolean) { if (this.isHost) this.setPause(this.localPid, on); else if (this.coop || this.ovr) this.op('pause', { on }); else this.g.toast('Only the host can pause a Versus match', '#ffd24a'); }
   private setPause(pid: number, on: boolean) { if (this.g.paused === on) return; this.g.paused = on; this.event({ k: 'paused', pid, on }); this.snapT = 0; }
 
   private hostOp(pid: number, op: string, d: Record<string, unknown>) {
     const g = this.g;
-    if (op === 'pause') { if (this.coop) this.setPause(pid, !!d.on); return; }
+    if (op === 'ov') { const why = g.overrun ? (g.overrun as unknown as { action(pid: number, a: string, d: Record<string, unknown>): string }).action(pid, String(d.a), (d.d ?? {}) as Record<string, unknown>) : 'no match'; if (why) this.toastTo(pid, why); else this.snapT = 0; return; }
+    if (op === 'pause') { if (this.coop || this.ovr) this.setPause(pid, !!d.on); return; }
     if (op === 'ping') { const ev = { k: 'ping', kind: d.kind, x: d.x, y: d.y, pid }; this.event(ev); return; }
     if (op === 'allow') { this.allowAlly.set(pid, !!d.on); this.event({ k: 'allow', pid, on: !!d.on }); return; }
     if (op === 'donate') {
@@ -398,7 +411,7 @@ export class Sync {
   private r1 = (n: number) => Math.round(n * 10) / 10;
   private broadcastSnap() {
     const g = this.g, r1 = this.r1;
-    const en = (e: Enemy) => [e.uid, e.data.id, e.lane, r1(e.progress), r1(e.lateral), r1(e.hp), Math.round(e.maxHp), r1(e.shield), (e.ally ? 1 : 0) | (e.atBase ? 2 : 0) | (e.shieldDown ? 4 : 0), r1(e.stunT), r1(e.slowT), r1(e.smokeT), r1(e.surgeT), e.bossPhase, r1(e.allyPower), Math.round(e.x), Math.round(e.y)];
+    const en = (e: Enemy) => [e.uid, e.data.id, e.lane, r1(e.progress), r1(e.lateral), r1(e.hp), Math.round(e.maxHp), r1(e.shield), (e.ally ? 1 : 0) | (e.atBase ? 2 : 0) | (e.shieldDown ? 4 : 0), r1(e.stunT), r1(e.slowT), r1(e.smokeT), r1(e.surgeT), e.bossPhase, r1(e.allyPower), Math.round(e.x), Math.round(e.y), e.hunt ? e.turnedBy + 2 : 0, r1(e.ang), e.possessedBy];
     const garCode = (u: Unit) => { const ga = u.garrison; if (!ga) return 0; if (ga instanceof Tower) return 't' + ga.uid; const i = g.envs.indexOf(ga as EnvStructure); return i >= 0 ? 'e' + i : 0; };
     const base = {
       t: 's', tm: r1(g.time), st: g.state, sp: g.speed, pa: g.paused ? 1 : 0,
@@ -416,6 +429,7 @@ export class Sync {
       A: [...g.armory],
       AA: g.autoArmy,
       V: this.versus ? this.versus.s : null,
+      OV: g.overrun ? (g.overrun as unknown as { snapshot(): unknown }).snapshot() : null,
       AL: [...this.allowAlly].filter(([, v]) => v).map(([k]) => k),
     };
     for (const pid of this.net.conns.keys()) {
@@ -455,6 +469,7 @@ export class Sync {
       this.syncBarriers(s.X as unknown[][]);
       this.syncPickups(s.P as unknown[][]);
       this.syncObstacles(s.O as number[]);
+      if (s.OV && g.overrun) (g.overrun as unknown as { applySnap(s: unknown, l: (u: number) => object | undefined): void }).applySnap(s.OV, (u) => this.h2l.get(u));
       const st = s.st as Game['state'];
       if (st !== g.state) { const was = g.state; g.state = st; if (st !== 'playing') g.bus.emit('gameover', { won: st === 'won' }); else if (was === 'won') g.waves.freeplay = true; }
     } finally { g.syncing = false; }
@@ -464,12 +479,20 @@ export class Sync {
   private syncEnemies(E: unknown[][]) {
     const g = this.g, seen = new Set<number>();
     for (const row of E) {
-      const [uid, id, lane, prog, lat, hp, maxHp, sh, fl, stun, slow, smoke, surge, phase, ap, hx, hy] = row as [number, string, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
+      const [uid, id, lane, prog, lat, hp, maxHp, sh, fl, stun, slow, smoke, surge, phase, ap, hx, hy, hunt, ang, pby] = row as [number, string, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number?, number?, number?];
       seen.add(uid);
       let e = this.h2l.get(uid) as Enemy | undefined;
       if (!e || !e.alive) {
         e = g.spawnEnemy(id, prog, lat, lane, 1);
+        if (hunt) { e.hunt = true; e.x = hx; e.y = hy; }
         this.map(uid, e);
+      }
+      if (hunt) { // t78 Overrun monster: free-roaming, glide to the host position (your own turned monster is predicted)
+        e.hunt = true; e.turnedBy = hunt - 2; e.maxHp = maxHp; e.hp = hp; e.stunT = stun; e.slowT = slow;
+        const mine = e.turnedBy === this.localPid && !!e.manual, off = Math.hypot(hx - e.x, hy - e.y), t = e.ov as unknown as { tx?: number; ty?: number };
+        if (mine) { delete t.tx; if (off > 60) { e.x = hx; e.y = hy; } }
+        else { t.tx = hx; t.ty = hy; if (off > 200) { e.x = hx; e.y = hy; } e.ang = ang ?? e.ang; e.possessedBy = pby ?? -1; }
+        continue;
       }
       const ally = !!(fl & 1);
       if (ally && !e.ally) { e.ally = true; g.allies.push(e); g.fx({ kind: 'ring', x: e.x, y: e.y, r: 34, color: '#d86bff', dur: 0.6 }); }

@@ -118,6 +118,7 @@ export class NetHud {
     } else if (ev.k === 'vsend') { this.winner = ev.winner as 'defender' | 'invader'; this.gameOver(false); }
   }
   private gameOver(won: boolean) {
+    if (this.g.overrun) return; // t78: Overrun draws its own end screen
     const o = document.getElementById('gameover')!, s = this.s, g = this.g;
     let title: string, line: string;
     if (s.coop) { title = won ? '🏆 Team Victory!' : '💥 The shared HQ fell'; line = `Wave ${g.waves.index} · Kills ${g.stats.kills} · Combos ${g.stats.combos}`; }

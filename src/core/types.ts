@@ -380,6 +380,8 @@ export interface ManualCtl {
   target: import('../entities/Enemy').Enemy | null;
   /** Move input in world axes (-1..1), units only. */
   mx: number; my: number;
+  /** t78: Overrun monster ability press counter. */
+  ab?: number;
   /** Player id controlling it. */
   pid?: number;
 }

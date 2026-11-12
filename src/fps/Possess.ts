@@ -9,7 +9,8 @@ import type { Game } from '../game/Game';
 import { MANUAL_BONUS } from '../game/Game';
 import { Tower } from '../entities/Tower';
 import { Unit } from '../entities/Unit';
-import type { Enemy } from '../entities/Enemy';
+import { Enemy } from '../entities/Enemy';
+import { ovMonster, ovUnit } from '../overrun/data';
 import type { AbilityId, ManualCtl } from '../core/types';
 import { factionInfo } from '../data/factions';
 import { ABILITIES } from '../data/abilities';
@@ -58,7 +59,9 @@ const pistol = (k: string) => k === 'pistol';
 const lam = (c: number) => new THREE.MeshLambertMaterial({ color: c });
 
 export interface PossessHost { g: Game; onExit(): void }
-type Target = Tower | Unit;
+/** t78: Overrun mode — spawn straight into first person; Esc/E/Tab opens the tactical map instead of 'leaving'. */
+export interface PossessOpts { overrun?: boolean }
+type Target = Tower | Unit | Enemy;
 
 /** Enemy -> 3D centre height (m). Aircraft fly high, bloons float, bugs crawl. */
 function enemyY(e: Enemy) { return e.data.air ? 6.5 : e.data.family === 'bloon' ? (e.data.boss || e.data.id === 'moab' ? 2.6 : 1.3) : Math.max(0.5, e.data.radius * SZ * 0.8); }
@@ -66,6 +69,10 @@ function enemyR(e: Enemy) { return Math.max(0.45, e.data.radius * SZ * 1.15); }
 
 export class Possess {
   readonly g: Game; readonly obj: Target; readonly isTower: boolean;
+  /** t78: possessing a turned Overrun monster (bite + ability instead of a gun). */
+  readonly isBug: boolean; readonly ovr: boolean;
+  /** t78: monster ability presses (sent with the control state). */
+  abN = 0; private sentAb = 0; private bugEye = 0.9;
   /** t50 warzone styling is Tropical only (terrain alone no longer implies it: El Morro has real terrain too). */
   get isWar() { return this.g.map.id === 'tropical'; }
   /** t53: true-scale map built from real elevation/imagery (El Morro). */
@@ -101,8 +108,8 @@ export class Possess {
   private el: Record<string, HTMLElement> = {}; private mini!: HTMLCanvasElement; private miniImg = new Image(); private miniT = 0;
   private ray = new THREE.Raycaster(); private v = new THREE.Vector3(); private v2 = new THREE.Vector3();
 
-  constructor(readonly host: PossessHost, obj: Target) {
-    this.g = host.g; this.obj = obj; this.isTower = obj instanceof Tower; S = this.g.map.mpp ?? 0.05;
+  constructor(readonly host: PossessHost, obj: Target, opts: PossessOpts = {}) {
+    this.g = host.g; this.obj = obj; this.isTower = obj instanceof Tower; this.isBug = obj instanceof Enemy; this.ovr = !!opts.overrun; S = this.g.map.mpp ?? 0.05;
     this.root = document.createElement('div'); this.root.id = 'possess-root'; document.body.appendChild(this.root);
     document.body.classList.add('possess-on'); document.body.classList.toggle('ps-touch-on', this.touch);
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.touch, powerPreference: 'high-performance', preserveDrawingBuffer: true });
@@ -122,13 +129,13 @@ export class Possess {
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, this.real ? 1100 : 420); this.camera.rotation.order = 'YXZ';
     this.buildWorld(); this.buildPost(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
     // face the nearest enemy (or the HQ's lanes) on entry
-    const near = this.g.enemies.filter((e) => e.alive).sort((a, b) => (a.x - obj.x) ** 2 + (a.y - obj.y) ** 2 - ((b.x - obj.x) ** 2 + (b.y - obj.y) ** 2))[0];
+    const near = (this.isBug ? this.g.units : this.g.enemies).filter((e) => e.alive).sort((a, b) => (a.x - obj.x) ** 2 + (a.y - obj.y) ** 2 - ((b.x - obj.x) ** 2 + (b.y - obj.y) ** 2))[0];
     const look = near ?? { x: this.g.map.width / 2, y: this.g.map.height / 2 };
     this.yaw = Math.atan2(-(look.x - obj.x), -(look.y - obj.y));
     this.ctl.aim = Math.atan2(look.y - obj.y, look.x - obj.x);
     this.g.possessCtl(obj, this.ctl); this.g.speed = 1;
     this.resize(); addEventListener('resize', this.resize);
-    logEvent(`possess: ${this.isTower ? 'tower ' + (obj as Tower).data.id : 'unit ' + (obj as Unit).data.id}`);
+    logEvent(`possess: ${this.isTower ? 'tower ' : this.isBug ? 'monster ' : 'unit '}${obj.data.id}`);
     this.last = performance.now(); this.raf = requestAnimationFrame(this.loop);
   }
 
@@ -289,6 +296,8 @@ export class Possess {
       const fc = new THREE.Color(factionInfo((this.obj as Tower).data.faction).color).getHex(), body = lam(fc);
       box(0.5, 0.2, 0.55, body, 0, -0.08, 0.05); for (const s of [-0.1, 0.1]) box(0.06, 0.06, 0.7, dark, s, 0, -0.45);
       box(0.2, 0.03, 0.04, visor, 0, 0.04, -0.2); this.gun.position.set(0, -0.32, -0.5);
+    } else if (this.isBug) {
+      this.gun.position.set(0, -0.5, -0.4); // t78: the monster's own head / jaws load in loadViewmodel
     } else {
       box(0.11, 0.13, 0.62, olive, 0, 0, -0.1); box(0.05, 0.05, 0.38, dark, 0, 0.02, -0.55); box(0.07, 0.17, 0.09, dark, 0, -0.13, 0.02);
       box(0.06, 0.05, 0.14, dark, 0, 0.1, -0.05); box(0.03, 0.02, 0.06, visor, 0, 0.13, -0.05);
@@ -311,6 +320,20 @@ export class Possess {
       this.gun.position.copy(base); this.gunBase.copy(base); this.vm.kind = kind; this.gun.traverse((x) => x.layers.set(1));
     };
     const dark = lam(0x23271f);
+    if (o instanceof Enemy) {
+      // t78: a turned monster sees its own head, mandibles and front legs (its t76 GLB) at the bottom of the view
+      const glb = ENEMY_GLB[o.data.id]; if (!glb) return;
+      const model = await loadGlbClone(glb); if (!this.alive) return;
+      const k = Math.max(0.6, o.data.radius * SZ * 1.6);
+      model.scale.setScalar(k); model.rotation.y = Math.PI / 2; model.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(model), h = box.max.y - box.min.y, len = box.max.z - box.min.z;
+      this.bugEye = Math.max(0.55, h * 0.95);
+      // eye just behind the head: the front ~third of the body shows under the crosshair
+      model.position.set(-(box.min.x + box.max.x) / 2, -box.min.y - this.bugEye - h * 0.14, -box.min.z - len * 0.4);
+      model.traverse((x) => { x.castShadow = false; });
+      const g = new THREE.Group(); g.add(model);
+      return swap(g, new THREE.Vector3(0, -this.bugEye * 0.6, -len * 0.4), new THREE.Vector3(0, 0, 0), 'bug_' + glb, 0.01);
+    }
     if (o instanceof Tower && o.data.id === 'unsc_tank') {
       const g = new THREE.Group(), hull = lam([0xb59c6c, 0x5d6b45, 0x56653f][Math.min(2, o.tier)]);
       g.add(at(new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.14, 1.6), hull), 0, -0.98, -0.45)); // turret roof
@@ -545,24 +568,25 @@ export class Possess {
 
   // ------------------------------------------------------------------ HUD + input
   private buildHud() {
-    const o = this.obj, name = this.isTower ? (o as Tower).t.name : (o as Unit).squad.data.tiers[this.g.unitTier((o as Unit).squad.data.id)].name;
-    const abil = this.isTower ? [] : this.g.squadAbilities((o as Unit).squad);
-    this.root.insertAdjacentHTML('beforeend', `
+    const o = this.obj, name = o instanceof Tower ? o.t.name : o instanceof Enemy ? ovMonster(o.data.id).name : this.ovr ? ovUnit(o.data.id).name : o.squad.data.tiers[this.g.unitTier(o.squad.data.id)].name;
+    const abil = o instanceof Unit ? this.g.squadAbilities(o.squad) : [];
+    const mon = o instanceof Enemy ? ovMonster(o.data.id) : null;
+        this.root.insertAdjacentHTML('beforeend', `
       <div class="ps-hud">
         <div class="ps-cross" id="ps-cross"><i></i></div>
         ${this.canScope ? '<div class="ps-scope" id="ps-scope" hidden><div class="lens"><i class="h"></i><i class="v"></i><b></b></div><span>SCOPED · ×5</span></div>' : ''}
-        <div class="ps-top"><span class="ps-tag">👁 POSSESSED</span><span class="ps-chip">🌊 Wave <b id="ps-wave"></b></span>
+        <div class="ps-top"><span class="ps-tag">${this.ovr ? '🪲 OVERRUN' : '👁 POSSESSED'}</span><span class="ps-chip">🌊 Wave <b id="ps-wave"></b></span>
           <span class="ps-chip">🏰 HQ <b id="ps-hq"></b><span class="ps-bar"><b id="ps-hqb"></b></span></span><span class="ps-chip">💰 <b id="ps-cash"></b></span><span class="ps-chip">🎯 <b id="ps-hits">0</b> hits</span></div>
-        <div class="ps-btns"><button id="ps-pause" title="Pause">⏸</button><button class="ps-exit" id="ps-exit">⏏ Exit (Esc/E)</button></div>
+        <div class="ps-btns"><button id="ps-pause" title="Pause">⏸</button><button class="ps-exit" id="ps-exit">${this.ovr ? '🗺 Tactical map (E/Tab)' : '⏏ Exit (Esc/E)'}</button></div>
         <div class="ps-me"><div class="nm">${name}</div><div class="hp"><b id="ps-hp"></b></div><div class="cd"><b id="ps-cd"></b></div>
-          <small>${this.isTower ? 'Stationary turret' : 'WASD move · squad follows'} · direct hits +${Math.round((MANUAL_BONUS - 1) * 100)}% dmg · ammo ∞</small></div>
-        <div class="ps-abil" id="ps-abil">${abil.map((id, i) => `<button data-ab="${id}">${ABILITIES[id].icon} ${ABILITIES[id].name}<br><small>${i === 0 ? 'Q / 1' : String(i + 1)}</small><i></i></button>`).join('')}</div>
-        <div class="ps-help">Mouse aim · click/hold fire${this.canScope ? ' · <b>hold Right-click / Shift: aim down scope</b>' : ''}${this.isTower ? '' : ' · WASD move · Q/1-2 abilities'}<br>Esc or E: back to the 2D map · P pause</div>
+          <small>${mon ? `${mon.blurb} · bite ${mon.bite}` : `${this.isTower ? 'Stationary turret' : this.ovr ? 'WASD move' : 'WASD move · squad follows'} · direct hits +${Math.round((MANUAL_BONUS - 1) * 100)}% dmg · ammo ∞`}</small></div>
+        <div class="ps-abil" id="ps-abil">${abil.map((id, i) => `<button data-ab="${id}">${ABILITIES[id].icon} ${ABILITIES[id].name}<br><small>${i === 0 ? 'Q / 1' : String(i + 1)}</small><i></i></button>`).join('')}${mon ? `<button data-bug="1">🦷 ${mon.ability}<br><small>Q / Space</small><i></i></button>` : ''}</div>
+        <div class="ps-help">${mon ? 'Mouse look · click/hold: bite · WASD prowl · Q/Space: ' + mon.ability : `Mouse aim · click/hold fire${this.canScope ? ' · <b>hold Right-click / Shift: aim down scope</b>' : ''}${this.isTower ? '' : ' · WASD move · Q/1-2 abilities'}`}<br>${this.ovr ? 'E / Tab: tactical map (place towers)' : 'Esc or E: back to the 2D map'} · P pause</div>
         <div class="ps-msg" id="ps-msg" hidden></div>
       </div>
       <canvas class="ps-mini" id="ps-mini" width="180" height="${Math.round(180 * this.g.map.height / this.g.map.width)}"></canvas>
       <div class="ps-touch" id="ps-touch" ${this.touch ? '' : 'hidden'}>${this.isTower ? '' : '<div class="ps-joy home" id="ps-joy"><i></i></div>'}<button class="ps-fire" id="ps-fire">FIRE</button></div>
-      <div class="ps-pause" id="ps-pause-ov" hidden><div class="panel"><h2>⏸ Paused</h2><div class="row"><button class="btn primary" id="ps-resume">▶ Resume</button><button class="btn" id="ps-pexit">⏏ Exit first-person</button></div></div></div>`);
+      <div class="ps-pause" id="ps-pause-ov" hidden><div class="panel"><h2>⏸ Paused</h2><div class="row"><button class="btn primary" id="ps-resume">▶ Resume</button><button class="btn" id="ps-pexit">${this.ovr ? '🗺 Tactical map' : '⏏ Exit first-person'}</button></div></div></div>`);
     for (const id of ['cross', 'wave', 'hq', 'hqb', 'cash', 'hits', 'hp', 'cd', 'abil', 'msg', 'pause-ov', 'joy', 'fire']) this.el[id] = this.root.querySelector('#ps-' + id) as HTMLElement;
     this.mini = this.root.querySelector('#ps-mini') as HTMLCanvasElement; this.miniImg.src = assetUrl(this.g.map.image);
   }
@@ -573,7 +597,7 @@ export class Possess {
     $('pause').onclick = () => this.setPause(true);
     $('resume').onclick = () => { this.setPause(false); if (!this.touch) void cv.requestPointerLock?.(); };
     for (const id of ['exit', 'pause']) $(id).onpointerdown = (e) => e.stopPropagation();
-    this.el.abil.querySelectorAll<HTMLButtonElement>('button').forEach((b) => { b.onpointerdown = (e) => e.stopPropagation(); b.onclick = () => this.ability(b.dataset.ab as AbilityId); });
+    this.el.abil.querySelectorAll<HTMLButtonElement>('button').forEach((b) => { b.onpointerdown = (e) => e.stopPropagation(); b.onclick = () => b.dataset.bug ? this.bugAbility() : this.ability(b.dataset.ab as AbilityId); });
     cv.addEventListener('mousedown', (e) => {
       if (!this.touch && e.button === 2) { this.setAds(true); return; }
       if (this.touch || e.button !== 0) return;
@@ -630,13 +654,16 @@ export class Possess {
     const k = e.key.toLowerCase();
     if (k === 'shift' && this.canScope) this.setAds(true);
     e.stopImmediatePropagation(); // the 2D game's hotkeys (WASD pan, Space, Q...) don't apply while possessed
-    if (k === 'escape' || k === 'e') { if (!e.repeat) this.exit(); return; }
+    if (k === 'escape' || k === 'e' || (this.ovr && k === 'tab')) { if (k === 'tab') e.preventDefault(); if (!e.repeat) this.exit(); return; }
     if (k === 'p') { this.setPause(!this.g.paused); return; }
     this.keys.add(k);
     if (k === ' ') e.preventDefault();
-    if (!this.isTower) { const ab = this.g.squadAbilities((this.obj as Unit).squad); const i = k === 'q' ? 0 : /^[1-9]$/.test(k) ? +k - 1 : -1; if (i >= 0 && ab[i]) this.ability(ab[i]); }
+    if (this.isBug) { if ((k === 'q' || k === ' ') && !e.repeat) this.bugAbility(); }
+    else if (!this.isTower) { const ab = this.g.squadAbilities((this.obj as Unit).squad); const i = k === 'q' ? 0 : /^[1-9]$/.test(k) ? +k - 1 : -1; if (i >= 0 && ab[i]) this.ability(ab[i]); }
   };
   private onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') this.setAds(false); this.keys.delete(e.key.toLowerCase()); e.stopImmediatePropagation(); };
+  /** t78: turned monster ability (Pounce / Charge / Skitter / Spawn brood) — counted press, applied by the host. */
+  bugAbility() { if (this.isBug) { this.abN++; logEvent('possess: monster ability'); } }
   private ability(id: AbilityId) { if (this.obj instanceof Unit && this.g.useAbility(this.obj.squad, id)) logEvent('possess: ability ' + id); }
   private resize = () => { const w = innerWidth, h = innerHeight; this.renderer.setSize(w, h, false); this.composer?.setPixelRatio(this.pr); this.composer?.setSize(w, h); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); };
 
@@ -704,13 +731,14 @@ export class Possess {
   private eye(): THREE.Vector3 {
     const o = this.obj;
     const gh = standH(this.g.map, o.x, o.y);
+    if (o instanceof Enemy) return this.v.set(o.x * S, gh + this.bugEye, o.y * S);
     if (o instanceof Tower) return this.v.set(o.x * S, gh + (o.data.id === 'unsc_tank' ? 3.4 : o.data.id === 'unsc_heli' ? 7.6 + Math.sin(performance.now() / 640) * 0.15 : o.data.id === 'unsc_destroyer' ? 4.2 : o.data.id === 'unsc_beacon' ? 9.5 + o.tier * 0.4 : 2.7 + o.tier * 0.15), o.y * S);
     return this.v.set(o.x * S, gh + (o.squad.data.id === 'scorpion' ? 3.3 : o.squad.data.vehicle ? 2.4 : 1.65), o.y * S);
   }
   /** Returns false once possession ended. */
   tick(dt: number): boolean {
     const g = this.g, o = this.obj;
-    if (!o.alive || g.state !== 'playing' || (o.possessedBy >= 0 && o.possessedBy !== g.localPid && g.net !== 'solo')) { this.exit(o.alive ? undefined : `${this.isTower ? 'Tower' : 'Troop'} lost — back to the map`); return false; }
+    if (!o.alive || g.state !== 'playing' || (o.possessedBy >= 0 && o.possessedBy !== g.localPid && g.net !== 'solo')) { this.exit(o.alive ? undefined : this.ovr ? undefined : `${this.isTower ? 'Tower' : 'Troop'} lost — back to the map`); return false; }
     if (g.speed !== 1) g.speed = 1;
     // camera
     const eye = this.eye(); this.camera.position.copy(eye); this.camera.rotation.set(this.pitch, this.yaw, 0);
@@ -719,8 +747,8 @@ export class Possess {
     this.ray.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     let best: Enemy | null = null, bt = Infinity;
     const range = this.rangePx() * S * 1.3;
-    for (const e of g.enemies) {
-      if (!e.alive) continue;
+    for (const e of this.isBug ? [] : g.enemies) {
+      if (!e.alive || e === o) continue;
       const c = this.v2.set(e.x * S, this.ey(e), e.y * S), r = enemyR(e) * (e.data.boss || e.data.id === 'moab' ? 2.2 : 1.25);
       const t = c.clone().sub(this.ray.ray.origin).dot(this.ray.ray.direction);
       if (t <= 0 || t > range + r || t >= bt) continue;
@@ -730,7 +758,7 @@ export class Possess {
     let aim = Math.atan2(d.z, d.x);
     if (best) aim = Math.atan2(best.y - o.y, best.x - o.x);
     else if (d.y < -0.02) { const t = -(eye.y - standH(g.map, o.x, o.y)) / d.y; aim = Math.atan2(eye.z + d.z * t - o.y * S, eye.x + d.x * t - o.x * S); }
-    this.el.cross.classList.toggle('on', !!best);
+    this.el.cross.classList.toggle('on', !!best || (o instanceof Enemy && !!this.g.overrun?.prey?.(o, aim)));
     // movement (troops): camera-relative WASD / stick -> world axes (map px)
     let fx = 0, sx = 0;
     if (!this.isTower) {
@@ -739,22 +767,25 @@ export class Possess {
       fx -= this.joy.y; sx += this.joy.x;
     }
     const fwx = -Math.sin(this.yaw), fwz = -Math.cos(this.yaw), rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
-    const ctl: ManualCtl = { aim, fire: this.firing && !g.paused, target: best, mx: fwx * fx + rx * sx, my: fwz * fx + rz * sx };
+    const ctl: ManualCtl = { aim, fire: this.firing && !g.paused, target: best, mx: fwx * fx + rx * sx, my: fwz * fx + rz * sx, ...(this.isBug ? { ab: this.abN } : {}) };
     // host / solo: write straight into the sim every frame; co-op client: send ~15 Hz (+ instantly on trigger changes)
     this.sendT -= dt;
-    if (g.net !== 'client' || this.sendT <= 0 || ctl.fire !== this.sentFire) { this.sendT = 1 / 15; this.sentFire = ctl.fire; this.ctl = ctl; g.possessCtl(o, ctl); }
+    if (g.net !== 'client' || this.sendT <= 0 || ctl.fire !== this.sentFire || this.abN !== this.sentAb) { this.sendT = 1 / 15; this.sentFire = ctl.fire; this.sentAb = this.abN; this.ctl = ctl; g.possessCtl(o, ctl); }
     else if (o.manual) { o.manual.aim = aim; o.manual.mx = ctl.mx; o.manual.my = ctl.my; o.manual.target = best; } // local prediction
     // shot feedback (muzzle flash, tracer, hit marker)
-    const shotNo = o instanceof Tower ? o.combat?.shotCount ?? 0 : g.stats.manualShots;
+    const shotNo = o instanceof Tower ? o.combat?.shotCount ?? 0 : o instanceof Enemy ? o.ov.bites : g.stats.manualShots;
     if (this.lastShot < 0) this.lastShot = shotNo;
     if (shotNo !== this.lastShot) {
-      this.lastShot = shotNo; this.shots++; this.flashT = 0.06; this.kick = 1;
+      this.lastShot = shotNo; this.shots++; this.flashT = this.isBug ? 0 : 0.06; this.kick = 1;
+      if (o instanceof Enemy) { if (this.g.overrun?.prey?.(o, aim)) { this.hits++; this.hitT = 0.15; } }
+      else {
       const end = best ? new THREE.Vector3(best.x * S, this.ey(best), best.y * S) : eye.clone().addScaledVector(d, Math.min(range, 40));
       const pk = this.obj instanceof Tower ? (this.obj.data.projectile ?? 'bullet') : 'bullet';
       const railish = pk === 'rail' || pk === 'laser';
       this.tracer(this.flash.getWorldPosition(new THREE.Vector3()), end, SHOT_COL[pk] ?? 0xfff0a0, railish ? 0.22 : 0.1);
       this.gunRoll = (Math.random() - 0.5) * 0.05;
       if (best) { this.hits++; this.hitT = 0.15; }
+      }
     }
     this.hitT -= dt; this.el.cross.classList.toggle('hit', this.hitT > 0);
     this.flashT -= dt; this.flash.visible = this.flashT > 0; if (this.flash.visible) this.flash.rotation.z = Math.random() * 3;
@@ -772,6 +803,7 @@ export class Possess {
   private rangePx(): number {
     const o = this.obj;
     if (o instanceof Tower) return o.t.combat ? o.range(o.t.combat.range) : 200;
+    if (o instanceof Enemy) return 4 / S; // bite reach ~4 m
     return o.range(this.g);
   }
   private tracer(a: THREE.Vector3, b: THREE.Vector3, col = 0xfff0a0, life = 0.12) {
@@ -818,6 +850,7 @@ export class Possess {
     const eg: Record<string, string> = {};
     for (const e of g.enemies) {
       if (!e.alive) continue; live.add(e);
+      if (e === me) continue; // t78: a turned monster doesn't render its own body (the viewmodel shows its head)
       const gh = standH(g.map, e.x, e.y), x = e.x * S, z = e.y * S, y = enemyY(e) + gh, id = e.data.id;
       if (e.data.boss || id === 'moab' || e.data.air) {
         const m = this.bossModel(e), k = Math.max(1, e.data.radius * SZ * 0.9), glb = m.userData.glb as string | undefined;
@@ -884,7 +917,7 @@ export class Possess {
     let nu = 0; const ug: Record<string, string[]> = {};
     for (const u of g.units) {
       if (!u.alive || u.garrison || u === me || nu >= 300) continue;
-      if ((u.x - me.x) ** 2 + (u.y - me.y) ** 2 < 26 * 26) continue; // don't block the camera
+      if (!this.isBug && (u.x - me.x) ** 2 + (u.y - me.y) ** 2 < 26 * 26) continue; // don't block the camera
       const uid = u.squad.data.id, glb = unitGlb(uid, g.unitTier(uid));
       if (u.squad.data.vehicle) { this.vehicleUnit(u, dt); const vg = this.unitVeh.get(u)?.glb; if (vg) (ug[uid] ??= []).includes(vg) || ug[uid].push(vg); continue; }
       D.position.set(u.x * S, standH(g.map, u.x, u.y), u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(1); D.updateMatrix();
@@ -985,16 +1018,20 @@ export class Possess {
     this.el.wave.textContent = w.freeplay ? `${w.index} (free)` : `${w.index}/${w.total}`;
     this.el.hq.textContent = String(Math.ceil(g.hq.health.hp)); this.el.hqb.style.width = `${Math.max(0, g.hq.health.frac) * 100}%`;
     this.el.cash.textContent = String(Math.floor(g.res.credits)); this.el.hits.textContent = String(this.hits);
-    this.el.hp.style.width = `${Math.max(0, o.health.frac) * 100}%`;
-    const cd = o instanceof Tower ? (o.combat ? 1 - Math.max(0, o.combat.cooldown) / Math.max(0.01, o.combat.period) : 1) : (() => { const t = g.unitTier(o.squad.data.id), per = 1 / (o.squad.data.tiers[t].stats.attackRate * o.rateMul); return 1 - Math.max(0, o.cooldown) / per; })();
+    this.el.hp.style.width = `${Math.max(0, o instanceof Enemy ? o.hp / Math.max(1, o.maxHp) : o.health.frac) * 100}%`;
+    const cd = o instanceof Enemy ? 1 - Math.max(0, o.ov.biteCd) / ovMonster(o.data.id).every : o instanceof Tower ? (o.combat ? 1 - Math.max(0, o.combat.cooldown) / Math.max(0.01, o.combat.period) : 1) : (() => { const t = g.unitTier(o.squad.data.id), per = 1 / (o.squad.data.tiers[t].stats.attackRate * o.rateMul); return 1 - Math.max(0, o.cooldown) / per; })();
     this.el.cd.style.width = `${Math.max(0, Math.min(1, cd)) * 100}%`;
     this.el['pause-ov'].hidden = !g.paused;
     if (g.paused && document.pointerLockElement) void document.exitPointerLock();
+    if (o instanceof Enemy) this.el.abil.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      const left = Math.max(0, o.ov.abilCd), tot = ovMonster(o.data.id).abilCd;
+      b.disabled = left > 0; (b.querySelector('i') as HTMLElement).style.width = `${(1 - Math.min(1, left / tot)) * 100}%`;
+    });
     if (o instanceof Unit) this.el.abil.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       const id = b.dataset.ab as AbilityId, left = o.squad.abilityCd[id] ?? 0, tot = ABILITIES[id].cooldown ?? 1;
       b.disabled = left > 0; (b.querySelector('i') as HTMLElement).style.width = `${(1 - Math.min(1, left / tot)) * 100}%`;
     });
-    this.el.msg.hidden = this.locked || this.touch || g.paused; if (!this.el.msg.hidden) this.el.msg.textContent = 'Click to aim & fire · Esc/E to exit';
+    this.el.msg.hidden = this.locked || this.touch || g.paused; if (!this.el.msg.hidden) this.el.msg.textContent = this.isBug ? 'Click to look & bite · E/Tab: tactical map' : this.ovr ? 'Click to aim & fire · E/Tab: tactical map' : 'Click to aim & fire · Esc/E to exit';
     this.miniT -= dt; if (this.miniT <= 0) { this.miniT = 0.1; this.drawMini(); }
   }
   private drawMini() {
@@ -1018,6 +1055,10 @@ export class Possess {
   }
   aimNearest(): boolean {
     const o = this.obj, r = this.rangePx() * 1.2;
+    if (this.isBug) {
+      const u = (this.g.units as { x: number; y: number; alive: boolean }[]).concat(this.g.towers).filter((x) => x.alive).sort((a, b) => (a.x - o.x) ** 2 + (a.y - o.y) ** 2 - ((b.x - o.x) ** 2 + (b.y - o.y) ** 2))[0];
+      if (!u) return false; this.aimAt(u.x, u.y, standH(this.g.map, u.x, u.y) + 1); return true;
+    }
     const e = this.g.enemies.filter((x) => x.alive && (x.x - o.x) ** 2 + (x.y - o.y) ** 2 < r * r).sort((a, b) => (a.x - o.x) ** 2 + (a.y - o.y) ** 2 - ((b.x - o.x) ** 2 + (b.y - o.y) ** 2))[0];
     if (!e) return false; this.aimAt(e.x, e.y, this.ey(e)); return true;
   }
@@ -1027,7 +1068,7 @@ export class Possess {
   setMove(fwd: number, side: number) { this.joy.x = side; this.joy.y = -fwd; }
   state() {
     const o = this.obj;
-    return { kind: this.isTower ? 'tower' : 'unit', id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope };
+    return { kind: this.isTower ? 'tower' : this.isBug ? 'bug' : 'unit', ovr: this.ovr, abN: this.abN, hp: o instanceof Enemy ? o.hp : o.health.hp, id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope };
   }
 
   /** Leave first person: release the entity back to its AI and restore the 2D view. */
@@ -1051,9 +1092,9 @@ export class Possess {
 
 let cur: Possess | null = null;
 /** Enter first person from one of your towers / troops (replaces any current possession). */
-export function possess(host: PossessHost, obj: Target): Possess | null {
+export function possess(host: PossessHost, obj: Target, opts: PossessOpts = {}): Possess | null {
   cur?.exit();
-  try { cur = new Possess(host, obj); } catch (e) { console.error('possess failed', e); document.getElementById('possess-root')?.remove(); document.body.classList.remove('possess-on', 'ps-touch-on'); host.g.possessCtl(obj, null); host.g.toast('3D view unavailable on this device', '#ff8a6a'); cur = null; }
+  try { cur = new Possess(host, obj, opts); } catch (e) { console.error('possess failed', e); document.getElementById('possess-root')?.remove(); document.body.classList.remove('possess-on', 'ps-touch-on'); host.g.possessCtl(obj, null); host.g.toast('3D view unavailable on this device', '#ff8a6a'); cur = null; }
   (window as unknown as { __possess?: unknown }).__possess = { get cur() { return cur; }, exit: () => cur?.exit() };
   return cur;
 }

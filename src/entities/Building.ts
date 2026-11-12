@@ -117,7 +117,7 @@ export class Building {
         g.fx({ kind: 'text', x: this.x, y: this.y - 50, text: `+${s.income}`, color: '#ffe14d', dur: 1 });
       }
     }
-    if (s.gun) {
+    if (s.gun && !g.overrun) { // t78: the HQ gun stays silent in Overrun (survivors earn their own kills)
       this.gunCd -= dt;
       if (this.gunCd <= 0) {
         const tg = pickTargets(g.enemies, this, s.gun.range, TargetingMode.Close, { hitsAir: true, hitsGround: true, antiAir: true }, s.gun.pierce);

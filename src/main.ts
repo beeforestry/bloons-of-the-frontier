@@ -23,6 +23,13 @@ import { NetHud } from './ui/NetHud';
 import type { PingKind } from './game/Game';
 import { installConsoleCapture, logEvent, setReportContext, openBugReport, flushQueue, queued, buildReport, submit, issueUrl, reportText, transport, cooldownLeft, BUILD, type ReportCategory } from './ui/BugReport';
 import { PauseMenu } from './ui/PauseMenu';
+import { Overrun } from './overrun/Overrun';
+import { OverrunUI } from './overrun/OverrunUI';
+import { OV_DEFAULT_MIN } from './overrun/data';
+import type { Unit } from './entities/Unit';
+import type { Enemy } from './entities/Enemy';
+/** t78 Overrun (single player / offline): map, match length, AI squadmates. */
+export interface OvStart { map: string; minutes: number; bots: number }
 import { readSave, writeSave, clearSave, applySave, snapshot, type SaveData } from './game/Save';
 installConsoleCapture();
 
@@ -73,16 +80,23 @@ async function boot() {
   setTimeout(() => { void flushQueue().then((n) => { if (n) console.info(`[report] sent ${n} queued report(s)`); }); }, 1500);
   document.getElementById('btn-tutorial')!.onclick = () => { LS.set(TUTORIAL_KEY, '0'); start(DEFAULT_MAP, diff, true); };
   // Single Player / Co-Op Defense / 1v1 Versus on the main menu; ?room=1234 invite links auto-join.
-  window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp));
+  window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp), (o) => start(o.map, 'medium', false, undefined, undefined, o));
   const q = qs.get('map');
   if (q && MAPS.some((m) => m.id === q)) { if (!PLAYABLE_MAPS.some((m) => m.id === q)) await loadSprites([MAPS.find((m) => m.id === q)!.image]); start(q, diff); }
 }
 
-function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false, mp?: MpStart, resume?: SaveData) {
+function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false, mp?: MpStart, resume?: SaveData, ovs?: OvStart) {
   document.getElementById('menu')!.classList.remove('show');
   const g = new Game(MAPS.find((m) => m.id === mapId)!, difficultyById(diffId));
+  // t78 Overrun: first-person survival vs the hive (solo/offline or over the co-op netcode)
+  const ovMode = !!ovs || mp?.settings.mode === 'overrun';
+  if (ovMode) g.mode = 'overrun';
   // Multiplayer: host-authoritative sync (single player never creates it)
   const sync = mp ? new Sync(g, mp.net, mp.settings, mp.players, mp.localPid) : null;
+  const ov = ovMode ? new Overrun(g, mp
+    ? { minutes: mp.settings.matchMin || OV_DEFAULT_MIN, bots: mp.settings.ovBots ?? 0, humans: mp.players.map((p) => p.pid), localPid: mp.localPid }
+    : { minutes: ovs!.minutes, bots: ovs!.bots, humans: [0], localPid: 0 }) : null;
+  if (ov && !mp) g.waves.start = () => false;
   const canvas = document.getElementById('game') as HTMLCanvasElement;
   const view: ViewState = { placing: null, deploying: null, hoverCell: null, mouse: null, selTower: null, selSquad: null, selBuilding: null, selPad: null, power: null, rallyFor: null,
     selSquads: [], box: null, boxMode: false, queueMode: false, patrolMode: false, patrolPts: [], showFps: false };
@@ -117,9 +131,9 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
   if (!mp && resume) { applySave(g, resume); g.toast(`Resumed at wave ${resume.wave + 1}`, '#9ff7b0'); }
-  if (!mp) g.spawnFreeCollector(0);
+  if (!mp && !ov) g.spawnFreeCollector(0);
   // t55 autosave (single player): every wave end + when the page is hidden; a finished match clears it
-  if (!mp) {
+  if (!mp && !ov) {
     g.bus.on('wave', (e) => { if (!e.active) writeSave(g, diffId); });
     g.bus.on('gameover', () => clearSave());
     const hide = () => { if (g.state === 'playing' && (g.waves.index > 0 || g.towers.length > 0)) writeSave(g, diffId); };
@@ -132,7 +146,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   g.bus.on('wave', (e) => logEvent(`wave ${e.wave}/${e.total} ${e.active ? 'started' : 'cleared'} hq=${Math.ceil(g.hq.health.hp)} cash=${Math.floor(g.res.credits)}`));
   g.bus.on('gameover', (e) => logEvent(`gameover won=${e.won} wave=${g.waves.index}`));
   g.bus.on('toast', (e) => logEvent(`toast ${e.text}`));
-  const netHud = sync ? new NetHud(g, sync) : null;
+  const netHud = sync && !ov ? new NetHud(g, sync) : null;
   window.addEventListener('resize', () => r.resize());
   new ResizeObserver(() => r.resize()).observe(canvas);
   // Start zoomed out on the whole battlefield, then the player can dive in.
@@ -250,6 +264,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   }
   /** Right-click / command: garrison the structure under the cursor, else move (Shift queues). */
   function command(p: Vec, queue = false) {
+    if (ovUI) { view.placing = null; return; } // t78: no RTS orders in Overrun (right-click cancels placement)
     if (busy()) { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; hud.refresh(true); return; }
     const sqs = view.selSquads.filter((q) => q.alive);
     if (sqs.length) {
@@ -261,6 +276,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     if (view.selBuilding?.data.id === 'barracks') g.setRally(view.selBuilding, p);
   }
   function click(p: Vec, keep = false) {
+    if (ovUI) { if (view.placing) ovUI.place(p.x, p.y); return; } // t78: the tactical map only places towers
     if (netHud?.mapClick(p)) return;
     if (view.power) {
       const id = view.power;
@@ -330,16 +346,35 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   formBtn?.addEventListener('click', () => { g.formation = g.formation === 'line' ? 'column' : 'line'; syncForm(); hud.refresh(true); });
   // 👁 Possess / First-Person (t37): three.js lives in its own lazy chunk, loaded on first use.
   let possessing = false;
-  hud.onPossess = (o) => {
+  const enterFP = (o: Parameters<NonNullable<typeof hud.onPossess>>[0] | Unit | Enemy) => {
     if (possessing) return; possessing = true;
-    g.toast('👁 Loading first-person view…', '#7fe8ff');
-    import('./fps/Possess').then((m) => { const p = m.possess({ g, onExit: () => { possessing = false; keys.clear(); hud.refresh(true); } }, o); if (!p) possessing = false; })
+    g.toast(ov ? '🎯 Deploying…' : '👁 Loading first-person view…', '#7fe8ff');
+    import('./fps/Possess').then((m) => { const p = m.possess({ g, onExit: () => { possessing = false; keys.clear(); hud.refresh(true); ovUI?.onExitFP(); } }, o, { overrun: !!ov }); if (!p) possessing = false; })
       .catch((e) => { possessing = false; console.error('possess load failed', e); g.toast('Could not load the 3D view', '#ff8a6a'); });
   };
+  hud.onPossess = (o) => { if (!ov) enterFP(o); };
+  // t78 Overrun screens + actions (solo / host run them directly, a client asks the host)
+  const ovAct = (a: string, d: Record<string, unknown>) => !ov ? 'no match' : sync && !sync.isHost ? (sync.ovAct(a, d), '') : ov.action(g.localPid, a, d);
+  const ovUI: OverrunUI | null = ov ? new OverrunUI({ g, ov, view, mp: !!mp, act: ovAct, enterFP, inFP: () => possessing, focus: (x, y) => r.focus(x, y, Math.max(r.minZoom, 0.9)), menu: () => { sync?.dispose(); location.href = location.pathname; } }) : null;
+  if (ov) {
+    r.focus(g.map.rally?.[0] ?? g.hq.x, g.map.rally?.[1] ?? g.hq.y, Math.max(r.minZoom, 0.7));
+    (window as unknown as { __overrun?: unknown }).__overrun = {
+      ...ov.hooks(), ui: ovUI, act: ovAct,
+      pick: (id: string) => ovAct('pick', { id }), turn: (id: string) => ovAct('turn', { id }),
+      place: (id: string, x: number, y: number) => ovAct('place', { id, x, y }),
+      inFP: () => possessing, tactical: () => { void import('./fps/Possess').then((m) => m.current()?.exit()); },
+      backToFP: () => ovUI!.backToFP(),
+      shop: (id: string | null) => { view.placing = id; ovUI!.tick(); return view.placing; },
+      clickMap: (x: number, y: number) => click({ x, y }),
+      toScreen: (x: number, y: number) => { const q = r.worldToScreen(x, y), b = canvas.getBoundingClientRect(); return { x: q.x + b.left, y: q.y + b.top }; },
+      screen: () => (document.getElementById('ov-screen')?.hidden ? '' : document.getElementById('ov-screen')!.className.replace('ov-screen', '').trim()),
+    };
+  }
   window.addEventListener('keydown', (ev) => {
     const k = ev.key.toLowerCase();
     if ((ev.target as HTMLElement)?.tagName === 'INPUT') return;
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { keys.add(k); if (k.startsWith('arrow')) ev.preventDefault(); return; }
+    if (ov) { if (ev.key === 'Escape') { view.placing = null; ovUI?.tick(); } else if (k === 'f') { view.showFps = !view.showFps; if (fpsEl) fpsEl.hidden = !view.showFps; } return; } // t78: no TD hotkeys in Overrun
     const sq = view.selSquads.filter((q) => q.alive);
     if (ev.key === 'Escape') { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; view.patrolMode = false; view.queueMode = false; view.patrolPts = []; hud.select(null, null); }
     else if (ev.key === ' ') { ev.preventDefault(); g.waves.start(g); }
@@ -444,7 +479,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   requestAnimationFrame(frame);
   // First-play tutorial (auto on the first match; replay via 🎓 in the menu).
   let tut: Tutorial | null = null;
-  if (!mp && !resume && (forceTutorial || !Tutorial.done())) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
+  if (!mp && !ov && !resume && (forceTutorial || !Tutorial.done())) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
   setReportContext(() => ({ map: g.map.id, difficulty: g.diff.id, wave: g.waves.freeplay ? `freeplay ${g.waves.index}` : `${g.waves.index}/${g.waves.total}`, mode: g.mode === 'solo' ? 'SP' : g.mode, fps: Math.round(fps.cur), quality: r.quality, speed: g.speed, paused: g.paused, state: g.state, hq: Math.ceil(g.hq.health.hp), credits: Math.floor(g.res.credits), towers: g.towers.length, squads: g.squads.length, enemies: g.enemies.length, canvas }));
   window.__game = Object.assign(testHooks(g, view, hud, click, r), {
     report: { build: (c: ReportCategory, d: string, shot = true) => buildReport(c, d, shot), submit, queued, issueUrl, reportText, transport, cooldownLeft, BUILD, open: openBugReport, flush: flushQueue },

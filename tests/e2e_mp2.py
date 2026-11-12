@@ -45,7 +45,7 @@ with sync_playwright() as p:
     host = page_of(ctxs[0], 'P1')
     # ---------- normal main menu shows the 3 modes (no ?mp=1)
     host.goto(BASE); host.wait_for_selector('.mode-pick')
-    check(host.evaluate("document.querySelectorAll('.mode-pick').length") == 3, 'main menu shows Single Player / Co-Op / Versus without ?mp=1')
+    check(host.evaluate("document.querySelectorAll('.mode-pick').length") == 4, 'main menu shows Single Player / Co-Op / Versus / Overrun (t78) without ?mp=1')
     # ---------- room not found
     c1 = page_of(ctxs[1], 'P2'); c1.goto(BASE); c1.wait_for_selector('.mode-pick'); c1.click('.mode-pick[data-mode="coop"]')
     c1.fill('#mp-code', '0999'); c1.click('#mp-joinb')

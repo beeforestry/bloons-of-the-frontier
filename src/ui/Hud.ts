@@ -470,6 +470,7 @@ export class Hud {
     setTimeout(() => t.classList.add('out'), 2600); setTimeout(() => t.remove(), 3200);
   }
   private gameOver(won: boolean) {
+    if (this.g.overrun) return; // t78: Overrun draws its own end screen
     const o = $('#gameover'), g = this.g;
     o.innerHTML = `<div class="panel"><h1>${won ? '🏆 Frontier Holds!' : '💥 The line broke'}</h1>
       <p class="go-diff">${g.diff.icon} ${g.diff.name} · ${g.map.name}</p>

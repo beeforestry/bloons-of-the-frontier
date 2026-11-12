@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS, type MpSettings, type PlayerInfo, type Mode } from '.
 import { PLAYABLE_MAPS as MAPS } from '../data/maps';
 import { DIFFICULTIES } from '../data/difficulty';
 import { PCOLORS, PNAMES } from '../core/players';
+import { OV_MAPS, OV_DEFAULT_MIN } from '../overrun/data';
 
 export interface MpStart { net: NetSession; settings: MpSettings; players: PlayerInfo[]; localPid: number }
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -20,13 +21,14 @@ export class Lobby {
   code = '';
   status = '';
   private el: HTMLElement;
-  constructor(private onStart: (s: MpStart) => void) {
+  constructor(private onStart: (s: MpStart) => void, private onSolo?: (o: { map: string; minutes: number; bots: number }) => void) {
     const panel = document.querySelector('#menu .panel')!;
     const modes = document.createElement('div');
     modes.id = 'modes';
     modes.innerHTML = `<button class="mode-pick on" data-mode="solo">🎈 <b>Single Player</b><small>classic campaign</small></button>
       <button class="mode-pick" data-mode="coop">🤝 <b>Co-Op Defense</b><small>2–4 players · shared HQ</small></button>
-      <button class="mode-pick" data-mode="versus">⚔ <b>1v1 Versus</b><small>Defender vs Invader</small></button>`;
+      <button class="mode-pick" data-mode="versus">⚔ <b>1v1 Versus</b><small>Defender vs Invader</small></button>
+      <button class="mode-pick" data-mode="overrun">🪲 <b>Overrun</b><small>first-person survival · solo or 2–4</small></button>`;
     panel.insertBefore(modes, panel.querySelector('.diff-title'));
     this.el = document.createElement('div'); this.el.id = 'mp-panel'; this.el.hidden = true;
     panel.insertBefore(this.el, panel.querySelector('.hint'));
@@ -40,17 +42,37 @@ export class Lobby {
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('.mode-pick'))) b.classList.toggle('on', b.dataset.mode === m);
     document.body.classList.toggle('menu-mp', m !== 'solo');
     this.el.hidden = m === 'solo';
+    if (m === 'overrun' && this.settings.mode !== 'overrun') { this.settings.matchMin = OV_DEFAULT_MIN; this.settings.ovBots ??= 1; if (!OV_MAPS.includes(this.settings.map)) this.settings.map = 'tropical'; }
     if (m !== 'solo') { this.settings.mode = m; this.renderEntry(); }
   }
+  /** t78 Overrun: single-player / offline setup (map, length, AI squadmates). */
+  private ovSoloHtml() {
+    const s = this.settings, mapName = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;
+    const sel = (id: string, opts: [string | number, string][], v: string | number) => `<select id="${id}">${opts.map(([k, t]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+    return `<div class="ov-solo"><p class="hint">Choose a unit (troops or vehicles) and spawn in first person with your squad. Hive monsters hunt you — survive the timer. Kills earn points for towers; fallen players rise as monsters.</p>
+      <div class="lobby-settings">
+        <label>Map ${sel('ov-map', OV_MAPS.map((m) => [m, mapName(m)]), s.map)}</label>
+        <label>Match ${sel('ov-min', [[3, '3 min'], [5, '5 min'], [8, '8 min']], s.matchMin)}</label>
+        <label>AI squadmates ${sel('ov-bots', [[0, 'None'], [1, '1'], [2, '2'], [3, '3']], s.ovBots ?? 1)}</label>
+      </div>
+      <button class="btn big go" id="ov-solo">▶ Play Overrun solo</button></div>`;
+  }
   private renderEntry() {
-    this.el.innerHTML = `<div class="mp-entry">
-      <button class="btn big go" id="mp-host">🏠 Host a ${this.settings.mode === 'coop' ? 'Co-Op' : 'Versus'} room</button>
+    const ovr = this.settings.mode === 'overrun';
+    this.el.innerHTML = `${ovr ? this.ovSoloHtml() + '<p class="hint">— or play together over the network (2–4 players) —</p>' : ''}<div class="mp-entry">
+      <button class="btn big go" id="mp-host">🏠 Host a ${this.settings.mode === 'coop' ? 'Co-Op' : ovr ? 'Overrun' : 'Versus'} room</button>
       <div class="mp-join"><input id="mp-code" inputmode="numeric" maxlength="4" placeholder="1234" aria-label="Room code" value="${esc(this.typed)}"><button class="btn big" id="mp-joinb" ${this.joining ? 'disabled' : ''}>${this.joining ? 'Joining…' : 'Join'}</button></div>
       </div><p class="mp-status${this.status.startsWith('⚠') ? ' err' : ''}" id="mp-status">${esc(this.status)}</p>
       <div id="mp-prog">${this.progHtml()}</div>
       <div class="mp-test"><button class="btn small" id="mp-testb" ${this.testing ? 'disabled' : ''}>🔌 ${this.testing ? 'Testing…' : 'Test connection'}</button><span id="mp-testr">${this.testRes}</span></div>
       <p class="hint">Peer-to-peer (WebRTC, TURN relay fallback). Share the 4-digit code or the link. Works on most home/office networks; some strict mobile/corporate NATs can block direct connections.</p>`;
     (this.el.querySelector('#mp-host') as HTMLElement).onclick = () => void this.host();
+    if (ovr) {
+      const v = (id: string) => (this.el.querySelector('#' + id) as HTMLSelectElement).value;
+      const keep = () => { this.settings.map = v('ov-map'); this.settings.matchMin = +v('ov-min'); this.settings.ovBots = +v('ov-bots'); };
+      for (const id of ['ov-map', 'ov-min', 'ov-bots']) (this.el.querySelector('#' + id) as HTMLSelectElement).onchange = keep;
+      (this.el.querySelector('#ov-solo') as HTMLElement).onclick = () => { keep(); this.onSolo?.({ map: this.settings.map, minutes: this.settings.matchMin, bots: this.settings.ovBots ?? 0 }); };
+    }
     const inp = this.el.querySelector('#mp-code') as HTMLInputElement;
     (this.el.querySelector('#mp-joinb') as HTMLElement).onclick = () => { if (this.joining) return; if (/^\d{4}$/.test(inp.value.trim())) void this.join(inp.value.trim()); else this.setStatus('⚠ Enter the 4-digit room code'); };
     (this.el.querySelector('#mp-testb') as HTMLElement).onclick = () => void this.testConn();
@@ -150,25 +172,28 @@ export class Lobby {
     else if (m.t === 'start') { this.settings = m.settings as MpSettings; this.players = m.players as PlayerInfo[]; this.launch(); }
   }
   private pushLobby() { this.net?.broadcast({ t: 'lobby', players: this.players, settings: this.settings, code: this.code }); this.renderLobby(); }
-  private get canStart() { const n = this.players.length; return n >= 2 && (this.settings.mode === 'coop' ? n <= 4 : n === 2) && this.players.every((p) => p.ready); }
+  private get canStart() { const n = this.players.length; return n >= 2 && (this.settings.mode !== 'versus' ? n <= 4 : n === 2) && this.players.every((p) => p.ready); }
   renderLobby() {
     const host = this.net?.role === 'host', s = this.settings;
     const me = this.players.find((p) => p.pid === this.localPid);
-    const roleOf = (pid: number) => s.mode === 'coop' ? '' : (pid === 0) === (s.hostRole === 'defender') ? '🛡 Defender' : '🦠 Invader';
+    const roleOf = (pid: number) => s.mode !== 'versus' ? '' : (pid === 0) === (s.hostRole === 'defender') ? '🛡 Defender' : '🦠 Invader';
     const sel = (id: string, opts: [string | number, string][], v: string | number) => `<select id="${id}" ${host ? '' : 'disabled'}>${opts.map(([k, t]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
     this.el.innerHTML = `<div class="lobby">
-      <div class="lobby-code"><span>${s.mode === 'coop' ? '🤝 Co-Op Defense' : '⚔ 1v1 Versus'} · Room</span><b id="room-code">${this.code}</b>
+      <div class="lobby-code"><span>${s.mode === 'coop' ? '🤝 Co-Op Defense' : s.mode === 'overrun' ? '🪲 Overrun' : '⚔ 1v1 Versus'} · Room</span><b id="room-code">${this.code}</b>
         <button class="btn small" id="copy-link" title="${esc(this.link)}">🔗 Copy invite link</button>${'share' in navigator ? '<button class="btn small" id="share-link">📤 Share</button>' : ''}</div>
       <input class="lobby-link" id="room-link" readonly value="${esc(this.link)}">
       <ul class="lobby-players">${this.players.map((p) => `<li style="--pc:${PCOLORS[p.pid]}"><i></i><b>P${p.pid + 1}</b> ${PNAMES[p.pid]}${p.pid === 0 ? ' · host' : ''}${p.pid === this.localPid ? ' (you)' : ''} <em>${roleOf(p.pid)}</em><span class="${p.ready ? 'ok' : 'wait'}">${p.ready ? '✔ Ready' : '… not ready'}</span></li>`).join('')}
         ${Array.from({ length: Math.max(0, (s.mode === 'coop' ? 2 : 2) - this.players.length) }, () => '<li class="empty"><i></i>Waiting for a player…</li>').join('')}</ul>
-      <div class="lobby-settings">
+      <div class="lobby-settings">${s.mode === 'overrun' ? `
+        <label>Map ${sel('set-map', MAPS.filter((m) => OV_MAPS.includes(m.id)).map((m) => [m.id, m.name]), s.map)}</label>
+        <label>Match ${sel('set-match', [[3, '3 min'], [5, '5 min'], [8, '8 min']], s.matchMin)}</label>
+        <label>AI squadmates ${sel('set-bots', [[0, 'None'], [1, '1'], [2, '2']], s.ovBots ?? 0)}</label>` : `
         <label>Map ${sel('set-map', MAPS.map((m) => [m.id, m.name]), s.map)}</label>
         <label>Difficulty ${sel('set-diff', DIFFICULTIES.map((d) => [d.id, `${d.icon} ${d.name}`]), s.diff)}</label>
         <label>Starting ¢ ${sel('set-credits', [[400, '400'], [650, '650'], [900, '900'], [1500, '1500'], [3000, '3000']], s.credits)}</label>
         ${s.mode === 'coop' ? `<label>Wave timer ${sel('set-timer', [[0, 'Manual'], [15, '15 s'], [25, '25 s'], [40, '40 s']], s.waveTimer)}</label>`
           : `<label>Match ${sel('set-match', [[4, '4 min'], [6, '6 min'], [8, '8 min'], [12, '12 min']], s.matchMin)}</label><label>Host plays ${sel('set-role', [['defender', '🛡 Defender'], ['invader', '🦠 Invader']], s.hostRole)}</label>`}
-        <label>Speed ${sel('set-speed', [[1, '1×'], [2, '2×']], s.speed)}</label>
+        <label>Speed ${sel('set-speed', [[1, '1×'], [2, '2×']], s.speed)}</label>`}
       </div>
       <div class="row lobby-btns">
         ${host ? '' : `<button class="btn big ${me?.ready ? '' : 'go'}" id="btn-ready">${me?.ready ? '✖ Not ready' : '✔ Ready'}</button>`}
@@ -189,7 +214,7 @@ export class Lobby {
     const st = $('btn-mpstart'); if (st) st.onclick = () => { if (!this.canStart) return; for (const p of this.players) this.net!.send(p.pid, { t: 'start', settings: this.settings, players: this.players }); this.launch(); };
     if (host) {
       const bind = (id: string, k: keyof MpSettings, num = false) => { const e = $(id) as HTMLSelectElement | null; if (e) e.onchange = () => { (this.settings as unknown as Record<string, unknown>)[k] = num ? +e.value : e.value; this.pushLobby(); }; };
-      bind('set-map', 'map'); bind('set-diff', 'diff'); bind('set-credits', 'credits', true); bind('set-timer', 'waveTimer', true); bind('set-match', 'matchMin', true); bind('set-role', 'hostRole'); bind('set-speed', 'speed', true);
+      bind('set-map', 'map'); bind('set-diff', 'diff'); bind('set-credits', 'credits', true); bind('set-timer', 'waveTimer', true); bind('set-match', 'matchMin', true); bind('set-role', 'hostRole'); bind('set-speed', 'speed', true); bind('set-bots', 'ovBots', true);
     }
   }
   private launch() {

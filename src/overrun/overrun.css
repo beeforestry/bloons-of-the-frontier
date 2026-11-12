@@ -1,0 +1,57 @@
+/* t78 Overrun mode screens (above the first-person view: #possess-root is z 20) */
+#ov-ui { position: fixed; inset: 0; pointer-events: none; z-index: 40; font-family: inherit; color: #f2efe6; }
+#ov-ui > * { pointer-events: auto; }
+#ov-ui [hidden] { display: none !important; }
+.ov-hud { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; pointer-events: none !important; }
+.ov-chip { background: rgba(12, 16, 12, 0.78); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 999px; padding: 4px 11px; font-size: 14px; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+.ov-chip b { font-variant-numeric: tabular-nums; }
+.ov-time { font-size: 17px; border-color: #ffd84a88; }
+.ov-pts { border-color: #ffd84a; color: #ffe58a; }
+.ov-role.bug { border-color: #8fdc5a; color: #c8ff9a; }
+.ov-feed { position: absolute; top: 96px; right: 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; pointer-events: none !important; }
+.ov-feed div { background: rgba(10, 10, 10, 0.7); padding: 3px 9px; border-radius: 6px; font-size: 13px; transition: opacity 1.5s; }
+.ov-feed div.old { opacity: 0; }
+.ov-vig { position: absolute; inset: 0; pointer-events: none !important; opacity: 0; transition: opacity 0.15s; background: radial-gradient(ellipse at center, transparent 50%, rgba(200, 0, 0, 0.55) 100%); }
+.ov-fp { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); box-shadow: 0 4px 18px #000a; }
+.ov-shop { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); width: min(920px, 96vw); background: rgba(14, 18, 14, 0.9); border: 1px solid #ffd84a66; border-radius: 12px; padding: 8px 10px; box-shadow: 0 6px 24px #000c; }
+.ov-shop-h { font-size: 15px; margin-bottom: 2px; }
+.ov-shop-hint { font-size: 12px; opacity: 0.8; margin-bottom: 6px; }
+.ov-shop-row { display: flex; gap: 6px; overflow-x: auto; }
+.ov-buy { flex: 1 0 104px; display: flex; flex-direction: column; align-items: center; gap: 1px; background: #252b22; color: #eee; border: 2px solid #3d4636; border-radius: 9px; padding: 5px 4px; cursor: pointer; font: inherit; }
+.ov-buy img { width: 46px; height: 46px; object-fit: contain; }
+.ov-buy b { font-size: 12px; } .ov-buy small { font-size: 10.5px; opacity: 0.75; } .ov-buy em { font-style: normal; color: #ffe58a; font-weight: 700; font-size: 13px; }
+.ov-buy.on { border-color: #ffd84a; background: #3b3a1e; }
+.ov-buy:disabled { opacity: 0.45; cursor: not-allowed; }
+.ov-screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(10, 14, 10, 0.72), rgba(0, 0, 0, 0.9)); overflow: auto; padding: 16px; }
+.ov-screen.turn { background: radial-gradient(ellipse at center, rgba(30, 10, 10, 0.72), rgba(0, 0, 0, 0.92)); }
+.ov-screen.out { background: rgba(0, 0, 0, 0.35); align-items: flex-start; padding-top: 90px; pointer-events: none !important; }
+.ov-card { width: min(1060px, 100%); background: rgba(20, 24, 18, 0.94); border: 1px solid #ffd84a55; border-radius: 16px; padding: 16px 18px; box-shadow: 0 10px 40px #000; }
+.ov-card.bug { border-color: #8fdc5a77; }
+.ov-card.small { width: auto; }
+.ov-card h2 { margin: 0 0 4px; font-size: 26px; letter-spacing: 0.5px; }
+.ov-sub { margin: 0 0 12px; opacity: 0.9; }
+.ov-help { margin: 10px 0 0; font-size: 12.5px; opacity: 0.75; }
+.ov-wait { color: #ffe58a; margin: 8px 0 0; }
+.ov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.ov-pick { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px; background: #262d23; color: #f2efe6; border: 2px solid #3f4a37; border-radius: 12px; padding: 10px 8px; cursor: pointer; font: inherit; transition: transform 0.1s, border-color 0.1s; }
+.ov-pick:hover:not(:disabled) { transform: translateY(-2px); border-color: #ffd84a; }
+.ov-pick img { width: 112px; height: 112px; object-fit: contain; filter: drop-shadow(0 4px 6px #000a); }
+.ov-pick b { font-size: 15px; } .ov-pick small { font-size: 12px; color: #ffe58a; } .ov-pick p { margin: 2px 0 0; font-size: 12px; opacity: 0.8; }
+.ov-pick.veh { background: #2a2a20; }
+.ov-pick.bug { background: #2b2420; } .ov-pick.bug small { color: #c8ff9a; }
+.ov-pick.on { border-color: #ffd84a; box-shadow: 0 0 0 2px #ffd84a55; }
+.ov-pick:disabled { cursor: default; }
+.ov-pick:disabled:not(.on) { opacity: 0.5; }
+.ov-roster { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+.ov-roster span i, .ov-table td i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--pc); margin-right: 5px; }
+.ov-table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; font-size: 14px; }
+.ov-table th, .ov-table td { padding: 5px 8px; border-bottom: 1px solid #ffffff1a; text-align: left; }
+.ov-card.end.won h2 { color: #9ff7b0; } .ov-card.end.lost h2 { color: #ff8a7a; }
+/* Overrun replaces the TD side panel / build bar / waves */
+body.ov-mode #side, body.ov-mode #bottombar, body.ov-mode #btn-start, body.ov-mode #btn-auto, body.ov-mode #btn-speed,
+body.ov-mode #wave-info, body.ov-mode #wave-preview, body.ov-mode #powers, body.ov-mode #abilities, body.ov-mode #stage-btns,
+body.ov-mode #credits, body.ov-mode #scrap-stat, body.ov-mode #lives, body.ov-mode #pop, body.ov-mode #tech-stat, body.ov-mode #energy, body.ov-mode #orbs-stat, body.ov-mode #wave, body.ov-mode #mode-hint { display: none !important; }
+body.ov-mode.possess-on .ps-top { display: none !important; }
+body.ov-mode #layout { grid-template-columns: 1fr !important; }
+body.ov-mode #topbar > * { visibility: hidden; }
+@media (max-width: 700px) { .ov-pick img { width: 72px; height: 72px; } .ov-pick p { display: none; } .ov-chip { font-size: 12px; padding: 3px 8px; } }
