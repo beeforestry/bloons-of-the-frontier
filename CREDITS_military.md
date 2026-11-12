@@ -132,3 +132,10 @@ No third-party meshes, textures, photos or AI meshes.
 ## t76 first-person enemies 3D (bloon_*, bug_*, boss_* GLBs — 20 models)
 - Original work: modelled procedurally in Blender 4.3.2 by `art_src/glb_t76/scripts/build_enemies.py` (lathe balloons/blimps, skin-modifier limbs), each matched by eye to our own v3 2D sprite (`public/assets/v3/*.webp`).
 - Textures are procedural numpy noise/plate/chitin patterns generated in the same script. No third-party meshes, textures, photos or AI output; nothing from BTD, PvZ, Halo or Google imagery.
+
+## t77 first-person Vanguard troops 3D (unit_* GLBs — 15 models — and 10 viewmodel gun_vg_* / gun_aegis_beam / gun_raider_* / gun_scorpion_* GLBs)
+- Frontier Marines, Orbital Drop Troopers, Aegis Operative, Raider Buggy and Bulwark Scorpion, one model per upgrade tier.
+- Original work: modelled procedurally in Blender 4.3.2 by `art_src/glb_t77/scripts/build_units.py` (skin-modifier undersuit, hand-placed
+  armour plates, prism hulls/turrets, wheels/tracks), each matched by eye to our own v3 sprites (`public/assets/v3/{marine,odst,spartan,warthog,scorpion}_{0,1,2}.webp`).
+- Textures are procedural numpy patterns (painted armour, vehicle panels, tyre and track treads) from `art_src/glb_t77/scripts/lib.py`, palettes sampled from those sprites.
+- No third-party meshes, textures, photos, game assets or AI output. Not modelled on Halo (or any other game's) armour, helmets or vehicles; no Google imagery.

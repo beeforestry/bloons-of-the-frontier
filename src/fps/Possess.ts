@@ -19,7 +19,7 @@ import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH } from '../data/terrain';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
 import { enemySpriteTex, ENEMY_GLB, CENTRED_GLB } from './enemies3d';
-import { loadGlbClone, loadGlbParts, TOWER_GLB, GUN_GLB } from './glbModels';
+import { loadGlbClone, loadGlbParts, TOWER_GLB, GUN_GLB, unitGlb, unitVmGlb, UNIT_VM } from './glbModels';
 import { setMatQuality, matOf } from './mats';
 import { towerMesh } from './towers3d';
 import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
@@ -83,11 +83,13 @@ export class Possess {
   /** t76: per-enemy-type instanced GLB sets (one InstancedMesh per GLB primitive, shared matrices) + boss/blimp templates. */
   private enemySets = new Map<string, { parts: THREE.InstancedMesh[]; n: number; cap: number; glb: string }>(); private bossTpl = new Map<string, THREE.Group>();
   private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli' | 'destroyer' | 'beacon'; tier?: number; model?: THREE.Group; base?: number }>();
-  private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number }>();
+  private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number; glb?: string }>();
+  /** t77: Vanguard troop GLBs — per (unit, tier) instanced sets for infantry, clone templates for Raider / Scorpion (lazy, on first sight). */
+  private troopSets = new Map<string, { parts: THREE.InstancedMesh[]; n: number; cap: number }>(); private vehTpl = new Map<string, THREE.Group>(); private unitGlbReq = new Set<string>();
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string> };
+  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
   private seaN: THREE.Texture | null = null;
   private war: WarFx | null = null;
   private ctxLost = false;
@@ -356,7 +358,30 @@ export class Possess {
       }
     }
     if (o instanceof Unit) {
-      const veh = !!o.squad.data.vehicle, kind = gunFor(o.squad.data.id, veh), gm = await gun(kind);
+      const veh = !!o.squad.data.vehicle, kind = gunFor(o.squad.data.id, veh);
+      // t77: Vanguard troops hold the gun from their own sprite / world model (rifle, SMG, battle rifle, Aegis Beam);
+      // Raider gunners get the pintle MG / rotary, Scorpion commanders the turret roof + main gun.
+      const vgName = unitVmGlb(o.squad.data.id, this.g.unitTier(o.squad.data.id)), meta = vgName ? UNIT_VM[vgName] : undefined;
+      let vg: THREE.Group | null = null;
+      if (vgName && meta) {
+        try {
+          const model = await loadGlbClone(vgName); if (!this.alive) return;
+          model.rotation.y = Math.PI / 2; model.updateMatrixWorld(true); // our Blender guns face +X; camera looks down -Z
+          model.traverse((x) => { x.castShadow = true; });
+          if (veh) {
+            const g = new THREE.Group(); g.add(model);
+            const scorp = o.squad.data.id === 'scorpion', base = scorp ? new THREE.Vector3(0, -1.0, -0.8) : new THREE.Vector3(0.05, -0.78, -1.15);
+            this.vm.vehicles++; this.vm.tex.gun++;
+            return swap(g, new THREE.Vector3(0, meta.barrel, -meta.tip - 0.05), base, vgName, scorp ? 4 : 1.6);
+          }
+          const box = new THREE.Box3().setFromObject(model);
+          model.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+          const L = box.max.z - box.min.z;
+          vg = new THREE.Group(); vg.add(model);
+          vg.userData = { len: L, h: box.max.y - box.min.y, muzzle: new THREE.Vector3(0, meta.barrel - box.min.y, -L / 2 - 0.02), gunKind: kind, textured: true };
+        } catch (e) { console.warn('glb unit gun', vgName, e); }
+      }
+      const gm = vg ?? await gun(kind);
       // Kenney guns are chunky extruded silhouettes: flatten the profile a bit so it reads like a real rifle
       const fy = gm.userData.textured ? 1 : 0.78; gm.scale.set(1, fy, 1);
       const L = gm.userData.len as number, mz = (gm.userData.muzzle as THREE.Vector3).clone(); mz.y *= fy;
@@ -371,9 +396,10 @@ export class Possess {
         g.rotation.set(0.02, 0.07, 0.03);
       }
       // sights sit a little under and right of the eye line; the stock reaches back toward the shoulder (bottom-right, like the reference M4)
-      const base = veh ? new THREE.Vector3(0, -0.45 - mz.y * 1.4, -0.75) : new THREE.Vector3(pistol(kind) ? 0.1 : 0.17, -0.1 - mz.y, -(L * 0.5) - 0.12);
+      const beam = vgName === 'gun_aegis_beam' && !!vg;
+      const base = veh ? new THREE.Vector3(0, -0.45 - mz.y * 1.4, -0.75) : new THREE.Vector3(pistol(kind) ? 0.1 : beam ? 0.24 : 0.17, (beam ? -0.2 : -0.1) - mz.y, -(L * 0.5) - (beam ? 0.22 : 0.12));
       if (veh) gm.scale.multiplyScalar(1.4);
-      return swap(g, mz.multiplyScalar(veh ? 1.4 : 1), base, 'gun_' + kind, kind === 'rocket' ? 2 : 0.7);
+      return swap(g, mz.multiplyScalar(veh ? 1.4 : 1), base, vg && vgName ? vgName : 'gun_' + kind, vgName === 'gun_aegis_beam' || kind === 'rocket' ? 2 : 0.7);
     }
   }
 
@@ -443,6 +469,24 @@ export class Possess {
         this.vm.towers3d['glb_' + glb] = 1;
       } catch (err) { console.warn('glb enemy', glb, err); }
     }));
+  }
+  /** t77: lazily load one Vanguard troop GLB (infantry -> instanced parts, vehicles -> clone template). */
+  private requestUnitGlb(glb: string, vehicle: boolean) {
+    if (this.unitGlbReq.has(glb)) return; this.unitGlbReq.add(glb);
+    void (async () => {
+      try {
+        if (vehicle) {
+          const tpl = await loadGlbClone(glb); if (!this.alive) return;
+          tpl.traverse((x) => { x.castShadow = true; }); this.vehTpl.set(glb, tpl);
+        } else {
+          const parts = await loadGlbParts(glb); if (!this.alive || !parts.length) return;
+          const cap = 300;
+          const meshes = parts.map((p) => { const im = new THREE.InstancedMesh(p.geometry, p.material, cap); im.count = 0; im.frustumCulled = false; im.castShadow = true; this.scene.add(im); return im; });
+          this.troopSets.set(glb, { parts: meshes, n: 0, cap });
+        }
+        this.vm.unitGlbLoaded.push(glb); this.vm.towers3d['glb_' + glb] = 1;
+      } catch (err) { console.warn('glb unit', glb, err); }
+    })();
   }
   private bossModel(e: Enemy): THREE.Group {
     let m = this.bossModels.get(e);
@@ -836,19 +880,27 @@ export class Possess {
       else if (!m.veh) m.root.scale.setScalar((m.base ?? 1) * (t.t.visual.scale ?? 1));
     }
     for (const [t, m] of this.towerModels) if (!tl.has(t)) { this.scene.remove(m.root); this.towerModels.delete(t); }
-    // troops (instanced), coloured by faction / co-op owner
-    let nu = 0;
+    // troops (instanced), coloured by faction / co-op owner. t77: Vanguard troops use their own per-tier Blender GLB set.
+    let nu = 0; const ug: Record<string, string[]> = {};
     for (const u of g.units) {
       if (!u.alive || u.garrison || u === me || nu >= 300) continue;
       if ((u.x - me.x) ** 2 + (u.y - me.y) ** 2 < 26 * 26) continue; // don't block the camera
-      if (u.squad.data.vehicle) { this.vehicleUnit(u, dt); continue; }
-      D.position.set(u.x * S, standH(g.map, u.x, u.y), u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(u.squad.data.vehicle ? 1.6 : 1); D.updateMatrix();
+      const uid = u.squad.data.id, glb = unitGlb(uid, g.unitTier(uid));
+      if (u.squad.data.vehicle) { this.vehicleUnit(u, dt); const vg = this.unitVeh.get(u)?.glb; if (vg) (ug[uid] ??= []).includes(vg) || ug[uid].push(vg); continue; }
+      D.position.set(u.x * S, standH(g.map, u.x, u.y), u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(1); D.updateMatrix();
+      if (glb) {
+        const set = this.troopSets.get(glb);
+        if (!set) this.requestUnitGlb(glb, false);
+        else if (set.n < set.cap) { for (const im of set.parts) im.setMatrixAt(set.n, D.matrix); set.n++; (ug[uid] ??= []).includes(glb) || ug[uid].push(glb); continue; }
+      }
       this.unitMesh.setMatrixAt(nu, D.matrix);
       const col = g.net !== 'solo' && g.mode === 'coop' ? PCOLORS[u.squad.owner] ?? '#fff' : factionInfo(u.squad.data.faction).color;
       this.unitMesh.setColorAt(nu++, this.tmpC.set(col));
     }
     for (const [u, v] of this.unitVeh) if (!u.alive || u.garrison || u === me) { if (!u.alive) { this.scene.remove(v.g); this.unitVeh.delete(u); } else v.g.visible = false; }
     this.unitMesh.count = nu; this.unitMesh.instanceMatrix.needsUpdate = true; if (this.unitMesh.instanceColor) this.unitMesh.instanceColor.needsUpdate = true;
+    for (const set of this.troopSets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; } set.n = 0; }
+    this.vm.unitGlb = ug;
     // projectiles (t67: visible in FP, colored/scaled to match shooter kind)
     let np = 0;
     let na = 0;
@@ -892,12 +944,22 @@ export class Possess {
     const r = this.rangePx() * S; this.ring.visible = r < 60; // t55: a huge ring on terrain reads as a cyan horizon line
     this.ring.position.set(me.x * S, standH(g.map, me.x, me.y) + 0.06, me.y * S); this.ring.scale.set(r, 1, r);
   }
-  /** Vehicle troops at real size: Scorpion = the Bulwark tank model, Raider = a 4.6 m jeep. */
+  /** Vehicle troops at real size. t77: Raider Buggy / Bulwark Scorpion = own per-tier Blender GLB (warthog_*, scorpion_* sprites);
+   *  the old Bulwark tank / box jeep only stand in until the GLB has loaded. */
   private vehicleUnit(u: Unit, dt: number) {
     let v = this.unitVeh.get(u);
+    const id = u.squad.data.id, want = unitGlb(id, this.g.unitTier(id));
     if (!v) {
       const g = new THREE.Group(); v = { g, ang: u.facing > 0 ? 0 : Math.PI, x: u.x, y: u.y }; this.unitVeh.set(u, v); this.scene.add(g);
-      if (u.squad.data.id === 'scorpion') void tank(Math.min(2, this.g.unitTier(u.squad.data.id))).then((m) => { m.traverse((x) => { x.castShadow = true; }); g.add(m); this.vm.vehicles++; });
+    }
+    if (want && v.glb !== want) {
+      const tpl = this.vehTpl.get(want);
+      if (tpl) { v.g.clear(); v.g.add(tpl.clone(true)); v.glb = want; v.g.userData.textured = true; this.vm.vehicles++; }
+      else this.requestUnitGlb(want, true);
+    }
+    if (!v.glb && !v.g.userData.ph) {
+      const g = v.g, vv = v; g.userData.ph = true;
+      if (id === 'scorpion') void tank(Math.min(2, this.g.unitTier(id))).then((m) => { if (vv.glb || !this.alive) return; m.traverse((x) => { x.castShadow = true; }); g.add(m); this.vm.vehicles++; });
       else {
         const body = (() => { const m = (matOf('metal') as THREE.MeshStandardMaterial).clone(); m.color.setHex(0x6a7a52); return m; })();
         const dark = (() => { const m = (matOf('iron') as THREE.MeshStandardMaterial).clone(); m.color.setHex(0x22261f); return m; })();
@@ -908,7 +970,7 @@ export class Possess {
         g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.0, 1.9), dark), 0.2, 2.0, 0), at(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.3, 6).rotateZ(Math.PI / 2), dark), -0.6, 2.2, 0));
         // roll cage + spare
         g.add(at(new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 6, 14), dark), -2.0, 1.3, 0));
-        g.traverse((x) => { x.castShadow = true; }); g.userData.textured = true;
+        g.traverse((x) => { x.castShadow = true; });
       }
     }
     const dx = u.x - v.x, dy = u.y - v.y; if (dx * dx + dy * dy > 0.2) { const na = Math.atan2(dy, dx); v.ang += Math.atan2(Math.sin(na - v.ang), Math.cos(na - v.ang)) * Math.min(1, dt * 5); }
