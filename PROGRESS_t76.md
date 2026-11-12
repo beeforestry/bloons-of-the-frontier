@@ -18,3 +18,8 @@ Ask: "Make the 1rst person enemies look way better more realistic and loyal to t
 ## Proof
 - `tests/e2e_t76.py` (local + `--url` live): all 20 GLBs load in Possess; red/blue/green/yellow/pink/lead/ceramic, moab, scavenger, hunter, charger, brood, ironback, warden, gargoyle, bile_titan and all 4 bosses each render their own GLB.
 - Screenshots (gitignored) `screenshots/t76/`: 01 bloons 2D vs 3D, 02 bugs 2D vs 3D, 03 FP mixed bloons, 04 FP bugs, 05 FP Sky Colossus + Scarab + Titan, 06 FP Zeppelin + Dreadnought + Gargoyle, 07 FP Leviathan, 08 bosses 2D vs 3D.
+
+## SHAs
+- main: ed41af2 (code, GLBs, sources, test)
+- gh-pages: a942a1a (deploy of ed41af2, BASE=/bloons-of-the-frontier/, .nojekyll kept); Pages build "built"
+- Live e2e_t76 against https://beeforestry.github.io/bloons-of-the-frontier/: PASS, all 20 GLBs HTTP 200
