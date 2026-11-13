@@ -41,3 +41,8 @@
 
 ## Screenshots
 `screenshots/t80/local_*.png` and `screenshots/t80/live_*.png` (not committed; screenshots/ is gitignored).
+
+## Deploy
+- main: `4045ebe` (code) · gh-pages: `a2a8cad` (built with BASE=/bloons-of-the-frontier/, .nojekyll kept)
+- Live: https://beeforestry.github.io/bloons-of-the-frontier/ — 200 for /, index.html, .nojekyll, assets/Possess-DvKoDpkW.js, assets/maps/morro/fort3d.dat.
+- `tests/e2e_t80.py --url <live> --tag live`: all pass (14 live screenshots).
