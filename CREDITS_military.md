@@ -155,3 +155,26 @@ No third-party meshes, textures, photos or AI meshes.
   Russellesq, Mariordo, Mookieperez, Ligocsicnarf89, Godot13) — used only to judge proportions/colours, listed in `art_src/refs_el_morro/CREDITS.json`.
   A Cults3D listing preview image (JulioCesar_76, paid STL) was looked at only as a massing check; the STL was **not** bought, downloaded or imported.
   No Sketchfab / 3D Warehouse meshes, no Google Earth/Maps imagery, no art from commercial games.
+
+## t93 El Morro first-person graphics pass (earth/deck floors, main ramp + arch, wide stair + casemates, 3D plaza arcade + chapel, brick gun rings, walk-in garitas)
+Shipped textures (all downscaled to 512 px WebP, `public/assets/tex/`), all **Poly Haven, CC0** (no attribution required; credited anyway):
+| file | source | author(s) | licence |
+|---|---|---|---|
+| tex/mr_earth.webp | Red Laterite Soil Stones — https://polyhaven.com/a/red_laterite_soil_stones | Amal Kumar | CC0 |
+| tex/mr_gravel.webp | Gravel Floor 02 — https://polyhaven.com/a/gravel_floor_02 | Jenelle van Heerden, Dimitrios Savva | CC0 |
+| tex/mr_deck.webp | Dirty Concrete — https://polyhaven.com/a/dirty_concrete | Rob Tuytel | CC0 |
+| tex/mr_plaster.webp | Damaged Plaster — https://polyhaven.com/a/damaged_plaster | Amal Kumar | CC0 |
+| tex/mr_brick.webp | Castle Brick 02 Red — https://polyhaven.com/a/castle_brick_02_red | Rob Tuytel | CC0 |
+| tex/plaster.webp (reused from t80) | Plaster 02 — https://polyhaven.com/a/plaster_02 | Poly Haven | CC0 |
+- **Procedural (original code, `src/fps/morro93.ts`)**: weathering (grime streaks, ochre wash, black staining, exposed stone), wooden-door,
+  brick gun-pivot ring and chapel-front canvas textures; all arcade / chapel / well / ramp / arch / stair / casemate / garita / parapet geometry.
+- **Heights / layout**: the existing USGS 3DEP lidar grid (public domain) and NOAA NGS 2017 aerial (`ground.jpg`, public domain) from t80;
+  the ramp, wide stair, casemate line and gun-ring spots were placed by reading those. No new external data was imported.
+- **Reference only — NOT shipped, NOT committed, NOT traced or baked into any texture** (viewed only to judge shapes/colours; local copies stay
+  in the git-ignored `art_src/refs_el_morro/user_share/`):
+  - boricuaonline `ElMorroSanJuan07.jpg`
+  - boricuaonline `ElMorroSanJuanSide03.jpg`
+  - hellolittlehome `exterior-stairs-at-el-morro.jpg`
+  - notaboutthemiles `A-sentry-box-at-El-Morro-San-Juan-Puerto-Rico.jpg`
+  - the user's shared Google image of a garita interior; CC-BY-SA Wikimedia photos listed under t80 — reference only.
+- No Google Earth/Maps imagery, no Sketchfab / 3D Warehouse / Cults meshes, no art from commercial games.

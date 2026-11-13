@@ -19,7 +19,8 @@ import { PCOLORS } from '../core/players';
 import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH, setFineHeights } from '../data/terrain';
-import { loadFort, fortH, fortMesh, morroSet, FORT, type FortGrid, type MorroSet } from './morro3d';
+import { loadFort, fortH, fortMesh, morroSet, garitaSpots, FORT, type FortGrid, type MorroSet } from './morro3d';
+import { carveMorro, morroT93, type T93Set } from './morro93';
 import { BOARD_M } from '../game/Game';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
 import { enemySpriteTex, ENEMY_GLB, CENTRED_GLB } from './enemies3d';
@@ -99,7 +100,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
+  vm = { fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
   private seaN: THREE.Texture | null = null;
   /** t80 El Morro: fine fort heights + set pieces; the lidar floor geometry / photo it lowers + re-uses. */
   private fort: FortGrid | null = null; private morro: MorroSet | null = null; private floorGeo: THREE.BufferGeometry | null = null; private groundPhoto: THREE.Texture | null = null;
@@ -309,10 +310,13 @@ export class Possess {
   private addFort(f: FortGrid) {
     if (!this.alive) return;
     const g = this.g, W = g.map.width, H = g.map.height;
+    // t93: carve the first-person-only fine heights (ramp, wide stair, casemate wall, garita walks) + classify floors, once per grid
+    const envG = g.envs.filter((e) => e.kind === 'garita').map((e) => [e.x, e.y] as [number, number]);
+    const fc = f as FortGrid & { t93?: ReturnType<typeof carveMorro> }, lay = fc.t93 ?? carveMorro(f, garitaSpots(f, envG));
     this.fort = f; setFineHeights(g.map.id, (x, y) => fortH(f, x, y));
     const step = this.vm.quality === 'high' ? 1 : 2;
     const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
-    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat); this.scene.add(mesh); mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
+    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, lay.fl); this.scene.add(mesh); mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
     // sink the coarse lidar floor under the fort window (keep its border ring so the seam stays closed)
     const geo = this.floorGeo, T = g.map.terrain!;
     if (geo) {
@@ -321,7 +325,8 @@ export class Possess {
       for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), z = pos.getZ(i); if (x > x0 + pad && x < x1 - pad && z > z0 + pad && z < z1 - pad) pos.setY(i, pos.getY(i) - 9); }
       pos.needsUpdate = true; geo.computeVertexNormals();
     }
-    const set = morroSet(f, S, g.envs.filter((e) => e.kind === 'garita').map((e) => [e.x, e.y] as [number, number]));
+    const set = morroSet(f, S, envG, true), t93: T93Set = morroT93(f, S, lay);
+    set.group.add(t93.group); set.garitas = t93.stats.garitas; set.arcades = t93.stats.bays; this.vm.t93 = t93.stats;
     set.group.traverse((o) => { if ((o as THREE.Mesh).isMesh && !o.userData.arcade) o.castShadow = true; });
     this.scene.add(set.group); this.morro = set;
     let mas = 0; for (let i = 0; i < f.cls.length; i++) if (f.cls[i]) mas++;

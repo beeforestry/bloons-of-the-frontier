@@ -49,7 +49,7 @@ function canvas(w: number, h: number, draw: (c: CanvasRenderingContext2D) => voi
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 /** Weathering overlay tile (R = mould streak darkness, G = exposed-stone mask, B = mottling), tiled 6 m x 6 m on the walls. */
-function grimeTex() {
+export function grimeTex() {
   return canvas(256, 256, (c) => {
     const img = c.createImageData(256, 256), d = img.data; let s = 9;
     const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
@@ -104,16 +104,16 @@ function star(c: CanvasRenderingContext2D, x: number, y: number, r: number) {
  * The fort heightfield mesh. `ground` = the aerial photo already used for the lidar terrain (same UVs: map px / map size).
  * `step` = samples per vertex (1 = 0.5 m, 2 = 1 m). Wall faces get ochre plaster + mould streaks; decks/lawns keep the photo.
  */
-export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: number, mapH: number, step: number, base: THREE.MeshLambertMaterial): THREE.Group {
+export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: number, mapH: number, step: number, base: THREE.MeshLambertMaterial, fl?: Uint8Array): THREE.Group {
   const cols = Math.floor((FORT.cols - 1) / step) + 1, rows = Math.floor((FORT.rows - 1) / step) + 1;
-  const pos = new Float32Array(cols * rows * 3), uv = new Float32Array(cols * rows * 2), cls = new Float32Array(cols * rows);
+  const pos = new Float32Array(cols * rows * 3), uv = new Float32Array(cols * rows * 2), cls = new Float32Array(cols * rows), flo = new Float32Array(cols * rows);
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const i = Math.min(FORT.cols - 1, c * step), j = Math.min(FORT.rows - 1, r * step), k = r * cols + c, s = j * FORT.cols + i;
     const px = FORT.x0 + i * FORT.step, py = FORT.y0 + j * FORT.step;
     // window border sinks 1.5 m (a skirt under the lidar terrain that surrounds it -> no cracks at the seam)
     const edge = r === 0 || c === 0 || r === rows - 1 || c === cols - 1;
     pos[k * 3] = px * S; pos[k * 3 + 1] = f.h[s] - (edge ? 1.5 : 0); pos[k * 3 + 2] = py * S;
-    uv[k * 2] = px / mapW; uv[k * 2 + 1] = 1 - py / mapH; cls[k] = f.cls[s];
+    uv[k * 2] = px / mapW; uv[k * 2 + 1] = 1 - py / mapH; cls[k] = f.cls[s]; flo[k] = fl ? fl[s] : 0;
   }
   // smooth normals over the whole grid (central differences), so chunk seams light identically
   const nrm = new Float32Array(cols * rows * 3), d = FORT.step * step * S;
@@ -127,10 +127,10 @@ export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: nu
   const CH = 64, grp = new THREE.Group(); grp.name = 'fort3d'; let tris = 0;
   for (let r0 = 0; r0 < rows - 1; r0 += CH - 1) for (let c0 = 0; c0 < cols - 1; c0 += CH - 1) {
     const rN = Math.min(CH, rows - r0), cN = Math.min(CH, cols - c0);
-    const P = new Float32Array(rN * cN * 3), N = new Float32Array(rN * cN * 3), U = new Float32Array(rN * cN * 2), C = new Float32Array(rN * cN);
+    const P = new Float32Array(rN * cN * 3), N = new Float32Array(rN * cN * 3), U = new Float32Array(rN * cN * 2), C = new Float32Array(rN * cN), F = new Float32Array(rN * cN);
     for (let r = 0; r < rN; r++) for (let c = 0; c < cN; c++) {
       const src = (r0 + r) * cols + (c0 + c), dst = r * cN + c;
-      P.set(pos.subarray(src * 3, src * 3 + 3), dst * 3); N.set(nrm.subarray(src * 3, src * 3 + 3), dst * 3); U.set(uv.subarray(src * 2, src * 2 + 2), dst * 2); C[dst] = cls[src];
+      P.set(pos.subarray(src * 3, src * 3 + 3), dst * 3); N.set(nrm.subarray(src * 3, src * 3 + 3), dst * 3); U.set(uv.subarray(src * 2, src * 2 + 2), dst * 2); C[dst] = cls[src]; F[dst] = flo[src];
     }
     const idx = new Uint16Array((rN - 1) * (cN - 1) * 6); let n = 0;
     for (let r = 0; r < rN - 1; r++) for (let c = 0; c < cN - 1; c++) {
@@ -141,7 +141,7 @@ export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: nu
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(U, 2)); geo.setAttribute('aCls', new THREE.BufferAttribute(C, 1));
+    geo.setAttribute('uv', new THREE.BufferAttribute(U, 2)); geo.setAttribute('aCls', new THREE.BufferAttribute(C, 1)); geo.setAttribute('aFl', new THREE.BufferAttribute(F, 1));
     geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.computeBoundingSphere(); geo.computeBoundingBox();
     const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.castShadow = true; m.name = 'fort3d_chunk'; grp.add(m); tris += idx.length / 3;
   }
@@ -152,15 +152,17 @@ export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: nu
 function fortMaterial(mat: THREE.MeshLambertMaterial, ground: THREE.Texture) {
   mat.map = ground;
   const L = new THREE.TextureLoader(), pl = L.load(assetUrl('assets/tex/plaster.webp')), pr = L.load(assetUrl('assets/tex/lh_rock.webp'));
-  for (const t of [pl, pr]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; }
+  // t93: floors — Poly Haven CC0 red laterite soil (plazas / lower court / garita walks) and dirty concrete (pale gun decks)
+  const te = L.load(assetUrl('assets/tex/mr_earth.webp')), td = L.load(assetUrl('assets/tex/mr_deck.webp'));
+  for (const t of [pl, pr, te, td]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; }
   const grime = grimeTex(); grime.colorSpace = THREE.NoColorSpace;
   const prev = mat.onBeforeCompile.bind(mat), prevKey = mat.customProgramCacheKey.bind(mat);
   mat.onBeforeCompile = (sh, r) => {
     prev(sh, r);
-    sh.uniforms.t_pl = { value: pl }; sh.uniforms.t_st = { value: pr }; sh.uniforms.t_gr = { value: grime };
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCls; varying float vCls; varying vec3 vFN;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCls = aCls; vFN = normalize(mat3(modelMatrix) * objectNormal);');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCls; varying vec3 vFN; uniform sampler2D t_pl; uniform sampler2D t_st; uniform sampler2D t_gr;\n' + WALL_GLSL)
+    sh.uniforms.t_pl = { value: pl }; sh.uniforms.t_st = { value: pr }; sh.uniforms.t_gr = { value: grime }; sh.uniforms.t_ea = { value: te }; sh.uniforms.t_dk = { value: td };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCls; attribute float aFl; varying float vCls; varying float vFl; varying vec3 vFN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCls = aCls; vFl = aFl; vFN = normalize(mat3(modelMatrix) * objectNormal);');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCls; varying float vFl; varying vec3 vFN; uniform sampler2D t_pl; uniform sampler2D t_st; uniform sampler2D t_gr; uniform sampler2D t_ea; uniform sampler2D t_dk;\n' + WALL_GLSL)
       .replace('diffuseColor.rgb *= mix(vec3(1.0), det, 0.9);\n}', `diffuseColor.rgb *= mix(vec3(1.0), det, 0.9);
 }
 {
@@ -172,9 +174,23 @@ function fortMaterial(mat: THREE.MeshLambertMaterial, ground: THREE.Texture) {
     c *= 0.8 + 0.2 * smoothstep(-2.0, 6.0, vGW.y);           // damp, darker foot of the wall
     diffuseColor.rgb = mix(diffuseColor.rgb, c, wall);
   }
+  // t93: floors (flat faces only). 1 = reddish packed earth / aggregate (Plaza de Armas, lower court, garita walks),
+  // 2 = pale worn lime-concrete gun deck (terreplein); the aerial keeps the large-scale stains on the decks.
+  float flt93 = smoothstep(0.72, 0.9, vFN.y);
+  float bg93 = texture2D(t_gr, vGW.xz / 23.0 + 0.11).b;
+  if (vFl > 0.5 && vFl < 1.5 && flt93 > 0.0) {
+    vec3 tx = texture2D(t_ea, vGW.xz / 2.7).rgb; float tl = dot(tx, vec3(0.2126, 0.7152, 0.0722)) / 0.0655;
+    vec3 e = vec3(0.46, 0.22, 0.13) * mix(vec3(1.0), clamp(tx / vec3(0.1306, 0.0499, 0.0279), 0.3, 3.0), 0.25) * mix(1.0, clamp(tl, 0.2, 2.5), 0.75) * (0.82 + 0.36 * bg93);
+    e = mix(e, e * vec3(1.12, 1.02, 0.9), smoothstep(0.55, 0.8, texture2D(t_gr, vGW.xz / 9.0).b));  // paler trodden patches
+    diffuseColor.rgb = mix(diffuseColor.rgb, e, flt93 * 0.94);
+  } else if (vFl > 1.5 && flt93 > 0.0) {
+    vec3 a = diffuseColor.rgb; float al = dot(a, vec3(0.2126, 0.7152, 0.0722));
+    vec3 d = texture2D(t_dk, vGW.xz / 3.6).rgb * vec3(1.0, 0.95, 0.86) * clamp(0.62 + al * 1.6, 0.55, 1.2) * (0.88 + 0.2 * bg93);
+    diffuseColor.rgb = mix(a, d, flt93 * 0.78);
+  }
 }`);
   };
-  mat.customProgramCacheKey = () => prevKey() + '|fort80';
+  mat.customProgramCacheKey = () => prevKey() + '|fort93';
   mat.needsUpdate = true;
   return mat;
 }
@@ -234,26 +250,40 @@ function flagpole(kind: string, t: number): THREE.Group {
 }
 
 export interface MorroSet { group: THREE.Group; garitas: number; arcades: number; update(dt: number): void }
-/** Garitas, lighthouse, plaza arcade facades and flags, all seated on the fine heights. envs = the map's garrisonable garitas. */
-export function morroSet(f: FortGrid, S: number, envs: [number, number][]): MorroSet {
-  const group = new THREE.Group(); group.name = 'morro_set';
-  const all = [...envs, ...EXTRA_GARITAS];
-  let garitas = 0;
-  for (const [x, y] of all) {
+/** A garita seat: salient tip (map px), outward unit dir, parapet top + the gun deck behind it (m). */
+export interface GaritaSpot { x: number; y: number; ca: number; sa: number; top: number; deck: number }
+/** t80 placement (salient tip, facing downhill/out) + t93 the gun-deck level behind it, for the walk-in approach. */
+export function garitaSpots(f: FortGrid, envs: [number, number][]): GaritaSpot[] {
+  const out: GaritaSpot[] = [];
+  for (const [x, y] of [...envs, ...EXTRA_GARITAS]) {
     const top = maxNear(f, x, y, 90); if (top.h < -50) continue;
     // face outward = downhill from the salient; then walk out to the parapet edge (where the wall face drops away)
     let gx = 0, gy = 0; for (let a = 0; a < 24; a++) { const ca = Math.cos(a / 24 * Math.PI * 2), sa = Math.sin(a / 24 * Math.PI * 2), h = fortH(f, top.x + ca * 80, top.y + sa * 80); if (h != null) { gx -= ca * (h - top.h); gy -= sa * (h - top.h); } }
     const ang = Math.atan2(gy, gx), ca = Math.cos(ang), sa = Math.sin(ang);
     let ex = top.x, ey = top.y, deck = top.h;
     for (let d = 0; d < 120; d += 2) { const h = fortH(f, top.x + ca * d, top.y + sa * d); if (h == null || h < top.h - 2.5) break; ex = top.x + ca * d; ey = top.y + sa * d; deck = Math.max(deck - 0.05, h); }
+    // gun deck behind the salient (median 5-9 m inward), never more than 2.2 m under the parapet top
+    const hs: number[] = []; for (let d = 40; d <= 72; d += 4) { const h = fortH(f, ex - ca * d, ey - sa * d); if (h != null) hs.push(h); }
+    hs.sort((p, q) => p - q); const inner = hs.length ? hs[hs.length >> 1] : deck;
+    out.push({ x: ex + ca * 4, y: ey + sa * 4, ca, sa, top: deck, deck: Math.min(deck, Math.max(inner, deck - 2.2)) });
+  }
+  return out;
+}
+/** Garitas, lighthouse, plaza arcade facades and flags, all seated on the fine heights. envs = the map's garrisonable garitas.
+ *  t93: with `t93` the garitas / arcades / plaza floor come from morro93 instead (weathered walk-in garitas, 3D arcade). */
+export function morroSet(f: FortGrid, S: number, envs: [number, number][], t93 = false): MorroSet {
+  const group = new THREE.Group(); group.name = 'morro_set';
+  let garitas = 0;
+  if (!t93) for (const sp of garitaSpots(f, envs)) {
     const o = garita();
-    o.position.set((ex + ca * 4) * S, deck + 0.1, (ey + sa * 4) * S);
-    o.rotation.y = Math.atan2(ca, sa); group.add(o); garitas++;
+    o.position.set(sp.x * S, sp.top + 0.1, sp.y * S);
+    o.rotation.y = Math.atan2(sp.ca, sp.sa); group.add(o); garitas++;
   }
   // lighthouse on the upper level
   { const b = maxNear(f, LIGHTHOUSE[0], LIGHTHOUSE[1], 12), lh = lighthouse(); lh.position.set(LIGHTHOUSE[0] * S, b.h - 0.3, LIGHTHOUSE[1] * S); lh.rotation.y = 0.21; group.add(lh); }
   // Plaza de Armas: yellow arcade facades on the inside of every plaza wall, floor to the deck above
   const tex = arcadeTex(); let arcades = 0;
+  if (!t93) {
   const cx = PLAZA.reduce((s, p) => s + p[0], 0) / PLAZA.length, cy = PLAZA.reduce((s, p) => s + p[1], 0) / PLAZA.length;
   const floor = fortH(f, cx, cy) ?? 0;
   for (let i = 0; i < PLAZA.length; i++) {
@@ -276,6 +306,7 @@ export function morroSet(f: FortGrid, S: number, envs: [number, number][]): Morr
   { const shape = new THREE.Shape(PLAZA.map(([x, y]) => new THREE.Vector2(x * S, y * S))); const geo = new THREE.ShapeGeometry(shape).rotateX(Math.PI / 2);
     const fl = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x9c8b72, roughness: 1, side: THREE.DoubleSide })); fl.position.y = floor + 0.05; fl.receiveShadow = true; fl.name = 'plaza_floor'; group.add(fl);
     const well = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.2, 0.9, 16), new THREE.MeshStandardMaterial({ color: 0xe6dccb, roughness: 0.9 })); well.position.set(2508 * S, floor + 0.45, 1645 * S); well.castShadow = true; group.add(well); }
+  }
   const flags: THREE.Mesh[] = [];
   FLAGS.forEach(([x, y, k], i) => { const b = maxNear(f, x, y, 10), p = flagpole(k, i * 1.3); p.position.set(b.x * S, b.h, b.y * S); group.add(p); flags.push(p.userData.flag as THREE.Mesh); });
   let time = 0;
