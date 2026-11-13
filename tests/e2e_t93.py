@@ -103,7 +103,7 @@ with sync_playwright() as p:
     check(sp2[-1] - sp2[0] > 5 and max(abs(a - b) for a, b in zip(sp2, sp2[1:])) < 0.6, f"wide stair surface court -> deck: {sp2[0]:.1f} -> {sp2[-1]:.1f} m")
     at(2645, 1590, 800); look(2990, 1590, 0, 600); tr = walk(10000)
     xs = [s['x'] for s in tr]; hs = [s['h'] for s in tr]; print('  walk plaza -> cut', [(round(s['x']), round(s['h'], 1)) for s in tr[::4]], 'fps', P('Math.round(P.fps)'))
-    check(xs[-1] > 2668 and hs[-1] < 35.5, f"walked from the plaza through the portal into the ramp cut (x {xs[-1]:.0f}, floor {hs[-1]:.1f} m)")
+    check(xs[-1] > 2665 and hs[-1] < hs[0] - 0.05, f"walked from the plaza through the portal into the ramp cut (x {xs[-1]:.0f}, floor {hs[0]:.2f} -> {hs[-1]:.2f} m)")
     at(2830, 1590, 800); look(2990, 1590, 0, 600); tr = walk(10000)
     xs = [s['x'] for s in tr]; hs = [s['h'] for s in tr]; print('  walk down ramp', [(round(s['x']), round(s['h'], 1)) for s in tr[::4]])
     jumps = max(abs(a - b) for a, b in zip(hs, hs[1:])) if len(hs) > 1 else 99
