@@ -7,6 +7,8 @@ export interface GameEvents {
   wave: { wave: number; total: number; active: boolean };
   toast: { text: string; color?: string };
   possess: { on: boolean; pid: number };
+  /** t80: a trooper climbed into / out of a parked world vehicle. */
+  vehicle: { on: boolean; uid: number; kind: string };
   selection: { kind: 'tower' | 'squad' | 'none' };
   gameover: { won: boolean };
   organized: { moved: number; freedNote: string };

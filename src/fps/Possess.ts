@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import './possess.css';
 import type { Game } from '../game/Game';
 import { MANUAL_BONUS } from '../game/Game';
+import { unitById } from '../data/units';
 import { Tower } from '../entities/Tower';
 import { Unit } from '../entities/Unit';
 import { Enemy } from '../entities/Enemy';
@@ -17,7 +18,9 @@ import { ABILITIES } from '../data/abilities';
 import { PCOLORS } from '../core/players';
 import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
-import { groundH, heights, standH } from '../data/terrain';
+import { groundH, heights, standH, setFineHeights } from '../data/terrain';
+import { loadFort, fortH, fortMesh, morroSet, FORT, type FortGrid, type MorroSet } from './morro3d';
+import { BOARD_M } from '../game/Game';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
 import { enemySpriteTex, ENEMY_GLB, CENTRED_GLB } from './enemies3d';
 import { loadGlbClone, loadGlbParts, TOWER_GLB, GUN_GLB, unitGlb, unitVmGlb, UNIT_VM } from './glbModels';
@@ -96,8 +99,12 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
+  vm = { fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
   private seaN: THREE.Texture | null = null;
+  /** t80 El Morro: fine fort heights + set pieces; the lidar floor geometry / photo it lowers + re-uses. */
+  private fort: FortGrid | null = null; private morro: MorroSet | null = null; private floorGeo: THREE.BufferGeometry | null = null; private groundPhoto: THREE.Texture | null = null;
+  /** t80: parked world vehicles in the scene (by ParkedVeh id) + what the possessed trooper currently is. */
+  private parkedObjs = new Map<number, { g: THREE.Group; glb?: string }>(); private vehId = '';
   private war: WarFx | null = null;
   private ctxLost = false;
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
@@ -182,9 +189,12 @@ export class Possess {
     }
     this.buildSky(W, D);
     const fl = scene.getObjectByName('floor'); if (fl) fl.receiveShadow = true;
+    // t80: El Morro's real walls (fine lidar fort mesh, garitas, lighthouse, plaza) — everything seated on it waits for it
+    const morro = g.map.id === 'morro' && !!T;
+    const fortP: Promise<unknown> = morro ? loadFort().then((f) => this.addFort(f)).catch((e) => { console.warn('fort3d', e); this.fortFailed = true; }) : Promise.resolve();
     const gy = (x: number, y: number) => standH(g.map, x, y);
     // t42 military prop clusters: the real CC0 3D models (sandbag nests, crates, barrels, tents, barricades)
-    for (const pr of g.props) void prop(pr.kind).then((o) => {
+    for (const pr of g.props) void fortP.then(() => prop(pr.kind)).then((o) => {
       if (!this.alive) return;
       o.position.set(pr.x * S, gy(pr.x, pr.y), pr.y * S); o.rotation.y = (pr.kind === 'tent' ? 0.5 : 0.25) + (pr.flip ? Math.PI : 0);
       o.userData.mil = pr.kind; o.traverse((m) => { m.castShadow = true; m.receiveShadow = true; }); scene.add(o); this.vm.props++;
@@ -198,15 +208,19 @@ export class Possess {
       if (!T && !m.burnt && /^(oak|tree|pine|palm|bush|fern)/.test(m.k)) for (let i = 0; i < 2; i++) { const a = fr() * 6.28, r = 0.6 + fr() * 1.6; flora.push({ k: 'grass', h: 0.35 + fr() * 0.3, x: x * S + Math.cos(a) * r, y: gy(x, y) - 0.02, z: y * S + Math.sin(a) * r, rot: fr() * 6.28 }); }
     }
     for (const o of g.obstacles) if (o.alive) flora.push(o.kind === 'rock' ? { k: 'rock_big', h: 1.5, x: o.x * S, y: gy(o.x, o.y) - 0.1, z: o.y * S, rot: -o.ang } : { k: 'log', h: 0.55, x: o.x * S, y: gy(o.x, o.y), z: o.y * S, rot: -o.ang + Math.PI / 2 });
-    void floraField(flora, !this.touch && this.vm.quality !== 'low', { high: 2, medium: 1, low: 0 }[this.vm.quality]).then((f) => {
+    void fortP.then(() => { if (morro) for (const it of flora) it.y = standH(g.map, it.x / S, it.z / S) - 0.05; return floraField(flora, !this.touch && this.vm.quality !== 'low', { high: 2, medium: 1, low: 0 }[this.vm.quality]); }).then((f) => {
       if (!this.alive) return; scene.add(f); this.vm.flora = flora.length; this.floraGrp = f;
       (f.userData.updateLod as (c: THREE.Camera, force?: boolean) => void)(this.camera, true);
       this.vm.tex.flora = f.userData.texKinds as number; this.vm.tex.lod = f.children.filter((m) => m.userData.lod === 1).length;
     }).catch((e) => console.warn('flora', e));
     // t51: garrisonable bunkers/watchtowers/ruins/garitas as real shapes (was a stray placeholder box)
-    for (const e of g.envs) { const b = envStructure(e.kind, groundTex('cobble')); at(b, e.x * S, gy(e.x, e.y) - 0.05, e.y * S); b.rotation.y = ((e.x * 13 + e.y * 7) % 628) / 100; scene.add(b); }
+    // t80: on El Morro the garitas are real domed sentry boxes on the bastion salients (morro3d), seated once the fort loads
+    for (const e of g.envs) {
+      if (morro && e.kind === 'garita') { void fortP.then(() => { if (!this.fortFailed || !this.alive) return; const b = envStructure(e.kind, groundTex('cobble')); at(b, e.x * S, gy(e.x, e.y) - 0.05, e.y * S); scene.add(b); }); continue; }
+      void fortP.then(() => { if (!this.alive) return; const b = envStructure(e.kind, groundTex('cobble')); at(b, e.x * S, gy(e.x, e.y) - 0.05, e.y * S); b.rotation.y = ((e.x * 13 + e.y * 7) % 628) / 100; scene.add(b); });
+    }
     // buildings (HQ keep + pads)
-    const stone = lam(0x8b8f99), roof = lam(0x3a6fd0);
+    const stone = lam(g.map.id === 'morro' ? 0xc9a462 : 0x8b8f99), roof = lam(g.map.id === 'morro' ? 0x8a4a2e : 0x3a6fd0); // t80: El Morro HQ in ochre plaster + terracotta
     for (const b of g.buildings) if (b.alive) {
       const grp = new THREE.Group();
       if (b.isHQ) {
@@ -272,6 +286,7 @@ export class Possess {
     const tex = new THREE.TextureLoader().load(assetUrl(T.ground)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
     // t53 El Morro: the real NOAA aerial photo drapes the real USGS lidar mesh; CC0 detail textures blend in up close
     const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: this.real ? 0.25 : 0.4, war: this.isWar })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
+    this.floorGeo = geo; this.groundPhoto = tex;
     const SEA = this.real ? 3200 : 900; // sea plane at sea level (El Morro: out to the horizon)
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA).rotateX(-Math.PI / 2), (() => { const n = waterNormal().clone(); n.repeat.set(SEA / 7, SEA / 7); n.needsUpdate = true; this.seaN = n; return new THREE.MeshPhongMaterial({ color: this.real ? 0x2c5a5e : 0x35514f, transparent: true, opacity: this.real ? 0.8 : 0.86, normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6), shininess: 70, specular: 0x6f7f80 }); })());
     sea.position.set(W / 2, T.water, D / 2); sea.name = 'sea'; scene.add(sea);
@@ -287,6 +302,31 @@ export class Possess {
       sp.position.set(x * S, gy(x, y) - 0.1, y * S); sp.userData.prop = k; scene.add(sp);
     }
     if (this.isWar) this.war = buildWarzone(scene, T.props, gy, S, this.touch, groundTex('cobble'));
+  }
+
+  private fortFailed = false;
+  /** t80: El Morro — swap the smoothed 3 m lidar inside the fort window for the 0.5 m extruded fort, add the set pieces. */
+  private addFort(f: FortGrid) {
+    if (!this.alive) return;
+    const g = this.g, W = g.map.width, H = g.map.height;
+    this.fort = f; setFineHeights(g.map.id, (x, y) => fortH(f, x, y));
+    const step = this.vm.quality === 'high' ? 1 : 2;
+    const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
+    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat); this.scene.add(mesh); mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
+    // sink the coarse lidar floor under the fort window (keep its border ring so the seam stays closed)
+    const geo = this.floorGeo, T = g.map.terrain!;
+    if (geo) {
+      const pos = geo.attributes.position as THREE.BufferAttribute, x0 = FORT.x0 * S, z0 = FORT.y0 * S, x1 = (FORT.x0 + (FORT.cols - 1) * FORT.step) * S, z1 = (FORT.y0 + (FORT.rows - 1) * FORT.step) * S;
+      const pad = (W * S) / (T.cols - 1) * 1.05;
+      for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), z = pos.getZ(i); if (x > x0 + pad && x < x1 - pad && z > z0 + pad && z < z1 - pad) pos.setY(i, pos.getY(i) - 9); }
+      pos.needsUpdate = true; geo.computeVertexNormals();
+    }
+    const set = morroSet(f, S, g.envs.filter((e) => e.kind === 'garita').map((e) => [e.x, e.y] as [number, number]));
+    set.group.traverse((o) => { if ((o as THREE.Mesh).isMesh && !o.userData.arcade) o.castShadow = true; });
+    this.scene.add(set.group); this.morro = set;
+    let mas = 0; for (let i = 0; i < f.cls.length; i++) if (f.cls[i]) mas++;
+    this.vm.fort = { verts: mesh.userData.verts as number, tris: mesh.userData.tris as number, garitas: set.garitas, arcades: set.arcades, lighthouse: 1, masonry: +(mas / f.cls.length).toFixed(3) };
+    logEvent(`possess: El Morro fort ${this.vm.fort.tris} tris, ${set.garitas} garitas`);
   }
 
   private buildGun() {
@@ -381,10 +421,10 @@ export class Possess {
       }
     }
     if (o instanceof Unit) {
-      const veh = !!o.squad.data.vehicle, kind = gunFor(o.squad.data.id, veh);
+      const veh = !!o.data.vehicle, kind = gunFor(o.data.id, veh); this.vm.hands = 0;
       // t77: Vanguard troops hold the gun from their own sprite / world model (rifle, SMG, battle rifle, Aegis Beam);
       // Raider gunners get the pintle MG / rotary, Scorpion commanders the turret roof + main gun.
-      const vgName = unitVmGlb(o.squad.data.id, this.g.unitTier(o.squad.data.id)), meta = vgName ? UNIT_VM[vgName] : undefined;
+      const vgName = unitVmGlb(o.data.id, this.g.unitTier(o.data.id)), meta = vgName ? UNIT_VM[vgName] : undefined;
       let vg: THREE.Group | null = null;
       if (vgName && meta) {
         try {
@@ -393,7 +433,7 @@ export class Possess {
           model.traverse((x) => { x.castShadow = true; });
           if (veh) {
             const g = new THREE.Group(); g.add(model);
-            const scorp = o.squad.data.id === 'scorpion', base = scorp ? new THREE.Vector3(0, -1.0, -0.8) : new THREE.Vector3(0.05, -0.78, -1.15);
+            const scorp = o.data.id === 'scorpion', base = scorp ? new THREE.Vector3(0, -1.0, -0.8) : new THREE.Vector3(0.05, -0.78, -1.15);
             this.vm.vehicles++; this.vm.tex.gun++;
             return swap(g, new THREE.Vector3(0, meta.barrel, -meta.tip - 0.05), base, vgName, scorp ? 4 : 1.6);
           }
@@ -411,7 +451,7 @@ export class Possess {
       if (gm.userData.textured) this.vm.tex.gun++;
       const g = new THREE.Group(); g.add(gm);
       if (!veh) {
-        const sleeve = new THREE.Color(factionInfo(o.squad.data.faction).color).lerp(new THREE.Color(0x4a5236), 0.7).getHex();
+        const sleeve = new THREE.Color(factionInfo(o.data.faction).color).lerp(new THREE.Color(0x4a5236), 0.7).getHex();
         const pistol = kind === 'pistol';
         const rh = hand(sleeve); rh.scale.setScalar(0.9); at(rh, 0.035, mz.y - 0.1, pistol ? 0.02 : L * 0.17); rh.rotation.set(-1.0, 0.15, 0.3); g.add(rh);
         this.vm.tex.glove++;
@@ -581,13 +621,14 @@ export class Possess {
         <div class="ps-me"><div class="nm">${name}</div><div class="hp"><b id="ps-hp"></b></div><div class="cd"><b id="ps-cd"></b></div>
           <small>${mon ? `${mon.blurb} · bite ${mon.bite}` : `${this.isTower ? 'Stationary turret' : this.ovr ? 'WASD move' : 'WASD move · squad follows'} · direct hits +${Math.round((MANUAL_BONUS - 1) * 100)}% dmg · ammo ∞`}</small></div>
         <div class="ps-abil" id="ps-abil">${abil.map((id, i) => `<button data-ab="${id}">${ABILITIES[id].icon} ${ABILITIES[id].name}<br><small>${i === 0 ? 'Q / 1' : String(i + 1)}</small><i></i></button>`).join('')}${mon ? `<button data-bug="1">🦷 ${mon.ability}<br><small>Q / Space</small><i></i></button>` : ''}</div>
-        <div class="ps-help">${mon ? 'Mouse look · click/hold: bite · WASD prowl · Q/Space: ' + mon.ability : `Mouse aim · click/hold fire${this.canScope ? ' · <b>hold Right-click / Shift: aim down scope</b>' : ''}${this.isTower ? '' : ' · WASD move · Q/1-2 abilities'}`}<br>${this.ovr ? 'E / Tab: tactical map (place towers)' : 'Esc or E: back to the 2D map'} · P pause</div>
+        <div class="ps-help">${mon ? 'Mouse look · click/hold: bite · WASD prowl · Q/Space: ' + mon.ability : `Mouse aim · click/hold fire${this.canScope ? ' · <b>hold Right-click / Shift: aim down scope</b>' : ''}${this.isTower ? '' : ' · WASD move · Q/1-2 abilities · F: enter/exit parked vehicle'}`}<br>${this.ovr ? 'E / Tab: tactical map (place towers)' : 'Esc or E: back to the 2D map'} · P pause</div>
         <div class="ps-msg" id="ps-msg" hidden></div>
+        <div class="ps-veh" id="ps-veh" hidden></div>
       </div>
       <canvas class="ps-mini" id="ps-mini" width="180" height="${Math.round(180 * this.g.map.height / this.g.map.width)}"></canvas>
       <div class="ps-touch" id="ps-touch" ${this.touch ? '' : 'hidden'}>${this.isTower ? '' : '<div class="ps-joy home" id="ps-joy"><i></i></div>'}<button class="ps-fire" id="ps-fire">FIRE</button></div>
       <div class="ps-pause" id="ps-pause-ov" hidden><div class="panel"><h2>⏸ Paused</h2><div class="row"><button class="btn primary" id="ps-resume">▶ Resume</button><button class="btn" id="ps-pexit">${this.ovr ? '🗺 Tactical map' : '⏏ Exit first-person'}</button></div></div></div>`);
-    for (const id of ['cross', 'wave', 'hq', 'hqb', 'cash', 'hits', 'hp', 'cd', 'abil', 'msg', 'pause-ov', 'joy', 'fire']) this.el[id] = this.root.querySelector('#ps-' + id) as HTMLElement;
+    for (const id of ['cross', 'wave', 'hq', 'hqb', 'cash', 'hits', 'hp', 'cd', 'abil', 'msg', 'pause-ov', 'joy', 'fire', 'veh']) this.el[id] = this.root.querySelector('#ps-' + id) as HTMLElement;
     this.mini = this.root.querySelector('#ps-mini') as HTMLCanvasElement; this.miniImg.src = assetUrl(this.g.map.image);
   }
   private setPause(on: boolean) { const g = this.g; if (g.netPause) g.netPause(on); else g.paused = on; }
@@ -656,6 +697,7 @@ export class Possess {
     e.stopImmediatePropagation(); // the 2D game's hotkeys (WASD pan, Space, Q...) don't apply while possessed
     if (k === 'escape' || k === 'e' || (this.ovr && k === 'tab')) { if (k === 'tab') e.preventDefault(); if (!e.repeat) this.exit(); return; }
     if (k === 'p') { this.setPause(!this.g.paused); return; }
+    if (k === 'f' && !e.repeat) { this.toggleVehicle(); return; }
     this.keys.add(k);
     if (k === ' ') e.preventDefault();
     if (this.isBug) { if ((k === 'q' || k === ' ') && !e.repeat) this.bugAbility(); }
@@ -664,6 +706,13 @@ export class Possess {
   private onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') this.setAds(false); this.keys.delete(e.key.toLowerCase()); e.stopImmediatePropagation(); };
   /** t78: turned monster ability (Pounce / Charge / Skitter / Spawn brood) — counted press, applied by the host. */
   bugAbility() { if (this.isBug) { this.abN++; logEvent('possess: monster ability'); } }
+  /** t80: F — climb into the parked Raider / Scorpion you stand next to, or step out of the one you drive. */
+  toggleVehicle(): boolean {
+    const o = this.obj; if (!(o instanceof Unit) || !o.alive) return false;
+    const ok = this.g.toggleVehicle(o) as boolean | undefined;
+    logEvent('possess: vehicle ' + (o.data.vehicle ? 'enter ' : 'exit ') + o.data.id);
+    return ok !== false;
+  }
   private ability(id: AbilityId) { if (this.obj instanceof Unit && this.g.useAbility(this.obj.squad, id)) logEvent('possess: ability ' + id); }
   private resize = () => { const w = innerWidth, h = innerHeight; this.renderer.setSize(w, h, false); this.composer?.setPixelRatio(this.pr); this.composer?.setSize(w, h); this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); };
 
@@ -733,7 +782,7 @@ export class Possess {
     const gh = standH(this.g.map, o.x, o.y);
     if (o instanceof Enemy) return this.v.set(o.x * S, gh + this.bugEye, o.y * S);
     if (o instanceof Tower) return this.v.set(o.x * S, gh + (o.data.id === 'unsc_tank' ? 3.4 : o.data.id === 'unsc_heli' ? 7.6 + Math.sin(performance.now() / 640) * 0.15 : o.data.id === 'unsc_destroyer' ? 4.2 : o.data.id === 'unsc_beacon' ? 9.5 + o.tier * 0.4 : 2.7 + o.tier * 0.15), o.y * S);
-    return this.v.set(o.x * S, gh + (o.squad.data.id === 'scorpion' ? 3.3 : o.squad.data.vehicle ? 2.4 : 1.65), o.y * S);
+    return this.v.set(o.x * S, gh + (o.data.id === 'scorpion' ? 3.3 : o.data.vehicle ? 2.4 : 1.65), o.y * S);
   }
   /** Returns false once possession ended. */
   tick(dt: number): boolean {
@@ -796,6 +845,9 @@ export class Possess {
     this.gun.position.set(this.gunBase.x + Math.cos(this.bob) * bobA, this.gunBase.y + Math.abs(Math.sin(this.bob)) * bobA - this.kick * 0.01, this.gunBase.z + this.kick * 0.06 * big);
     this.gun.rotation.set(this.kick * 0.09, 0, this.gunRoll * this.kick);
     this.updateAds(dt);
+    if (o instanceof Unit && o.data.id !== this.vehId) { const first = !this.vehId; this.vehId = o.data.id; if (!first) { this.vm.boards++; void this.loadViewmodel().catch((e) => console.warn('viewmodel', e)); const nm = this.root.querySelector('.ps-me .nm'); if (nm) nm.textContent = this.ovr ? ovUnit(o.data.id).name : o.data.tiers[g.unitTier(o.data.id)].name; } }
+    this.morro?.update(dt);
+    this.syncParked();
     this.syncEntities(dt);
     this.hud(dt);
     return true;
@@ -1010,6 +1062,20 @@ export class Possess {
     v.x = u.x; v.y = u.y; v.g.visible = true;
     v.g.position.set(u.x * S, standH(this.g.map, u.x, u.y), u.y * S); v.g.rotation.y = -v.ang;
   }
+  /** t80: parked Raider Buggies / Bulwark Scorpions (the t77 GLBs, same per-tier model the driven ones use). */
+  private syncParked() {
+    const g = this.g, live = new Set<number>(); let glbN = 0;
+    for (const p of g.parked) {
+      live.add(p.id); let v = this.parkedObjs.get(p.id);
+      if (!v) { v = { g: new THREE.Group() }; v.g.userData.parked = p.kind; this.parkedObjs.set(p.id, v); this.scene.add(v.g); }
+      const want = unitGlb(p.kind, g.unitTier(p.kind));
+      if (want && v.glb !== want) { const tpl = this.vehTpl.get(want); if (tpl) { v.g.clear(); const m = tpl.clone(true); m.traverse((x) => { x.castShadow = true; }); v.g.add(m); v.glb = want; } else this.requestUnitGlb(want, true); }
+      if (v.glb) glbN++;
+      v.g.position.set(p.x * S, standH(g.map, p.x, p.y), p.y * S); v.g.rotation.y = -p.ang;
+    }
+    for (const [id, v] of this.parkedObjs) if (!live.has(id)) { this.scene.remove(v.g); this.parkedObjs.delete(id); }
+    this.vm.parked = g.parked.length; this.vm.parkedGlb = glbN;
+  }
   private burst(x: number, y: number, z: number, color: number, n: number) {
     for (let i = 0; i < n; i++) { if (this.bits.length > 480) break; const a = Math.random() * 6.283, s = 2 + Math.random() * 4; this.bits.push({ floor: standH(this.g.map, x / S, z / S) + 0.05, x, y, z, vx: Math.cos(a) * s, vy: 2 + Math.random() * 4, vz: Math.sin(a) * s, life: 0.5 + Math.random() * 0.3, c: new THREE.Color(color) }); }
   }
@@ -1032,6 +1098,14 @@ export class Possess {
       b.disabled = left > 0; (b.querySelector('i') as HTMLElement).style.width = `${(1 - Math.min(1, left / tot)) * 100}%`;
     });
     this.el.msg.hidden = this.locked || this.touch || g.paused; if (!this.el.msg.hidden) this.el.msg.textContent = this.isBug ? 'Click to look & bite · E/Tab: tactical map' : this.ovr ? 'Click to aim & fire · E/Tab: tactical map' : 'Click to aim & fire · Esc/E to exit';
+    if (this.el.veh) {
+      let t = '';
+      if (o instanceof Unit && !o.isWorker) {
+        if (o.data.vehicle && (o.onFoot || g.net === 'client')) t = '<b>F</b> exit ' + o.data.tiers[g.unitTier(o.data.id)].name;
+        else if (!o.data.vehicle) { const p = g.nearParked(o); if (p) { const d = unitById(p.kind); t = '<b>F</b> enter ' + (d?.tiers[g.unitTier(p.kind)].name ?? p.kind); } }
+      }
+      this.el.veh.hidden = !t; if (t && this.el.veh.innerHTML !== t) this.el.veh.innerHTML = t;
+    }
     this.miniT -= dt; if (this.miniT <= 0) { this.miniT = 0.1; this.drawMini(); }
   }
   private drawMini() {
@@ -1068,12 +1142,12 @@ export class Possess {
   setMove(fwd: number, side: number) { this.joy.x = side; this.joy.y = -fwd; }
   state() {
     const o = this.obj;
-    return { kind: this.isTower ? 'tower' : this.isBug ? 'bug' : 'unit', ovr: this.ovr, abN: this.abN, hp: o instanceof Enemy ? o.hp : o.health.hp, id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope };
+    return { kind: this.isTower ? 'tower' : this.isBug ? 'bug' : 'unit', ovr: this.ovr, abN: this.abN, hp: o instanceof Enemy ? o.hp : o.health.hp, id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope, veh: o instanceof Unit ? !!o.data.vehicle : false, unitId: o instanceof Unit ? o.data.id : '', nearParked: o instanceof Unit ? this.g.nearParked(o)?.kind ?? '' : '', boardM: BOARD_M, fort: !!this.fort };
   }
 
   /** Leave first person: release the entity back to its AI and restore the 2D view. */
   exit(msg?: string) {
-    if (!this.alive) return; this.ads = false; this.alive = false;
+    if (!this.alive) return; this.ads = false; this.alive = false; setFineHeights(null);
     cancelAnimationFrame(this.raf);
     removeEventListener('resize', this.resize); removeEventListener('keydown', this.onKey, true); removeEventListener('keyup', this.onKeyUp, true);
     removeEventListener('mousemove', this.onMouse); removeEventListener('mouseup', this.onUp); document.removeEventListener('pointerlockchange', this.onLock);

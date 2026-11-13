@@ -18,7 +18,12 @@ export function groundH(map: MapDef, x: number, y: number): number {
   const i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, c = t.cols;
   return (h[j * c + i] * (1 - u) + h[j * c + i + 1] * u) * (1 - v) + (h[(j + 1) * c + i] * (1 - u) + h[(j + 1) * c + i + 1] * u) * v;
 }
+/** t80: optional finer 3D-only surface (El Morro's 0.5 m fort heights) consulted by standH — first person only;
+ *  the 2D sim / LOS keep using groundH so co-op peers stay deterministic. */
+let fine: { id: string; at: (x: number, y: number) => number | null } | null = null;
+export function setFineHeights(id: string | null, at?: (x: number, y: number) => number | null) { fine = id && at ? { id, at } : null; }
 /** Standing height: never below the water surface (docks / shallows). */
 export function standH(map: MapDef, x: number, y: number): number {
-  const g = groundH(map, x, y); return map.terrain ? Math.max(map.terrain.water + 0.05, g) : g;
+  const f = fine && fine.id === map.id ? fine.at(x, y) : null;
+  const g = f ?? groundH(map, x, y); return map.terrain ? Math.max(map.terrain.water + 0.05, g) : g;
 }

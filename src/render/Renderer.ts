@@ -2,7 +2,8 @@
 // RENDERER: draws the world onto a 2D canvas. Read-only view of Game.
 // Tier visuals: a distinct painted sprite per tier + scale + glow ring + tier pips.
 // =============================================================================
-import type { Game, Effect, Strike } from '../game/Game';
+import type { Game, Effect, Strike, ParkedVeh } from '../game/Game';
+import { unitById } from '../data/units';
 import { PCOLORS } from '../core/players';
 import type { Building, BuildPad } from '../entities/Building';
 import { MAC, HEAL } from '../data/buildings';
@@ -190,6 +191,7 @@ export class Renderer {
     for (const e of g.envs) if (this.inView(e.x, e.y, 160)) objs.push({ y: e.y + 20, f: () => this.env(e, v) });
     for (const o of g.obstacles) if (this.inView(o.x, o.y)) objs.push({ y: o.y, f: () => this.obstacle(o) });
     for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
+    for (const p of g.parked) if (this.inView(p.x, p.y, 120)) objs.push({ y: p.y, f: () => this.parkedVeh(p) });
     const mp = g.net !== 'solo';
     for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); if (u.possessedBy >= 0) this.possessBadge(u.x, u.y - 34, u.possessedBy); } });
     for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
@@ -928,6 +930,18 @@ export class Renderer {
   private prev = new Map<number, { x: number; y: number; walk: number; moving: number; ang?: number }>();
   /** Part-based unit motion: walk hop + sway while moving, breathing idle, recoil + muzzle flash
    *  (ranged) or a forward lunge (melee) when attacking. Drop pods fall with a burn trail. */
+  /** t80: a parked (empty) Raider Buggy / Bulwark Scorpion on the map — same sprites as the driven ones, no crew glow. */
+  private parkedVeh(p: ParkedVeh) {
+    const c = this.ctx, g = this.g, d = unitById(p.kind); if (!d) return;
+    const tier = g.unitTier(p.kind), t = d.tiers[tier];
+    if (p.kind === 'scorpion' && IMG['mil:tank_' + Math.min(2, tier)]) this.vehicle('tank', Math.min(2, tier), p.x, p.y, t.visual, p.ang, 0, p.id);
+    else {
+      const im = body(d.sprite, tier), sz = UNIT_PX * (t.visual.scale ?? 1) * 1.8;
+      this.shadowAt(p.x + 2, p.y + 13, sz * 0.32, sz * 0.11, 0.35);
+      if (im) { const [w, h] = this.fitWH(im, sz); this.feet(im, p.x, p.y + 14, w, h, Math.cos(p.ang) < 0, 1, 1, 0); }
+    }
+    c.save(); c.globalAlpha = 0.85; this.label(p.x, p.y + 30, 'F', '#ffd84a', 10); c.restore();
+  }
   private unit(u: Unit, sel: boolean) {
     const c = this.ctx, g = this.g, tier = g.unitTier(u.data.id), t = u.data.tiers[tier];
     if (u.dropT > 0) { // orbital drop pod falling

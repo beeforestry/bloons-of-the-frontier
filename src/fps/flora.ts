@@ -205,6 +205,11 @@ export async function floraField(items: FloraItem[], shadows: boolean, detail = 
 /** 2D decoration sprite key -> 3D model + height (m) from its painted size (px). null = not a plant/rock. */
 export function decoTo3D(key: string, sizePx: number): { k: FloraKey; h: number; burnt?: boolean } | null {
   const m = sizePx * 0.05;
+  // t80 El Morro: spots placed from the real aerial (art_src/tools/morro_fort3d.py); size = true height in decimetres
+  if (key.startsWith('mr_')) {
+    const h = sizePx / 10;
+    return key === 'mr_tree' ? { k: 'tree', h } : key === 'mr_bush' ? { k: 'bush', h } : key === 'mr_fern' ? { k: 'fern', h } : key === 'mr_grass' ? { k: 'grass', h } : null;
+  }
   switch (key) {
     case 'oak': return { k: 'oak', h: m * 1.15 };
     case 'pine': return { k: 'pine', h: m * 1.5 };

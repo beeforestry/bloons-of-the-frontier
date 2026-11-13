@@ -23,6 +23,8 @@ export interface MapDef {
   mpp?: number;
   /** t53: extra line-of-sight blockers [x, y, radiusPx, heightM] (El Morro's real wall faces from lidar). */
   walls?: [number, number, number, number][];
+  /** t80: world vehicles parked on the grounds [unitId ('warthog' | 'scorpion'), x, y, angle rad] — enter / exit with F. */
+  parked?: [string, number, number, number][];
   /** 3D heightfield + prop billboards for Possess (Tropical Island, El Morro). */
   terrain?: TerrainDef;
   grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[]; land?: string; landRes?: number };

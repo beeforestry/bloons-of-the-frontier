@@ -39,7 +39,7 @@ type Ref = { $: string; u?: number; i?: number; p?: number; x?: number; y?: numb
 
 /** Game methods that become network commands on a client (and permission-checked on the host). */
 const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'moveTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
-  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl'] as const;
+  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl', 'toggleVehicle'] as const;
 /** Applied optimistically on the client too (instant response; the snapshot corrects). */
 const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'moveTower', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
 /** Proto methods (Tower / Building instances). */
@@ -431,6 +431,7 @@ export class Sync {
       V: this.versus ? this.versus.s : null,
       OV: g.overrun ? (g.overrun as unknown as { snapshot(): unknown }).snapshot() : null,
       AL: [...this.allowAlly].filter(([, v]) => v).map(([k]) => k),
+      PV: g.parked.map((p) => [p.id, p.kind, Math.round(p.x), Math.round(p.y), r1(p.ang), r1(p.hp)]),
     };
     for (const pid of this.net.conns.keys()) {
       const w = pid === this.resPid ? this.walletOf(0) : this.wallets.get(pid);
@@ -465,6 +466,7 @@ export class Sync {
       this.syncEnemies(s.E as unknown[][]);
       this.syncTowers(s.T as unknown[][]);
       this.syncSquads(s.S as unknown[][]);
+      if (s.PV) g.parked = (s.PV as [number, string, number, number, number, number][]).map(([id, kind, x, y, ang, hp]) => ({ id, kind, x, y, ang, hp }));
       this.syncBuildings(s.B as unknown[][]);
       this.syncBarriers(s.X as unknown[][]);
       this.syncPickups(s.P as unknown[][]);
@@ -554,6 +556,7 @@ export class Sync {
   }
   private syncSquads(S: unknown[][]) {
     const g = this.g, seen = new Set<number>();
+    const allU = new Set<number>(); for (const row of S) for (const ur of (row[7] as unknown[][])) allU.add(ur[0] as number);
     for (const row of S) {
       const [uid, id, owner, stance, targeting, rx, ry, units, af, atask] = row as [number, string, number, Squad['stance'], Squad['targeting'], number, number, unknown[][], number, string];
       seen.add(uid);
@@ -569,10 +572,17 @@ export class Sync {
       const moved = Math.hypot(sq.rally.x - rx, sq.rally.y - ry) > 4;
       if (moved && (sq.owner !== this.localPid || (sq.auto && !sq.manual))) { sq.rally = { x: rx, y: ry }; sq.waypoints = []; }
       const useen = new Set<number>();
+      // t80: a trooper climbed into / out of a parked vehicle -> the squad's unit type changed in place (same uids)
+      if (sq.data.id !== id) { (sq as unknown as { data: typeof d }).data = d; for (const x of sq.units) (x as unknown as { data: typeof d }).data = d; }
       for (const ur of units) {
         const [uuid, index, x, y, hp, stars, gar, drop, pby] = ur as [number, number, number, number, number, number, string | 0, number, number];
         useen.add(uuid);
         let u = this.h2l.get(uuid) as Unit | undefined;
+        if (u && u.squad !== sq) { // t80: split off from its squad to drive alone — move the same Unit object (keeps possession)
+          const from = u.squad; from.units = from.units.filter((x) => x !== u);
+          (u as unknown as { squad: Squad }).squad = sq; sq.units.push(u);
+        }
+        if (u && u.data.id !== id) (u as unknown as { data: typeof d }).data = d;
         if (!u) {
           const U = d.role === 'worker' ? WorkerUnit : Unit;
           u = new U(d, sq, index, g, { x, y }); u.x = x; u.y = y; u.dropT = drop ? 0.4 : 0;
@@ -586,7 +596,7 @@ export class Sync {
         const tgt: Garrisonable | null = !gar ? null : gar[0] === 't' ? (this.h2l.get(+gar.slice(1)) as Tower | undefined) ?? null : g.envs[+gar.slice(1)] ?? null;
         if (u.garrison !== tgt) { if (u.garrison) gLeave(u.garrison, u); if (tgt) gEnter(tgt, u); }
       }
-      for (const u of sq.units) { const h = this.l2h.get(u); if (h === undefined || !useen.has(h)) { u.alive = false; if (u.garrison) gLeave(u.garrison, u); if (h !== undefined) this.h2l.delete(h); } }
+      for (const u of sq.units) { const h = this.l2h.get(u); if (h === undefined || (!useen.has(h) && !allU.has(h))) { u.alive = false; if (u.garrison) gLeave(u.garrison, u); if (h !== undefined) this.h2l.delete(h); } }
       sq.units = sq.units.filter((u) => u.alive);
     }
     for (const sq of g.squads) { const u = this.l2h.get(sq); if (u === undefined || !seen.has(u)) { for (const x of sq.units) { x.alive = false; if (x.garrison) gLeave(x.garrison, x); } sq.units = []; } }

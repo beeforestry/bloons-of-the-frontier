@@ -49,6 +49,10 @@ export type PingKind = 'defend' | 'attack' | 'spawn';
 export interface Ping { x: number; y: number; kind: PingKind; pid: number; t: number }
 export interface Telegraph { x: number; y: number; lane: number; t: number; dur: number; label: string }
 /** Balance pass (sim): enemy HP ease per map. */
+/** t80: a vehicle parked in the world (El Morro grounds, Overrun spawns). hp = health fraction it keeps between drivers. */
+export interface ParkedVeh { id: number; kind: string; x: number; y: number; ang: number; hp: number }
+/** t80: how close (metres) a trooper must be to a parked vehicle to climb in. */
+export const BOARD_M = 6;
 export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.8 };
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
@@ -114,6 +118,8 @@ export class Game {
   obstacles: Obstacle[] = [];
   /** t42 military prop clusters (block building, sandbags/barricades give troops cover). */
   props: MapProp[] = [];
+  /** t80: parked world vehicles (enter / exit with F in first person). */
+  parked: ParkedVeh[] = []; private parkN = 0;
   /** Bumped whenever towers are placed / sold so cached sniper line-of-sight tables rebuild. */
   losVer = 0;
   /** Blocked / opened shortcut trails (one or more per map). */
@@ -221,6 +227,7 @@ export class Game {
   }
   private setupMapObjects() {
     const L = this.paths.length;
+    for (const [k, x, y, a] of this.map.parked ?? []) this.park(k, x, y, a);
     this.setupShortcuts();
     // fixed structures authored into the map (El Morro's garitas)
     for (const [k, x, y] of (this.map.envs ?? [])) {
@@ -764,6 +771,60 @@ export class Game {
     for (const t of this.towers) if (t.alive && (t.x - x) ** 2 + (t.y - y) ** 2 < 20 * 20) return false;
     for (const b of this.buildings) if (b.alive && (b.x - x) ** 2 + (b.y - y) ** 2 < (b.isHQ ? 70 : 40) ** 2) return false;
     return true;
+  }
+  // ------------------------------------------------------------------ t80: parked world vehicles
+  park(kind: string, x: number, y: number, ang = 0, hp = 1): ParkedVeh {
+    const p = { id: ++this.parkN, kind, x, y, ang, hp }; this.parked.push(p); return p;
+  }
+  /** Nearest parked vehicle within BOARD_M metres of a unit (or null). */
+  nearParked(u: Vec, m = BOARD_M): ParkedVeh | null {
+    const r = m / (this.map.mpp ?? 0.05); let best: ParkedVeh | null = null, bd = r * r;
+    for (const p of this.parked) { const d = (p.x - u.x) ** 2 + (p.y - u.y) ** 2; if (d <= bd) { bd = d; best = p; } }
+    return best;
+  }
+  /** Climb into the nearest parked Raider Buggy / Bulwark Scorpion, or step out of the one you drive (leaving it parked).
+   *  The trooper's own Unit becomes the vehicle (same uid, so first person / co-op possession follow it). Networked (Sync G_METHODS). */
+  toggleVehicle(u: Unit): boolean {
+    if (!u || !u.alive || !(u instanceof Unit) || u.isWorker) return false;
+    if (this.isClient && !this.syncing) return false;
+    const mpp = this.map.mpp ?? 0.05, ov = this.overrun as unknown as { vehicleSwap?(u: Unit, on: boolean): void } | null;
+    if (u.onFoot) { // step out: the vehicle stays where it is
+      const vd = u.data, keep = u.health.frac, of = u.onFoot, ang = Math.atan2(u.manual?.my ?? 0, u.manual?.mx ?? 1);
+      this.park(vd.id, u.x, u.y, u.manual ? u.manual.aim : ang, Math.max(0.05, keep));
+      this.swapData(u, of.data); u.hpMul = of.hpMul; u.armorMax = of.armorMax; u.ovDmg = of.ovDmg; u.onFoot = null;
+      u.resyncTier(this); u.health.hp = Math.max(1, u.health.max * of.frac);
+      const side = (u.manual ? u.manual.aim : 0) + Math.PI / 2, d = 3.6 / mpp;
+      for (const k of [1, -1, 2, -2]) { const nx = u.x + Math.cos(side) * d * Math.sign(k) * Math.abs(k), ny = u.y + Math.sin(side) * d * Math.sign(k) * Math.abs(k); if (this.walkable(nx, ny)) { u.x = nx; u.y = ny; break; } }
+      ov?.vehicleSwap?.(u, false);
+      this.fx({ kind: 'dust', x: u.x, y: u.y, r: 20, color: '#e8d8b0', dur: 0.35 }); this.sfx('command', u.x, u.y);
+      this.bus.emit('vehicle', { on: false, uid: u.uid, kind: vd.id });
+      return true;
+    }
+    if (u.data.vehicle) return false;
+    const p = this.nearParked(u); if (!p) return false;
+    const vd = unitById(p.kind); if (!vd) return false;
+    // a trooper from a multi-man squad drives off on his own (the rest of the squad stays a squad)
+    const old = u.squad;
+    if (old.units.filter((x) => x.alive).length > 1) {
+      const sq = new Squad(u.data, { x: u.x, y: u.y }); sq.owner = old.owner; sq.stance = old.stance; sq.targeting = old.targeting; sq.manual = old.manual;
+      old.units = old.units.filter((x) => x !== u); old.manual = false; old.rally = old.center;
+      (u as unknown as { squad: Squad; index: number }).squad = sq; (u as unknown as { index: number }).index = 0; sq.units.push(u); this.squads.push(sq);
+    }
+    u.onFoot = { data: u.data, frac: u.health.frac, hpMul: u.hpMul, armorMax: u.armorMax, ovDmg: u.ovDmg };
+    if (u.garrison) gLeave(u.garrison, u);
+    this.swapData(u, vd); u.hpMul = 1; u.armorMax = Infinity; u.ovDmg = 1;
+    ov?.vehicleSwap?.(u, true);
+    u.resyncTier(this); u.health.hp = Math.max(1, u.health.max * p.hp);
+    u.x = p.x; u.y = p.y; u.dropT = 0;
+    this.parked = this.parked.filter((x) => x !== p);
+    this.fx({ kind: 'ring', x: u.x, y: u.y, r: 34, color: '#7fe8ff', dur: 0.5 }); this.sfx('command', u.x, u.y);
+    this.bus.emit('vehicle', { on: true, uid: u.uid, kind: vd.id });
+    return true;
+  }
+  /** Change a unit's (and its own squad's) unit type in place — keeps uid, owner, possession. */
+  swapData(u: Unit, d: Unit['data']) {
+    (u as unknown as { data: Unit['data'] }).data = d;
+    if (u.squad.units.every((x) => x === u || !x.alive)) (u.squad as unknown as { data: Unit['data'] }).data = d;
   }
   /** The first enemy along a top-down ray (manual hitscan / melee fallback). */
   private rayEnemy(from: Vec, ang: number, len: number, antiAir: boolean, pad = 4): Enemy | null {

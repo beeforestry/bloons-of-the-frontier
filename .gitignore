@@ -12,3 +12,7 @@ screenshots/
 # third-party reference photos (layout reference only; not redistributed)
 art_src/reference/
 __pycache__/
+
+# t80 El Morro reference photos / drawings (mixed licences, reference only; see CREDITS.json)
+art_src/refs_el_morro/*
+!art_src/refs_el_morro/CREDITS.json

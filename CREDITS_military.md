@@ -139,3 +139,19 @@ No third-party meshes, textures, photos or AI meshes.
   armour plates, prism hulls/turrets, wheels/tracks), each matched by eye to our own v3 sprites (`public/assets/v3/{marine,odst,spartan,warthog,scorpion}_{0,1,2}.webp`).
 - Textures are procedural numpy patterns (painted armour, vehicle panels, tyre and track treads) from `art_src/glb_t77/scripts/lib.py`, palettes sampled from those sprites.
 - No third-party meshes, textures, photos, game assets or AI output. Not modelled on Halo (or any other game's) armour, helmets or vehicles; no Google imagery.
+
+## t80 El Morro first-person accuracy pass (3D fort walls, garitas, lighthouse, plaza, flora, parked vehicles)
+- **Fort geometry** (`public/assets/maps/morro/fort3d.dat`, 0.5 m height grid): U.S. Geological Survey 3DEP 1 m lidar DEM, project PR_PRVI_E_2018,
+  tile `USGS_1m_x80y205_PR_PRVI_E_2018.tif` — **public domain** (credit "U.S. Geological Survey"). Resampled to 0.5 m, wall faces sharpened
+  (shock filter), embrasures cut into the parapet ridges, masonry/parapet classes, by `art_src/tools/morro_fort3d.py` (original code).
+- **Alignment / flora placement / plaza outline**: NOAA NGS Hurricane Maria imagery 2017-09-24 (`ground.jpg`, already in the game) — **CC0 / US public domain**.
+  Flora spots (2286: scrub thicket, long-grass bank, lawn-edge tufts) traced from that aerial; the esplanade stays open grass.
+- **Wall look**: Poly Haven Plaster 02 (`tex/plaster.webp`) and Rock 06 (`tex/lh_rock.webp`) — **CC0**; streak/mould/bare-stone masks,
+  plaza arcade facade and the US / Puerto Rico / Cross-of-Burgundy flag textures are procedural canvas drawings (original).
+- **Garitas, lighthouse, flagpoles, arcades, well**: original three.js primitives in `src/fps/morro3d.ts`.
+- **Flora meshes**: existing Kenney Nature Kit / Grab3D CC0 models (see above). **Parked vehicles**: existing t77 Raider / Scorpion GLBs (original).
+- **Reference only (not shipped, not traced into textures)**: HABS PR-7-SAJU-6 photos and measured drawings (Library of Congress, public domain);
+  Wikimedia Commons photos (CC BY 4.0: Nils Huenerfuerst aerial May 2024, Thesavagenorwegian walls; CC BY-SA: EgorovaSvetlana, P. Hughes,
+  Russellesq, Mariordo, Mookieperez, Ligocsicnarf89, Godot13) — used only to judge proportions/colours, listed in `art_src/refs_el_morro/CREDITS.json`.
+  A Cults3D listing preview image (JulioCesar_76, paid STL) was looked at only as a massing check; the STL was **not** bought, downloaded or imported.
+  No Sketchfab / 3D Warehouse meshes, no Google Earth/Maps imagery, no art from commercial games.

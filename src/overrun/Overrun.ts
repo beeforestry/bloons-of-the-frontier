@@ -128,6 +128,11 @@ export class Overrun {
       const at = this.landNear({ x: base[0] + Math.cos(a) * r, y: base[1] + Math.sin(a) * r });
       this.spawnSurvivor(p, at);
     });
+    // t80: everyone deploys on foot (or in their picked class); parked Raider Buggies + a Bulwark Scorpion wait by the spawn (F to enter)
+    if (this.host) [['warthog', -150, 70], ['scorpion', 160, 110], ['warthog', 40, -170]].forEach(([k, dx, dy], i) => {
+      const at = this.landNear({ x: base[0] + (dx as number), y: base[1] + (dy as number) });
+      if (!g.parked.some((p) => dist(p, at) < 60)) g.park(k as string, at.x, at.y, i * 1.7);
+    });
     this.phase = 'live'; this.spawnT = 5;
     g.toast(`Overrun — survive ${Math.round(this.total / 60)} minutes!`, '#ffd84a');
   }
@@ -139,6 +144,11 @@ export class Overrun {
     sq.stance = 'aggressive';
     const u = sq.units[0], ou = ovUnit(p.cls); u.armorMax = ou.armor; u.ovDmg = ou.dmg; u.hpMul = ou.hp / d.tiers[0].stats.maxHp;
     p.unit = u; p.unitUid = u.uid; p.role = 'survivor';
+  }
+  /** t80: a survivor climbed into (on) a parked vehicle — use that vehicle's Overrun armour / damage / HP (restored on exit). */
+  vehicleSwap(u: Unit, on: boolean) {
+    if (!on) return;
+    const ou = ovUnit(u.data.id); u.armorMax = ou.armor; u.ovDmg = ou.dmg; u.hpMul = ou.hp / u.data.tiers[0].stats.maxHp;
   }
   /** The nearest walkable dry spot to p (spiral search). */
   landNear(p: Vec): Vec {

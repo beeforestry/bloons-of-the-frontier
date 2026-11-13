@@ -101,6 +101,8 @@ export class Unit implements Buffable {
   hpMul = 1;
   /** t78 Overrun: armour cap + damage multiplier for the survivor classes (1 / Infinity elsewhere). */
   armorMax = Infinity; ovDmg = 1;
+  /** t80: driving a parked world vehicle — what to restore on stepping out (infantry data, hp fraction, Overrun stats). */
+  onFoot: { data: UnitData; frac: number; hpMul: number; armorMax: number; ovDmg: number } | null = null;
   private appliedTier = -1;
   private appliedStars = 0;
   private appliedPlating = false;
@@ -142,6 +144,8 @@ export class Unit implements Buffable {
     g.fx({ kind: 'text', x: this.x, y: this.y - 20, text: 'KIA', color: '#ff5a5a', dur: 0.8 });
   }
 
+  /** t80: re-apply tier stats now (after the unit's data changed: boarding / leaving a vehicle). */
+  resyncTier(g: Game) { this.appliedTier = -1; this.appliedStars = this.stars; this.syncTier(g); }
   protected syncTier(g: Game) {
     const tier = this.tier(g);
     const plated = g.armory.has('plating');
