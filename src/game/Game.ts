@@ -6,7 +6,7 @@
 import { Faction, TargetingMode, TARGETING_ORDER, type AbilityId, type ManualCtl, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
-import { MAPS, toVec, type MapDef } from '../data/maps';
+import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
 import { TOWERS, towerById } from '../data/towers';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
@@ -190,7 +190,7 @@ export class Game {
   /** Per-player collector cap etc.: squads owned by the acting player (solo: all). */
   ownedSquads(pid = this.actingPid) { return this.squads.filter((s) => s.alive && (this.net === 'solo' || s.owner === pid)); }
 
-  constructor(readonly map: MapDef = MAPS[0], readonly diff: Difficulty = DIFFICULTIES[1]) {
+  constructor(readonly map: MapDef = resolveMap(DEFAULT_MAP), readonly diff: Difficulty = DIFFICULTIES[1]) {
     applyCostMul(diff.cost);
     this.waves = new WaveManager(buildWaves(diff.waves), diff.hp, diff.count, diff.late);
     this.waves.mapEase = MAP_EASE[map.id] ?? 1;

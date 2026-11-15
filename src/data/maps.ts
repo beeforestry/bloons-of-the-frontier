@@ -38,9 +38,25 @@ export interface TerrainDef {
   /** [spriteKey, x, y, sizePx] — same spots as the painted 2D decorations. */
   props: [string, number, number, number][];
 }
-export const MAPS: MapDef[] = raw as unknown as MapDef[];
+/** Player-facing labels (internal ids stay as authored in maps.generated.json). */
+const LABELS: Record<string, string> = { tropical: 'Isla de Cabras' };
+export const MAPS: MapDef[] = (raw as unknown as MapDef[]).map((m) => LABELS[m.id] ? { ...m, name: LABELS[m.id] } : m);
 export const toVec = ([x, y]: [number, number]): Vec => ({ x, y });
-/** t56: only these maps are offered in menus (others kept for tests/balance tools). */
-export const PLAYABLE_IDS = ['morro', 'tropical'];
-export const PLAYABLE_MAPS: MapDef[] = MAPS.filter((m) => PLAYABLE_IDS.includes(m.id));
-export const DEFAULT_MAP = 'tropical';
+/** t97 / t56: only these maps are selectable or loadable (others stay in MAPS for tests/balance tools). */
+export const AVAILABLE_MAPS = ['morro', 'tropical'] as const;
+export type AvailableMapId = typeof AVAILABLE_MAPS[number];
+/** t56 alias of AVAILABLE_MAPS */
+export const PLAYABLE_IDS: readonly string[] = AVAILABLE_MAPS;
+export const PLAYABLE_MAPS: MapDef[] = MAPS.filter((m) => (AVAILABLE_MAPS as readonly string[]).includes(m.id));
+export const DEFAULT_MAP: AvailableMapId = 'tropical';
+/** Used when a URL, save, lobby or start request names a hidden/unknown map. */
+export const FALLBACK_MAP: AvailableMapId = 'morro';
+export const isAvailableMap = (id: string | null | undefined): id is AvailableMapId =>
+  !!id && (AVAILABLE_MAPS as readonly string[]).includes(id);
+export function resolveMapId(id: string | null | undefined): AvailableMapId {
+  return isAvailableMap(id) ? id : FALLBACK_MAP;
+}
+export function resolveMap(id: string | null | undefined): MapDef {
+  const want = resolveMapId(id);
+  return PLAYABLE_MAPS.find((m) => m.id === want) ?? PLAYABLE_MAPS.find((m) => m.id === FALLBACK_MAP)!;
+}

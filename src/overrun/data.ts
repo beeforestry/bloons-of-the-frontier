@@ -54,6 +54,7 @@ export const OV_MAX_TOWERS = 6;
 /** Towers must go down within this many px of your survivor (protection, not a remote fortress). */
 export const OV_PLACE_RANGE = 560;
 
+/** Must stay a subset of AVAILABLE_MAPS (El Morro + Isla de Cabras). */
 export const OV_MAPS = ['tropical', 'morro'];
 export const OV_DEFAULT_MIN = 5;
 export const OV_DISPLAY = 'Overrun';

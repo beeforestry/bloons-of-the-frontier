@@ -6,7 +6,7 @@ import { Renderer, dmgTextPx, type ViewState } from './render/Renderer';
 import { Hud } from './ui/Hud';
 import { loadSprites, IMG } from './render/sprites';
 import { assetUrl } from './assetUrl';
-import { MAPS, PLAYABLE_MAPS, DEFAULT_MAP } from './data/maps';
+import { PLAYABLE_MAPS, DEFAULT_MAP, resolveMap, resolveMapId } from './data/maps';
 import { validateAll } from './data/validate';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
@@ -67,7 +67,7 @@ async function boot() {
   // t55: Continue the autosaved single-player match (co-op / versus are not saved)
   const sv = readSave();
   if (sv) {
-    const m = MAPS.find((x) => x.id === sv.map)!, d = DIFFICULTIES.find((x) => x.id === sv.diff);
+    const m = resolveMap(sv.map), d = DIFFICULTIES.find((x) => x.id === sv.diff);
     const box = document.createElement('div'); box.id = 'continue-box'; box.className = 'continue-box';
     box.innerHTML = `<button id="btn-continue" class="btn continue">▶ Continue <b>${m.name}</b> · ${d?.icon ?? ''} ${d?.name ?? sv.diff} · Wave ${sv.wave + 1} · ❤ ${sv.hq} · ¢${sv.credits}</button>
       <button id="btn-discard" class="btn small" title="Delete this save">✕</button>
@@ -82,12 +82,16 @@ async function boot() {
   // Single Player / Co-Op Defense / 1v1 Versus on the main menu; ?room=1234 invite links auto-join.
   window.__lobby = new Lobby((mp) => start(mp.settings.map, mp.settings.diff, false, mp), (o) => start(o.map, 'medium', false, undefined, undefined, o));
   const q = qs.get('map');
-  if (q && MAPS.some((m) => m.id === q)) { if (!PLAYABLE_MAPS.some((m) => m.id === q)) await loadSprites([MAPS.find((m) => m.id === q)!.image]); start(q, diff); }
+  if (q) start(resolveMapId(q), diff);
 }
 
 function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = false, mp?: MpStart, resume?: SaveData, ovs?: OvStart) {
   document.getElementById('menu')!.classList.remove('show');
-  const g = new Game(MAPS.find((m) => m.id === mapId)!, difficultyById(diffId));
+  const map = resolveMap(mapId);
+  if (resume && resume.map !== map.id) resume = undefined; // hidden/unknown save: start El Morro fresh, do not crash
+  if (mp && mp.settings.map !== map.id) mp.settings.map = map.id;
+  if (ovs && ovs.map !== map.id) ovs.map = map.id;
+  const g = new Game(map, difficultyById(diffId));
   // t78 Overrun: first-person survival vs the hive (solo/offline or over the co-op netcode)
   const ovMode = !!ovs || mp?.settings.mode === 'overrun';
   if (ovMode) g.mode = 'overrun';

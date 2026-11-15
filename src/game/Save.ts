@@ -8,7 +8,7 @@ import type { TargetingMode } from '../core/types';
 import type { DifficultyId } from '../data/difficulty';
 import { unitById } from '../data/units';
 import { buildingById } from '../data/buildings';
-import { PLAYABLE_MAPS as MAPS } from '../data/maps';
+import { MAPS, isAvailableMap } from '../data/maps';
 
 export const SAVE_KEY = 'bof.save', SAVE_V = 2; // v2 (t56): towers carry exact x, y (v1 cell saves migrate to cell centres)
 export interface SaveData {
@@ -42,7 +42,11 @@ export function readSave(): SaveData | null {
   const raw = ls.get(SAVE_KEY); if (!raw) return null;
   try {
     const s = JSON.parse(raw) as SaveData, m = MAPS.find((x) => x.id === s.map);
-    if ((s.v === SAVE_V || s.v === 1) && m && m.width === s.mapW && m.height === s.mapH && Array.isArray(s.towers)) return s;
+    if (!((s.v === SAVE_V || s.v === 1) && Array.isArray(s.towers))) { clearSave(); return null; }
+    if (!m || m.width !== s.mapW || m.height !== s.mapH) { clearSave(); return null; }
+    // Hidden maps are not offered (and must not crash). Keep the file so it can resume if the map returns.
+    if (!isAvailableMap(s.map)) return null;
+    return s;
   } catch { /* corrupt */ }
   clearSave(); return null;
 }

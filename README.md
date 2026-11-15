@@ -15,7 +15,7 @@ GitHub Pages: the live site is served from the `gh-pages` branch (a `BASE=/bloon
 ## Run
 ```bash
 npm install
-npm run dev            # http://localhost:5173  (?map=garden|jungle skips the menu)
+npm run dev            # http://localhost:5173  (?map=morro|tropical skips the menu)
 npm run build          # typecheck + upgrade-rule validation + static build -> dist/
 npm run preview        # serve dist/
 npm run test:e2e       # headless Playwright playtest (screenshots -> screenshots/)

@@ -5,7 +5,7 @@
 // =============================================================================
 import { NetSession, NetError, testIce, ICE_LABEL, type Msg, type Stage, type FailCode } from '../net/Net';
 import { DEFAULT_SETTINGS, type MpSettings, type PlayerInfo, type Mode } from '../net/Sync';
-import { PLAYABLE_MAPS as MAPS } from '../data/maps';
+import { PLAYABLE_MAPS as MAPS, resolveMapId } from '../data/maps';
 import { DIFFICULTIES } from '../data/difficulty';
 import { PCOLORS, PNAMES } from '../core/players';
 import { OV_MAPS, OV_DEFAULT_MIN } from '../overrun/data';
@@ -42,7 +42,8 @@ export class Lobby {
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('.mode-pick'))) b.classList.toggle('on', b.dataset.mode === m);
     document.body.classList.toggle('menu-mp', m !== 'solo');
     this.el.hidden = m === 'solo';
-    if (m === 'overrun' && this.settings.mode !== 'overrun') { this.settings.matchMin = OV_DEFAULT_MIN; this.settings.ovBots ??= 1; if (!OV_MAPS.includes(this.settings.map)) this.settings.map = 'tropical'; }
+    if (m === 'overrun' && this.settings.mode !== 'overrun') { this.settings.matchMin = OV_DEFAULT_MIN; this.settings.ovBots ??= 1; }
+    this.settings.map = resolveMapId(this.settings.map);
     if (m !== 'solo') { this.settings.mode = m; this.renderEntry(); }
   }
   /** t78 Overrun: single-player / offline setup (map, length, AI squadmates). */
@@ -69,7 +70,7 @@ export class Lobby {
     (this.el.querySelector('#mp-host') as HTMLElement).onclick = () => void this.host();
     if (ovr) {
       const v = (id: string) => (this.el.querySelector('#' + id) as HTMLSelectElement).value;
-      const keep = () => { this.settings.map = v('ov-map'); this.settings.matchMin = +v('ov-min'); this.settings.ovBots = +v('ov-bots'); };
+      const keep = () => { this.settings.map = resolveMapId(v('ov-map')); this.settings.matchMin = +v('ov-min'); this.settings.ovBots = +v('ov-bots'); };
       for (const id of ['ov-map', 'ov-min', 'ov-bots']) (this.el.querySelector('#' + id) as HTMLSelectElement).onchange = keep;
       (this.el.querySelector('#ov-solo') as HTMLElement).onclick = () => { keep(); this.onSolo?.({ map: this.settings.map, minutes: this.settings.matchMin, bots: this.settings.ovBots ?? 0 }); };
     }
@@ -168,8 +169,8 @@ export class Lobby {
   }
   private clientMsg(m: Msg) {
     if (m.t === 'welcome') this.localPid = m.pid as number;
-    else if (m.t === 'lobby') { this.players = m.players as PlayerInfo[]; this.settings = m.settings as MpSettings; this.pickMode(this.settings.mode, true); this.renderLobby(); }
-    else if (m.t === 'start') { this.settings = m.settings as MpSettings; this.players = m.players as PlayerInfo[]; this.launch(); }
+    else if (m.t === 'lobby') { this.players = m.players as PlayerInfo[]; this.settings = m.settings as MpSettings; this.settings.map = resolveMapId(this.settings.map); this.pickMode(this.settings.mode, true); this.renderLobby(); }
+    else if (m.t === 'start') { this.settings = m.settings as MpSettings; this.settings.map = resolveMapId(this.settings.map); this.players = m.players as PlayerInfo[]; this.launch(); }
   }
   private pushLobby() { this.net?.broadcast({ t: 'lobby', players: this.players, settings: this.settings, code: this.code }); this.renderLobby(); }
   private get canStart() { const n = this.players.length; return n >= 2 && (this.settings.mode !== 'versus' ? n <= 4 : n === 2) && this.players.every((p) => p.ready); }
@@ -213,7 +214,7 @@ export class Lobby {
     const rd = $('btn-ready'); if (rd) rd.onclick = () => { const on = !me?.ready; if (me) me.ready = on; this.net?.send(0, { t: 'ready', on }); this.renderLobby(); };
     const st = $('btn-mpstart'); if (st) st.onclick = () => { if (!this.canStart) return; for (const p of this.players) this.net!.send(p.pid, { t: 'start', settings: this.settings, players: this.players }); this.launch(); };
     if (host) {
-      const bind = (id: string, k: keyof MpSettings, num = false) => { const e = $(id) as HTMLSelectElement | null; if (e) e.onchange = () => { (this.settings as unknown as Record<string, unknown>)[k] = num ? +e.value : e.value; this.pushLobby(); }; };
+      const bind = (id: string, k: keyof MpSettings, num = false) => { const e = $(id) as HTMLSelectElement | null; if (e) e.onchange = () => { (this.settings as unknown as Record<string, unknown>)[k] = num ? +e.value : e.value; if (k === 'map') this.settings.map = resolveMapId(this.settings.map); this.pushLobby(); }; };
       bind('set-map', 'map'); bind('set-diff', 'diff'); bind('set-credits', 'credits', true); bind('set-timer', 'waveTimer', true); bind('set-match', 'matchMin', true); bind('set-role', 'hostRole'); bind('set-speed', 'speed', true); bind('set-bots', 'ovBots', true);
     }
   }
@@ -221,6 +222,6 @@ export class Lobby {
     if (!this.net) return;
     // mid-match only the original seats may (re)join; Sync handles the rejoin
     if (this.net.role === 'host') this.net.lockSlots(this.players.map((p) => p.pid));
-    this.onStart({ net: this.net, settings: { ...this.settings }, players: this.players.map((p) => ({ ...p })), localPid: this.localPid });
+    this.onStart({ net: this.net, settings: { ...this.settings, map: resolveMapId(this.settings.map) }, players: this.players.map((p) => ({ ...p })), localPid: this.localPid });
   }
 }
