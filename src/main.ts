@@ -130,6 +130,16 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
+  const btnBuild = document.getElementById('btn-mode-build'), btnTroops = document.getElementById('btn-mode-troops');
+  const setMode = (mode: 'build' | 'troops') => {
+    document.body.classList.toggle('mode-build', mode === 'build');
+    document.body.classList.toggle('mode-troops', mode === 'troops');
+    btnBuild?.classList.toggle('on', mode === 'build');
+    btnTroops?.classList.toggle('on', mode === 'troops');
+  };
+  btnBuild?.addEventListener('click', () => setMode('build'));
+  btnTroops?.addEventListener('click', () => setMode('troops'));
+  if (window.matchMedia('(max-width: 820px)').matches) setMode('build');
   if (!mp && resume) { applySave(g, resume); g.toast(`Resumed at wave ${resume.wave + 1}`, '#9ff7b0'); }
   if (!mp && !ov) g.spawnFreeCollector(0);
   // t55 autosave (single player): every wave end + when the page is hidden; a finished match clears it
