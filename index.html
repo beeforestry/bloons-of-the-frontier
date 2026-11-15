@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Balloons of the Frontier</title>
   <link rel="icon" href="./assets/favicon.png" />
-  <script type="module" crossorigin src="/bloons-of-the-frontier/assets/index-BW8qGt0F.js"></script>
-  <link rel="stylesheet" crossorigin href="/bloons-of-the-frontier/assets/index-Bolvo9pu.css">
+  <script type="module" crossorigin src="/bloons-of-the-frontier/assets/index-BdvUmTNE.js"></script>
+  <link rel="stylesheet" crossorigin href="/bloons-of-the-frontier/assets/index-B7dWe2-g.css">
 </head>
 <body>
   <header id="topbar">
@@ -47,6 +47,10 @@
       <div id="stage-btns"><button id="btn-panel" class="btn small" title="Hide / show the build panel (H)">◧ Hide</button><button id="btn-box" class="btn small" title="Box-select troops (Q). Desktop: left-drag always box-selects">⬚ Select</button><button id="btn-form" class="btn small" title="Formation for multi-select (V)">━ Line</button><button id="btn-autoarmy" class="btn small" title="Auto Army (G): your squads act on their own — defend threatened lanes, intercept leaks, take cover, heal, auto-cast abilities">🤖 Auto: OFF</button></div>
       <canvas id="minimap" width="220" height="148"></canvas>
     </section>
+    <div id="mode-toggle">
+      <button id="btn-mode-build" class="btn on">🏗 Build</button>
+      <button id="btn-mode-troops" class="btn">👥 Troops</button>
+    </div>
     <aside id="side">
       <div id="faction-tabs"></div>
       <div id="tower-cards"></div>
@@ -67,7 +71,8 @@
       <div id="diffs"></div>
       <div id="maps"></div>
       <div class="row menu-row"><button id="btn-tutorial" class="btn" title="Guided first play on the Garden map">🎓 Tutorial</button><button id="btn-menu-bug" class="btn" title="Report a bug, balance issue or idea">🐞 Report a problem</button></div>
-      <p class="hint">Left-drag box-selects troops (Shift-click queues waypoints, P patrols, V formation, G Auto Army, 1–9 abilities, F FPS) · right-drag / WASD / screen edges pan · wheel or pinch zooms · minimap jumps · click a glowing pad by your HQ to build Supply, Reactors and Barracks · ☄ Orbital Barrage (M) and ✚ Heal Drop (J) use Energy · H hides the build panel · Space starts a wave · keep the HQ alive</p>
+      <p class="hint desktop-hint">Left-drag box-selects troops (Shift-click queues waypoints, P patrols, V formation, G Auto Army, 1–9 abilities, F FPS) · right-drag / WASD / screen edges pan · wheel or pinch zooms · minimap jumps · click a glowing pad by your HQ to build Supply, Reactors and Barracks · ☄ Orbital Barrage (M) and ✚ Heal Drop (J) use Energy · H hides the build panel · Space starts a wave · keep the HQ alive</p>
+      <p class="hint mobile-hint">Tap to place towers or select units. Drag to move the camera. Pinch to zoom. Tap the bottom panel to build. Tap Start Wave when ready. Keep your HQ alive.</p>
     </div>
   </div>
   <div id="gameover" class="overlay"></div>
