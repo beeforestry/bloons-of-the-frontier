@@ -21,6 +21,7 @@ import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH, setFineHeights } from '../data/terrain';
 import { loadFort, fortH, fortMesh, morroSet, garitaSpots, FORT, type FortGrid, type MorroSet } from './morro3d';
 import { carveMorro, morroT93, type T93Set } from './morro93';
+import { loadCabras, cabrasH, cabrasSet, distantMorro, CABRAS, type CabrasGrid, type CabrasSet } from './cabras3d';
 import { BOARD_M } from '../game/Game';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
 import { enemySpriteTex, ENEMY_GLB, CENTRED_GLB } from './enemies3d';
@@ -78,7 +79,9 @@ export class Possess {
   /** t78: monster ability presses (sent with the control state). */
   abN = 0; private sentAb = 0; private bugEye = 0.9;
   /** t50 warzone styling is Tropical only (terrain alone no longer implies it: El Morro has real terrain too). */
-  get isWar() { return this.g.map.id === 'tropical'; }
+  get isWar() { return this.g.map.id === 'tropical' && this.g.map.flavor !== 'cabras'; }
+  /** t99: Isla de Cabras realism pass (fine lidar heights, El Canuelo, aerial-placed flora) instead of the t50 warzone. */
+  get isCabras() { return this.g.map.id === 'tropical' && this.g.map.flavor === 'cabras' && !!this.g.map.terrain; }
   /** t53: true-scale map built from real elevation/imagery (El Morro). */
   get real() { return (this.g.map.mpp ?? 0.05) > 0.051; }
   /** Ground (standing) height in metres at map px — test hook. */
@@ -100,7 +103,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
+  vm = { fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
   private seaN: THREE.Texture | null = null;
   /** t80 El Morro: fine fort heights + set pieces; the lidar floor geometry / photo it lowers + re-uses. */
   private fort: FortGrid | null = null; private morro: MorroSet | null = null; private floorGeo: THREE.BufferGeometry | null = null; private groundPhoto: THREE.Texture | null = null;
@@ -134,7 +137,7 @@ export class Possess {
     // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
     this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; if (this.composer) this.composer.setSize(innerWidth, innerHeight); });
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, this.real ? 1100 : 420); this.camera.rotation.order = 'YXZ';
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, this.isCabras ? 2100 : this.real ? 1100 : 420); // t99: El Morro is ~1.4 km across the bay from Isla de Cabras this.camera.rotation.order = 'YXZ';
     this.buildWorld(); this.buildPost(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
     // face the nearest enemy (or the HQ's lanes) on entry
     const near = (this.isBug ? this.g.units : this.g.enemies).filter((e) => e.alive).sort((a, b) => (a.x - obj.x) ** 2 + (a.y - obj.y) ** 2 - ((b.x - obj.x) ** 2 + (b.y - obj.y) ** 2))[0];
@@ -192,7 +195,9 @@ export class Possess {
     const fl = scene.getObjectByName('floor'); if (fl) fl.receiveShadow = true;
     // t80: El Morro's real walls (fine lidar fort mesh, garitas, lighthouse, plaza) — everything seated on it waits for it
     const morro = g.map.id === 'morro' && !!T;
-    const fortP: Promise<unknown> = morro ? loadFort().then((f) => this.addFort(f)).catch((e) => { console.warn('fort3d', e); this.fortFailed = true; }) : Promise.resolve();
+    const cabras = this.isCabras;
+    const fortP: Promise<unknown> = morro ? loadFort().then((f) => this.addFort(f)).catch((e) => { console.warn('fort3d', e); this.fortFailed = true; })
+      : cabras ? loadCabras().then((f) => this.addCabras(f)).catch((e) => { console.warn('cabras3d', e); this.fortFailed = true; }) : Promise.resolve();
     const gy = (x: number, y: number) => standH(g.map, x, y);
     // t42 military prop clusters: the real CC0 3D models (sandbag nests, crates, barrels, tents, barricades)
     for (const pr of g.props) void fortP.then(() => prop(pr.kind)).then((o) => {
@@ -209,7 +214,7 @@ export class Possess {
       if (!T && !m.burnt && /^(oak|tree|pine|palm|bush|fern)/.test(m.k)) for (let i = 0; i < 2; i++) { const a = fr() * 6.28, r = 0.6 + fr() * 1.6; flora.push({ k: 'grass', h: 0.35 + fr() * 0.3, x: x * S + Math.cos(a) * r, y: gy(x, y) - 0.02, z: y * S + Math.sin(a) * r, rot: fr() * 6.28 }); }
     }
     for (const o of g.obstacles) if (o.alive) flora.push(o.kind === 'rock' ? { k: 'rock_big', h: 1.5, x: o.x * S, y: gy(o.x, o.y) - 0.1, z: o.y * S, rot: -o.ang } : { k: 'log', h: 0.55, x: o.x * S, y: gy(o.x, o.y), z: o.y * S, rot: -o.ang + Math.PI / 2 });
-    void fortP.then(() => { if (morro) for (const it of flora) it.y = standH(g.map, it.x / S, it.z / S) - 0.05; return floraField(flora, !this.touch && this.vm.quality !== 'low', { high: 2, medium: 1, low: 0 }[this.vm.quality]); }).then((f) => {
+    void fortP.then(() => { if (morro || cabras) for (const it of flora) it.y = standH(g.map, it.x / S, it.z / S) - 0.05; return floraField(flora, !this.touch && this.vm.quality !== 'low', { high: 2, medium: 1, low: 0 }[this.vm.quality]); }).then((f) => {
       if (!this.alive) return; scene.add(f); this.vm.flora = flora.length; this.floraGrp = f;
       (f.userData.updateLod as (c: THREE.Camera, force?: boolean) => void)(this.camera, true);
       this.vm.tex.flora = f.userData.texKinds as number; this.vm.tex.lod = f.children.filter((m) => m.userData.lod === 1).length;
@@ -241,7 +246,7 @@ export class Possess {
   private buildSky(W: number, D: number) {
     const war = this.isWar;
     const { scene } = this, HOR = new THREE.Color(war ? 0x9b9387 : 0xdde4df), ZEN = new THREE.Color(war ? 0x5e646c : 0x5f97cf), WARM = new THREE.Color(war ? 0xe0a060 : 0xffe2b8), LOW = new THREE.Color(war ? 0x6a645a : 0xa9b5a6);
-    scene.background = HOR.clone(); scene.fog = this.real ? new THREE.Fog(HOR.getHex(), 180, 1000) : new THREE.Fog(HOR.getHex(), war ? 28 : 40, war ? 150 : 185);
+    scene.background = HOR.clone(); scene.fog = this.isCabras ? new THREE.Fog(HOR.getHex(), 260, 3200) : this.real ? new THREE.Fog(HOR.getHex(), 180, 1000) : new THREE.Fog(HOR.getHex(), war ? 28 : 40, war ? 150 : 185);
     const sky = new THREE.Group(); sky.name = 'sky';
     const geo = new THREE.SphereGeometry(360, 32, 16), pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new THREE.Color(), n = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) {
@@ -306,6 +311,28 @@ export class Possess {
   }
 
   private fortFailed = false;
+  private cabras: CabrasSet | null = null;
+  /** t99: Isla de Cabras — the 0.5 m lidar + El Canuelo fine grid replaces the 3 m terrain in first person; El Morro across the bay. */
+  private addCabras(f: CabrasGrid) {
+    if (!this.alive) return;
+    const g = this.g, W = g.map.width, H = g.map.height;
+    setFineHeights(g.map.id, (x, y) => cabrasH(f, x, y)); this.fort = f;
+    const step = this.vm.quality === 'high' ? 1 : 2;
+    const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
+    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, f.fl, { win: CABRAS, ext: true, skipBelow: -3.2, quadBelow: -1.5 }); mesh.name = 'cabras3d'; this.scene.add(mesh);
+    const geo = this.floorGeo, T = g.map.terrain!;
+    if (geo) { // sink the 3 m lidar floor under the fine window (its border ring keeps the seam closed)
+      const pos = geo.attributes.position as THREE.BufferAttribute, x0 = CABRAS.x0 * S, z0 = CABRAS.y0 * S, x1 = (CABRAS.x0 + (CABRAS.cols - 1) * CABRAS.step) * S, z1 = (CABRAS.y0 + (CABRAS.rows - 1) * CABRAS.step) * S;
+      const pad = (W * S) / (T.cols - 1) * 1.05;
+      for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), z = pos.getZ(i); if (x > x0 + pad && x < x1 - pad && z > z0 + pad && z < z1 - pad) pos.setY(i, pos.getY(i) - 9); }
+      pos.needsUpdate = true; geo.computeVertexNormals();
+    }
+    const set = cabrasSet(f, S); this.scene.add(set.group); this.cabras = set;
+    this.vm.cabras = { ...set.stats, chunks: mesh.userData.chunks as number, tris: mesh.userData.tris as number, window: CABRAS.cols * CABRAS.rows };
+    this.vm.fortChunks = mesh.userData.chunks as number;
+    if (this.vm.quality !== 'low') void distantMorro(S).then((m) => { if (!this.alive) return; this.scene.add(m); set.stats.morro = 1; if (this.vm.cabras) this.vm.cabras.morro = 1; }).catch((e) => console.warn('distant morro', e));
+    logEvent(`possess: Isla de Cabras fine grid ${this.vm.cabras.tris} tris, El Canuelo garita ${set.stats.garitas}`);
+  }
   /** t80: El Morro — swap the smoothed 3 m lidar inside the fort window for the 0.5 m extruded fort, add the set pieces. */
   private addFort(f: FortGrid) {
     if (!this.alive) return;
@@ -851,7 +878,7 @@ export class Possess {
     this.gun.rotation.set(this.kick * 0.09, 0, this.gunRoll * this.kick);
     this.updateAds(dt);
     if (o instanceof Unit && o.data.id !== this.vehId) { const first = !this.vehId; this.vehId = o.data.id; if (!first) { this.vm.boards++; void this.loadViewmodel().catch((e) => console.warn('viewmodel', e)); const nm = this.root.querySelector('.ps-me .nm'); if (nm) nm.textContent = this.ovr ? ovUnit(o.data.id).name : o.data.tiers[g.unitTier(o.data.id)].name; } }
-    this.morro?.update(dt);
+    this.morro?.update(dt); this.cabras?.update(dt);
     this.syncParked();
     this.syncEntities(dt);
     this.hud(dt);

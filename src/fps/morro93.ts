@@ -172,14 +172,14 @@ function placeRings(f: FortGrid, fl: Uint8Array, occ: Uint8Array): Ring[] {
 
 // ---------------------------------------------------------------- textures / materials
 const TL = new THREE.TextureLoader();
-function tex(n: string) { const t = TL.load(assetUrl(`assets/tex/${n}.webp`)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+export function tex(n: string) { const t = TL.load(assetUrl(`assets/tex/${n}.webp`)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
 function canvasTex(w: number, h: number, draw: (c: CanvasRenderingContext2D) => void, repeat = false) {
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h; draw(cv.getContext('2d')!);
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 let grime: THREE.Texture | null = null;
 /** Weathered lime plaster: CC0 map + black rain/mould streaks, ochre wash patches and a damp foot (world-space grime overlay). */
-function weathered(color: number, map: THREE.Texture, streak = 0.75, wash = 0.55, side: THREE.Side = THREE.FrontSide) {
+export function weathered(color: number, map: THREE.Texture, streak = 0.75, wash = 0.55, side: THREE.Side = THREE.FrontSide) {
   grime ??= (() => { const g = grimeTex(); g.colorSpace = THREE.NoColorSpace; return g; })();
   const m = new THREE.MeshStandardMaterial({ map, color, roughness: 0.95, metalness: 0, side });
   m.onBeforeCompile = (sh) => {
@@ -260,31 +260,31 @@ function prism(v: THREE.Vector3[]): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3)); g.computeVertexNormals(); return g;
 }
 /** A slab along p->q (world xz), lateral offsets l0..l1 (left = +perp), bottom/top heights at each end. */
-function slab(p: [number, number], q: [number, number], l0: number, l1: number, bp: number, tp: number, bq: number, tq: number) {
+export function slab(p: [number, number], q: [number, number], l0: number, l1: number, bp: number, tp: number, bq: number, tq: number) {
   const dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz), nx = -dz / L, nz = dx / L;
   const c = (o: [number, number], l: number, y: number) => V(o[0] + nx * l, y, o[1] + nz * l);
   return prism([c(p, l0, bp), c(p, l1, bp), c(q, l1, bq), c(q, l0, bq), c(p, l0, tp), c(p, l1, tp), c(q, l1, tq), c(q, l0, tq)]);
 }
-interface Notch { c: number; w: number; spring: number }
+export interface Notch { c: number; w: number; spring: number }
 /** Wall outline W x H (x centred, y up) with arched openings cut up from the bottom edge. */
-function notchShape(W: number, H: number, notches: Notch[], y0 = 0) {
+export function notchShape(W: number, H: number, notches: Notch[], y0 = 0) {
   const s = new THREE.Shape(); s.moveTo(-W / 2, y0);
   for (const n of [...notches].sort((a, b) => a.c - b.c)) { const r = n.w / 2; s.lineTo(n.c - r, y0); s.lineTo(n.c - r, n.spring); s.absarc(n.c, n.spring, r, Math.PI, 0, true); s.lineTo(n.c + r, y0); }
   s.lineTo(W / 2, y0); s.lineTo(W / 2, H); s.lineTo(-W / 2, H); s.lineTo(-W / 2, y0); return s;
 }
-function archPath(c: number, w: number, y0: number, spring: number) { const p = new THREE.Path(), r = w / 2; p.moveTo(c - r, y0); p.lineTo(c + r, y0); p.lineTo(c + r, spring); p.absarc(c, spring, r, 0, Math.PI, false); p.lineTo(c - r, y0); return p; }
+export function archPath(c: number, w: number, y0: number, spring: number) { const p = new THREE.Path(), r = w / 2; p.moveTo(c - r, y0); p.lineTo(c + r, y0); p.lineTo(c + r, spring); p.absarc(c, spring, r, 0, Math.PI, false); p.lineTo(c - r, y0); return p; }
 function halfRing(ri: number, ro: number) { const s = new THREE.Shape(); s.moveTo(-ro, 0); s.absarc(0, 0, ro, Math.PI, 0, true); s.lineTo(ri, 0); s.absarc(0, 0, ri, 0, Math.PI, false); s.lineTo(-ro, 0); return s; }
-const extrude = (s: THREE.Shape, depth: number) => new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, curveSegments: 14 });
+export const extrude = (s: THREE.Shape, depth: number) => new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, curveSegments: 14 });
 /** Local frame: x along u (world xz unit), y up, z = (-uz, 0, ux), origin o (world). */
-function frame(o: THREE.Vector3, ux: number, uz: number) { return new THREE.Matrix4().makeBasis(V(ux, 0, uz), V(0, 1, 0), V(-uz, 0, ux)).setPosition(o); }
+export function frame(o: THREE.Vector3, ux: number, uz: number) { return new THREE.Matrix4().makeBasis(V(ux, 0, uz), V(0, 1, 0), V(-uz, 0, ux)).setPosition(o); }
 /** Turn a solid's faces inside-out (vaults / casemate rooms seen from within). */
-function inside(g: THREE.BufferGeometry) {
+export function inside(g: THREE.BufferGeometry) {
   const n = g.index ? g.toNonIndexed() : g, p = n.attributes.position as THREE.BufferAttribute, uv = n.attributes.uv as THREE.BufferAttribute | undefined;
   for (let i = 0; i < p.count; i += 3) { for (const a of [p, uv]) { if (!a) continue; for (let c = 0; c < a.itemSize; c++) { const t = a.array[(i + 1) * a.itemSize + c]; (a.array as Float32Array)[(i + 1) * a.itemSize + c] = a.array[(i + 2) * a.itemSize + c]; (a.array as Float32Array)[(i + 2) * a.itemSize + c] = t; } } }
   n.computeVertexNormals(); return n;
 }
 /** Collects geometry per material, bakes transforms + world-scaled UVs, merges into one mesh per material. */
-class Merge {
+export class Merge {
   private m = new Map<THREE.Material, THREE.BufferGeometry[]>();
   add(geo: THREE.BufferGeometry, mat: THREE.Material, uv: number | [number, number] | null = 2.4, mtx?: THREE.Matrix4) {
     let g = geo.index ? geo.toNonIndexed() : geo.clone();
@@ -466,7 +466,7 @@ export function morroT93(f: FortGrid, S: number, t: T93): T93Set {
 }
 
 /** Garita in its local frame (floor at y 0, door facing -z): corbel, open-doored drum with a deep dark interior, dome + ball finial. */
-function garita93(mg: Merge, M: Record<string, THREE.Material>, mt: THREE.Matrix4) {
+export function garita93(mg: Merge, M: Record<string, THREE.Material>, mt: THREE.Matrix4) {
   const gap = 0.78, r0 = 1.0, ri = 0.78, hb = 2.3, door = 1.8;
   const corbel = new THREE.LatheGeometry([new THREE.Vector2(0.05, -1.9), new THREE.Vector2(0.35, -1.75), new THREE.Vector2(0.62, -1.3), new THREE.Vector2(0.84, -0.7), new THREE.Vector2(1.0, -0.2), new THREE.Vector2(1.08, -0.05), new THREE.Vector2(1.08, 0.05)], 20);
   mg.add(corbel, M.weath, [3, 1], mt);

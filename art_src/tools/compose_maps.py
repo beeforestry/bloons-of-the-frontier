@@ -64,6 +64,7 @@ def line_mask(polys, width, rough_seed=None):
 
 DECO = {}
 def deco_sheet(name, keys):
+    if not os.path.exists(f'{ART}/cut/{name}.png'): print('skip deco sheet (not checked in):', name); return  # t99: only needed for stamped maps
     im = Image.open(f'{ART}/cut/{name}.png').convert('RGBA'); w, h = im.size
     for r in range(2):
         for c in range(4):
@@ -81,9 +82,11 @@ SIZE = dict(garita=150, lighthouse=330, rampart=250, cannon=110, palm2=200, sear
 import sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tropical
 # t40 user assets (file names are swapped: asset_palm_tree.jpg is a rock pile, asset_rock_cluster.jpg a flowering bush)
-DECO['trock'] = tropical.cutout('asset_palm_tree.jpg'); DECO['tbush'] = tropical.cutout('asset_rock_cluster.jpg')
-SIZE.update(trock=130, tbush=110)
-SIZE.update(tropical.war_sprites(DECO))  # t50 warzone (burnt palms, wrecks, bunkers, wire, sandbags)
+try:
+    DECO['trock'] = tropical.cutout('asset_palm_tree.jpg'); DECO['tbush'] = tropical.cutout('asset_rock_cluster.jpg')
+    SIZE.update(trock=130, tbush=110)
+    SIZE.update(tropical.war_sprites(DECO))
+except Exception as e: print('skip tropical sprites:', e)  # t50 warzone (burnt palms, wrecks, bunkers, wire, sandbags)
 
 def poly_mask(polys, seed, blur=14, rough=0.55):
     m = Image.new('L', (W, H), 0); d = ImageDraw.Draw(m)
@@ -167,7 +170,7 @@ def compose(M):
         gdir = f"{ROOT}/public/assets/maps/{M['id']}" if M.get('groundFull') else tropical.OUT
         os.makedirs(gdir, exist_ok=True)
         (g if M.get('groundFull') else g.resize((W // 2, H // 2), Image.LANCZOS)).save(f'{gdir}/ground.jpg', quality=M.get('groundQ', 82), optimize=True)
-        for k in {'prflag'}:  # t50: only the flag stays a billboard; plants/wrecks are 3D models
+        for k in ({'prflag'} & set(DECO)):  # t50: only the flag stays a billboard (t99: sprite sheet optional, png already shipped)
             s_ = DECO[k].copy(); s_.thumbnail((256, 256), Image.LANCZOS); s_.save(f'{tropical.OUT}/{k}.png', optimize=True)
     # ---- decorations
     blocked = []  # (x, y, r)
@@ -319,19 +322,20 @@ MAPS = [
              [[-80, 112], [150, 116], [330, 150], [500, 320], [700, 520], [870, 700], [940, 778], [1060, 795], [1175, 800]],
          ]),
     # t56: Tropical Island rebuilt from REAL public-domain data like El Morro: Isla de Cabras (Toa Baja), the islet at the
-    # west mouth of San Juan Bay, NOAA NGS Hurricane Maria photo (2017-09-24) + USGS 3DEP 1 m lidar. Post-storm debris
-    # and the old lazaretto ruins suit the warzone. Lanes: (0) west beach landing along the shore road; (1) north beach
-    # landing past the jetty; (2) amphibious landing across the breakwater lagoon. HQ on the lawn by the park building.
-    dict(id='tropical', name='Tropical Island', seed=71, ground='grass', road='dryground', pathWidth=58, decoCount=46, noPlaza=True,
+    # west mouth of San Juan Bay, NOAA NGS Hurricane Maria photo (2017-09-24) + USGS 3DEP 1 m lidar.
+    # t99: frame moved 230 m south so Fortin San Juan de la Cruz (El Canuelo) sits on the map (left, on its rocky point) and the
+    # warzone dressing is gone (real park: palms, sea grape, lawns; first-person flora/fort come from cabras_fort3d.py).
+    # Lanes: (0) down the Palo Seco causeway past El Canuelo; (1) along the park road from the north end of the island;
+    # (2) amphibious landing from the bay over the breakwater into the lagoon. HQ on the central lawn by the park road.
+    dict(id='tropical', name='Tropical Island', seed=71, ground='grass', road='dryground', pathWidth=58, decoCount=0, noPlaza=True,
          painter=tropical_real.paint, terrain=tropical_real.heightfield, walls=tropical_real.walls, mpp=tropical_real.FRAME['mpp'],
-         groundFull=True, groundQ=80, roadAlpha=0.38, noStamp=True, propScale=0.35, fineLand=6,
-         deco=['bpalm', 'bpalm', 'bpalm', 'bpalm2', 'deadtree2', 'trock', 'rubble', 'wire', 'sandbags'],
-         must=[('wtank', 2), ('wtank2', 1), ('wheli', 1), ('bunker', 2), ('sandbags', 3), ('wire', 3)],
-         hq=[1300, 760], pads=[[1250, 560], [1380, 575], [1490, 860], [1360, 960], [1210, 975], [1570, 860]], rally=[1150, 760],
-         fixed=[['prflag', 1420, 700, 0.8]],
-         lanes=[[[-80, 560], [200, 565], [500, 545], [760, 520], [900, 560], [1020, 640], [1120, 720], [1185, 760]],
-                [[1640, -80], [1630, 250], [1580, 420], [1360, 445], [1130, 515], [1060, 630], [1120, 720], [1185, 760]],
-                [[980, 1570], [990, 1320], [985, 1160], [1010, 990], [1080, 860], [1185, 770]]]),
+         groundFull=True, groundQ=80, roadAlpha=0.34, noStamp=True, propScale=0.35, fineLand=6, flavor='cabras',
+         deco=['palm2'], must=[],
+         hq=[1010, 640], pads=[[760, 560], [790, 700], [1230, 570], [1240, 690], [560, 600], [1450, 610]], rally=[900, 640],
+         fixed=[],
+         lanes=[[[-70, 70], [40, 150], [120, 260], [190, 380], [262, 500], [330, 575], [450, 610], [600, 625], [760, 632], [880, 638], [975, 640]],
+                [[2280, 372], [2120, 372], [1960, 410], [1820, 480], [1640, 515], [1440, 535], [1260, 560], [1120, 600], [1040, 632], [975, 640]],
+                [[700, 1570], [715, 1330], [735, 1130], [752, 980], [800, 840], [870, 730], [930, 672], [975, 640]]]),
 ]
 os.makedirs('/tmp/chk', exist_ok=True)
 # `--only morro` re-composes just that map and merges it into the existing JSON

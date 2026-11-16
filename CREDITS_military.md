@@ -178,3 +178,28 @@ Shipped textures (all downscaled to 512 px WebP, `public/assets/tex/`), all **Po
   - notaboutthemiles `A-sentry-box-at-El-Morro-San-Juan-Puerto-Rico.jpg`
   - the user's shared Google image of a garita interior; CC-BY-SA Wikimedia photos listed under t80 — reference only.
 - No Google Earth/Maps imagery, no Sketchfab / 3D Warehouse / Cults meshes, no art from commercial games.
+
+## t99 Isla de Cabras realism pass (real aerial/elevation, El Cañuelo fortlet, matched vegetation, CC0 floor classes, parked vehicles)
+- **2D map + first-person ground photo** (`public/assets/maps/tropical.jpg`, `tropical/ground.jpg`): NOAA National Geodetic Survey
+  Emergency Response Imagery, Hurricane Maria flight `20170924b` RGB tiles — **US Government work, public domain / CC0** (credit "NOAA NGS").
+  Re-framed 230 m south of the t56 frame so Fortín San Juan de la Cruz ("El Cañuelo") sits on the map; composed at 0.125 m/px by
+  `art_src/tools/tropical_real.py` + `compose_maps.py` + `map_x2.py` (original code).
+- **Elevation** (`public/assets/maps/tropical/cabras3d.dat`, 0.5 m grid): U.S. Geological Survey 3DEP 1 m lidar DEM, project PR_PRVI_E_2018,
+  tile `USGS_1m_x80y205_PR_PRVI_E_2018.tif` — **public domain** (credit "U.S. Geological Survey"). The island is bare-earth flat (≤ 2.2 m);
+  the sea floor is a synthetic gentle shelf (the lidar has no bathymetry here).
+- **El Cañuelo geometry**: carved into that grid by `art_src/tools/cabras_fort3d.py` (original code) from the **Historic American Buildings Survey
+  HABS PR-7-SAJU-11 / PR-52 measured drawings and photographs** (Library of Congress / Wikimedia Commons, **public domain**): 24.4 m (80 ft) square,
+  gun deck + parapet heights, embrasure spacing, the north-east corner garita, the east entrance with its stair, the terracotta cordon.
+  Garita, cordon, lintel, cistern and iron guns are original three.js primitives (`src/fps/cabras3d.ts`, reusing the t93 `garita93` builder).
+- **El Morro across the bay**: the existing t80 USGS lidar fort grid (public domain), placed ~1.4 km across the bay mouth.
+- **Floor classes** (sand / riprap & breakwater rock / asphalt / stone / brick / deck), classified from the NOAA aerial: existing CC0 Poly Haven
+  textures only — Coast Sand 01, Aerial Rocks 02, Cobblestone Floor 08 (Rob Tuytel), Castle Brick 02 Red (Rob Tuytel), Concrete Floor 02 (Poly Haven).
+  No new textures were downloaded.
+- **Flora / rocks** (3,909 placements: palms, bent palms, bushes, trees, lawn-edge and dune grass, shore riprap): positions traced from the
+  NOAA aerial; meshes are the existing Kenney Nature Kit / Grab3D CC0 models. **Parked vehicles**: existing t77 Raider Buggy / Scorpion GLBs (original).
+- **Reference only — NOT shipped, NOT traced into textures** (viewed to judge proportions/colours; files stay in the git-ignored
+  `art_src/refs_canuelo/`, licences listed in `art_src/refs_canuelo/CREDITS.json`): Wikimedia Commons photos — CC0: dlovins99;
+  CC BY 2.0: Arturo Donate, R9 Studios FL, in0_m0x0, Claudio Baldunciel; CC BY 2.5 / CC BY-SA 2.5: Norma Arbelo Irizarry;
+  CC BY-SA 3.0: Jaro Nemčok, Carlo Giovannetti (Thief12); CC BY-SA 4.0: AllenMarrero, Caballero1967; public domain: National Archives
+  "Causeway to Cabras Island (circa 1906)", Mariomaster1589 "Fortsanjuandelacruz.JPG".
+  No Google Earth / Google Maps imagery, no Sketchfab / 3D Warehouse / Cults meshes.

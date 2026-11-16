@@ -7,9 +7,14 @@
 // bastion salients), the yellow Plaza de Armas with white arches, the grey/black lighthouse, the three flags over the plaza.
 import * as THREE from 'three';
 import { assetUrl } from '../assetUrl';
+import { groundTex } from './groundTex';
 
 /** Fort window on the 4416 x 2976 morro map (game px of sample (0,0), px per sample). Mirrors morro_fort3d.py. */
 export const FORT = { x0: 1682, y0: 642, step: 4, cols: 540, rows: 500, off: -5 };
+/** t99: a fine first-person heightfield window (El Morro's FORT, Isla de Cabras' CABRAS). */
+export type FineWin = { x0: number; y0: number; step: number; cols: number; rows: number; off: number };
+/** t99 fortMesh options: `ext` = the extra Isla de Cabras floor classes (3 sand .. 7 brick); `skipBelow` = drop chunks lying wholly under this height (open sea). */
+export interface FortMeshOpts { win?: FineWin; ext?: boolean; skipBelow?: number; quadBelow?: number }
 export interface FortGrid { h: Float32Array; cls: Uint8Array }
 /** Plaza de Armas outline (game px) — the long sunken court with the well, traced on the aerial. */
 export const PLAZA: [number, number][] = [[2477, 1305], [2520, 1300], [2560, 1420], [2655, 1560], [2560, 1915], [2477, 1905]];
@@ -18,6 +23,7 @@ export const EXTRA_GARITAS: [number, number][] = [[2292, 2428], [3655, 1700], [2
 export const LIGHTHOUSE: [number, number] = [2300, 1980];
 export const FLAGS: [number, number, string][] = [[2425, 1360, 'us'], [2425, 1420, 'pr'], [2425, 1480, 'burgundy']];
 
+const FORT_WIN: FineWin = FORT;
 let gridP: Promise<FortGrid> | null = null;
 export function loadFort(): Promise<FortGrid> {
   return (gridP ??= fetch(assetUrl('assets/maps/morro/fort3d.dat')).then((r) => { if (!r.ok) throw new Error('fort3d ' + r.status); return r.arrayBuffer(); }).then(async (raw) => {
@@ -104,7 +110,8 @@ function star(c: CanvasRenderingContext2D, x: number, y: number, r: number) {
  * The fort heightfield mesh. `ground` = the aerial photo already used for the lidar terrain (same UVs: map px / map size).
  * `step` = samples per vertex (1 = 0.5 m, 2 = 1 m). Wall faces get ochre plaster + mould streaks; decks/lawns keep the photo.
  */
-export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: number, mapH: number, step: number, base: THREE.MeshLambertMaterial, fl?: Uint8Array): THREE.Group {
+export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: number, mapH: number, step: number, base: THREE.MeshLambertMaterial, fl?: Uint8Array, o: FortMeshOpts = {}): THREE.Group {
+  const FORT = o.win ?? FORT_WIN;
   const cols = Math.floor((FORT.cols - 1) / step) + 1, rows = Math.floor((FORT.rows - 1) / step) + 1;
   const pos = new Float32Array(cols * rows * 3), uv = new Float32Array(cols * rows * 2), cls = new Float32Array(cols * rows), flo = new Float32Array(cols * rows);
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
@@ -122,11 +129,12 @@ export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: nu
     const nx = (H(c - 1, r) - H(c + 1, r)) / (2 * d), nz = (H(c, r - 1) - H(c, r + 1)) / (2 * d), L = Math.hypot(nx, 1, nz), k = (r * cols + c) * 3;
     nrm[k] = nx / L; nrm[k + 1] = 1 / L; nrm[k + 2] = nz / L;
   }
-  const mat = fortMaterial(base, ground);
+  const mat = fortMaterial(base, ground, !!o.ext);
   // 64-vertex chunks: frustum culling (camera AND the tight sun-shadow box) skips most of the fort every frame
   const CH = 64, grp = new THREE.Group(); grp.name = 'fort3d'; let tris = 0;
   for (let r0 = 0; r0 < rows - 1; r0 += CH - 1) for (let c0 = 0; c0 < cols - 1; c0 += CH - 1) {
     const rN = Math.min(CH, rows - r0), cN = Math.min(CH, cols - c0);
+    if (o.skipBelow != null) { let hi = -1e9; for (let r = 0; r < rN; r++) for (let c = 0; c < cN; c++) hi = Math.max(hi, pos[((r0 + r) * cols + c0 + c) * 3 + 1]); if (hi < o.skipBelow) continue; }
     const P = new Float32Array(rN * cN * 3), N = new Float32Array(rN * cN * 3), U = new Float32Array(rN * cN * 2), C = new Float32Array(rN * cN), F = new Float32Array(rN * cN);
     for (let r = 0; r < rN; r++) for (let c = 0; c < cN; c++) {
       const src = (r0 + r) * cols + (c0 + c), dst = r * cN + c;
@@ -135,21 +143,24 @@ export function fortMesh(f: FortGrid, ground: THREE.Texture, S: number, mapW: nu
     const idx = new Uint16Array((rN - 1) * (cN - 1) * 6); let n = 0;
     for (let r = 0; r < rN - 1; r++) for (let c = 0; c < cN - 1; c++) {
       const a = r * cN + c, b = a + 1, e = a + cN, g = e + 1;
+      // t99: deep sea-floor quads (all 4 corners under quadBelow) are dropped — the dark sea bed plane shows through the water
+      if (o.quadBelow != null && Math.max(P[a * 3 + 1], P[b * 3 + 1], P[e * 3 + 1], P[g * 3 + 1]) < o.quadBelow) continue;
       // split each quad along the diagonal with the smaller height jump (keeps wall tops straight)
       if (Math.abs(P[a * 3 + 1] - P[g * 3 + 1]) <= Math.abs(P[b * 3 + 1] - P[e * 3 + 1])) idx.set([a, e, g, a, g, b], n); else idx.set([a, e, b, b, e, g], n);
       n += 6;
     }
+    if (n === 0) continue;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(U, 2)); geo.setAttribute('aCls', new THREE.BufferAttribute(C, 1)); geo.setAttribute('aFl', new THREE.BufferAttribute(F, 1));
-    geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.computeBoundingSphere(); geo.computeBoundingBox();
-    const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.castShadow = true; m.name = 'fort3d_chunk'; grp.add(m); tris += idx.length / 3;
+    geo.setIndex(new THREE.BufferAttribute(n < idx.length ? idx.slice(0, n) : idx, 1)); geo.computeBoundingSphere(); geo.computeBoundingBox();
+    const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.castShadow = true; m.name = 'fort3d_chunk'; grp.add(m); tris += n / 3;
   }
   grp.userData.verts = cols * rows; grp.userData.tris = tris; grp.userData.chunks = grp.children.length;
   return grp;
 }
 /** Lidar-terrain detail material + the t80 wall-face shader (triplanar ochre plaster, exposed rubble stone, mould streaks, courses). */
-function fortMaterial(mat: THREE.MeshLambertMaterial, ground: THREE.Texture) {
+function fortMaterial(mat: THREE.MeshLambertMaterial, ground: THREE.Texture, ext = false) {
   mat.map = ground;
   const L = new THREE.TextureLoader(), pl = L.load(assetUrl('assets/tex/plaster.webp')), pr = L.load(assetUrl('assets/tex/lh_rock.webp'));
   // t93: floors — Poly Haven CC0 red laterite soil (plazas / lower court / garita walks) and dirty concrete (pale gun decks)
@@ -159,24 +170,27 @@ function fortMaterial(mat: THREE.MeshLambertMaterial, ground: THREE.Texture) {
   const prev = mat.onBeforeCompile.bind(mat), prevKey = mat.customProgramCacheKey.bind(mat);
   mat.onBeforeCompile = (sh, r) => {
     prev(sh, r);
+    if (ext) { sh.uniforms.t_sa = { value: groundTex('sand') }; sh.uniforms.t_rk = { value: groundTex('rock') }; sh.uniforms.t_cb = { value: groundTex('cobble') }; sh.uniforms.t_br = { value: extTex('mr_brick') }; sh.uniforms.t_as = { value: extTex('concrete') }; }
     sh.uniforms.t_pl = { value: pl }; sh.uniforms.t_st = { value: pr }; sh.uniforms.t_gr = { value: grime }; sh.uniforms.t_ea = { value: te }; sh.uniforms.t_dk = { value: td };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCls; attribute float aFl; varying float vCls; varying float vFl; varying vec3 vFN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCls = aCls; vFl = aFl; vFN = normalize(mat3(modelMatrix) * objectNormal);');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCls; varying float vFl; varying vec3 vFN; uniform sampler2D t_pl; uniform sampler2D t_st; uniform sampler2D t_gr; uniform sampler2D t_ea; uniform sampler2D t_dk;\n' + WALL_GLSL)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCls; varying float vFl; varying vec3 vFN; uniform sampler2D t_pl; uniform sampler2D t_st; uniform sampler2D t_gr; uniform sampler2D t_ea; uniform sampler2D t_dk;\n' + (ext ? 'uniform sampler2D t_sa; uniform sampler2D t_rk; uniform sampler2D t_cb; uniform sampler2D t_br; uniform sampler2D t_as;\n' : '') + WALL_GLSL)
       .replace('diffuseColor.rgb *= mix(vec3(1.0), det, 0.9);\n}', `diffuseColor.rgb *= mix(vec3(1.0), det, 0.9);
 }
 {
   // t80: wall faces of the fort -> weathered ochre plaster / rubble stone with black mould streaks (El Morro ground photos)
-  float wall = smoothstep(0.66, 0.36, vFN.y) * smoothstep(0.2, 0.8, vCls);
+  vec3 nW = normalize(vFN); float nY = vFN.y;${ext ? `
+  nW = normalize(cross(dFdx(vGW), dFdy(vGW))); nW *= sign(nW.y + 1e-4); nY = nW.y;   // t99: faceted normal -> crisp wall/floor split on the 0.5 m steps` : ''}
+  float wall = smoothstep(0.66, 0.36, nY) * smoothstep(0.2, 0.8, vCls);
   if (wall > 0.001) {
-    vec3 n = normalize(vFN); vec2 w = abs(n.xz) + 0.001; w /= (w.x + w.y);
+    vec3 n = nW; vec2 w = abs(n.xz) + 0.001; w /= (w.x + w.y);
     vec3 c = wallCol(vec2(vGW.z, vGW.y)) * w.x + wallCol(vec2(vGW.x, vGW.y)) * w.y;
     c *= 0.8 + 0.2 * smoothstep(-2.0, 6.0, vGW.y);           // damp, darker foot of the wall
     diffuseColor.rgb = mix(diffuseColor.rgb, c, wall);
   }
   // t93: floors (flat faces only). 1 = reddish packed earth / aggregate (Plaza de Armas, lower court, garita walks),
   // 2 = pale worn lime-concrete gun deck (terreplein); the aerial keeps the large-scale stains on the decks.
-  float flt93 = smoothstep(0.72, 0.9, vFN.y);
+  float flt93 = smoothstep(0.72, 0.9, nY);
   float bg93 = texture2D(t_gr, vGW.xz / 23.0 + 0.11).b;
   if (vFl > 0.5 && vFl < 1.5 && flt93 > 0.0) {
     vec3 tx = texture2D(t_ea, vGW.xz / 2.7).rgb; float tl = dot(tx, vec3(0.2126, 0.7152, 0.0722)) / 0.0655;
@@ -187,13 +201,29 @@ function fortMaterial(mat: THREE.MeshLambertMaterial, ground: THREE.Texture) {
     vec3 a = diffuseColor.rgb; float al = dot(a, vec3(0.2126, 0.7152, 0.0722));
     vec3 d = texture2D(t_dk, vGW.xz / 3.6).rgb * vec3(1.0, 0.95, 0.86) * clamp(0.62 + al * 1.6, 0.55, 1.2) * (0.88 + 0.2 * bg93);
     diffuseColor.rgb = mix(a, d, flt93 * 0.78);
-  }
+  }${ext ? EXT_GLSL : ''}
 }`);
   };
-  mat.customProgramCacheKey = () => prevKey() + '|fort93';
+  mat.customProgramCacheKey = () => prevKey() + '|fort93' + (ext ? 'x' : '');
   mat.needsUpdate = true;
   return mat;
 }
+const EXT_TEX = new Map<string, THREE.Texture>();
+function extTex(n: string) { let t = EXT_TEX.get(n); if (!t) { t = new THREE.TextureLoader().load(assetUrl(`assets/tex/${n}.webp`)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; EXT_TEX.set(n, t); } return t; }
+/** t99 Isla de Cabras floors (flat-ish faces; the aerial keeps the large-scale colour): 3 beach sand, 4 riprap / breakwater rock,
+ *  5 park asphalt, 6 worn stone (El Canuelo's entrance + stair), 7 brick promenade. Detail = CC0 texture / its mean (hue from the photo). */
+const EXT_GLSL = `
+  {
+    float fx = smoothstep(0.55, 0.85, nY) * (1.0 - wall); vec2 q = vGW.xz;
+    vec3 a = diffuseColor.rgb; float al = dot(a, vec3(0.2126, 0.7152, 0.0722));
+    if (vFl > 2.5 && vFl < 3.5) { vec3 t = texture2D(t_sa, q / 2.6).rgb / vec3(0.2268, 0.1742, 0.1096); diffuseColor.rgb = mix(a, a * clamp(mix(vec3(dot(t, vec3(0.33))), t, 0.3), 0.55, 1.6) * vec3(1.04, 1.0, 0.94), fx * 0.92); }
+    else if (vFl > 3.5 && vFl < 4.5) { vec3 t = texture2D(t_rk, q / 1.9).rgb / vec3(0.1719, 0.1232, 0.0515); float tl = dot(t, vec3(0.2126, 0.7152, 0.0722));
+      vec3 c = vec3(0.30, 0.29, 0.27) * clamp(tl, 0.35, 1.9) * (0.75 + al * 1.1); diffuseColor.rgb = mix(a, c, 0.8 * smoothstep(0.15, 0.5, nY) * (1.0 - wall)); }
+    else if (vFl > 4.5 && vFl < 5.5) { vec3 t = texture2D(t_as, q / 3.0).rgb; float tl = dot(t, vec3(0.2126, 0.7152, 0.0722));
+      diffuseColor.rgb = mix(a, vec3(0.085, 0.085, 0.09) * (0.6 + tl * 1.6) * (0.8 + al * 1.4), fx * 0.85); }
+    else if (vFl > 5.5 && vFl < 6.5) { vec3 t = texture2D(t_cb, q / 1.8).rgb / vec3(0.3016, 0.276, 0.2305); diffuseColor.rgb = mix(a, vec3(0.36, 0.33, 0.28) * clamp(t, 0.4, 1.7), 1.0 - wall); }
+    else if (vFl > 6.5) { vec3 t = texture2D(t_br, q / 1.6).rgb; diffuseColor.rgb = mix(a, t * vec3(1.05, 0.95, 0.9) * (0.75 + al * 1.2), fx * 0.85); }
+  }`;
 const WALL_GLSL = `
 vec3 wallCol(vec2 p) {
   vec3 pl = texture2D(t_pl, p / 2.4).rgb, st = texture2D(t_st, p / 2.8).rgb;

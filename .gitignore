@@ -16,3 +16,7 @@ __pycache__/
 # t80 El Morro reference photos / drawings (mixed licences, reference only; see CREDITS.json)
 art_src/refs_el_morro/*
 !art_src/refs_el_morro/CREDITS.json
+
+# t99 Isla de Cabras / El Canuelo reference photos + HABS drawings (mixed licences, reference only; see CREDITS.json)
+art_src/refs_canuelo/*
+!art_src/refs_canuelo/CREDITS.json

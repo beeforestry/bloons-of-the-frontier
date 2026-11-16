@@ -13,7 +13,8 @@ import math, os, sys, json
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw
 CACHE = os.environ.get('TROP_CACHE', '/tmp/trop/real')
-FRAME = dict(cE=802440.0, cN=2044640.0, ang=90.0, mpp=0.25, W=2208, H=1488)
+# t56 frame was cE=802440, cN=2044640 (north park only); t99 moves it 230 m south so El Cañuelo (Fortín San Juan de la Cruz) is on the map
+FRAME = dict(cE=802455.0, cN=2044410.0, ang=90.0, mpp=0.25, W=2208, H=1488)
 DEM_URL = '/vsicurl/https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/PR_PRVI_E_2018/TIFF/USGS_1m_x80y205_PR_PRVI_E_2018.tif'
 LAYER, Z = '20170924b-rgb', 19
 SEA = 0.35  # water plane (m); lidar is hydro-flattened at ~0 along the shore
@@ -93,7 +94,9 @@ def masks(W, H):
 
 
 # hand-traced (on the photo) areas where nothing may be built: the walled cemetery, the city blocks, the lighthouse
-NO_BUILD = []  # set after tracing
+# t99: El Canuelo's footprint (24.4 m square turned ~45 deg on the map, traced on the 0.125 m photo) + the fishing pier
+CANUELO = [(178, 622), (252, 694), (178, 764), (104, 692)]
+NO_BUILD = [CANUELO, [(20, 330), (95, 300), (140, 350), (70, 420)]]
 
 
 def paint(M, W, H, tex, noise):
@@ -125,6 +128,17 @@ def heightfield(M, W, H, lanes, pw, cols=185, rows=125):
 
 
 def walls(W, H, region=None, step=32):
+    """t99: the island is flat (<2.2 m) -> the lidar finds no wall faces; El Canuelo's walls (6.7 m parapet) block LOS instead."""
+    out = []
+    for i in range(4):
+        (ax, ay), (bx, by) = CANUELO[i], CANUELO[(i + 1) % 4]
+        n = max(2, int(math.hypot(bx - ax, by - ay) / 14))
+        for k in range(n + 1):
+            t = k / n; out.append([round(ax + (bx - ax) * t), round(ay + (by - ay) * t), 10, 6.0])
+    return out
+
+
+def walls_lidar(W, H, region=None, step=32):
     """LOS blockers [x, y, r, h] along the fort's wall faces: cells where the 1 m lidar shows a sharp drop.
     The smoothed 3 m terrain lattice already blocks the big terraces; these add the parapets/wall edges."""
     _, _, h, slope = masks(W, H)

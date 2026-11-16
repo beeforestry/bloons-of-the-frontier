@@ -208,6 +208,10 @@ export function decoTo3D(key: string, sizePx: number): { k: FloraKey; h: number;
   // t80 El Morro: spots placed from the real aerial (art_src/tools/morro_fort3d.py); size = true height in decimetres
   if (key.startsWith('mr_')) {
     const h = sizePx / 10;
+    // t99 Isla de Cabras (cabras_fort3d.py): coconut palms (straight / leaning by spot), shore riprap + breakwater rocks
+    if (key === 'mr_palm') return { k: (sizePx * 7) % 5 < 2 ? 'palm_tall' : 'palm', h };
+    if (key === 'mr_palmb') return { k: 'palm_bend', h };
+    if (key === 'mr_rock') return { k: sizePx > 11 ? 'rock_big' : sizePx > 8 ? 'rock' : 'rock_small', h };
     return key === 'mr_tree' ? { k: 'tree', h } : key === 'mr_bush' ? { k: 'bush', h } : key === 'mr_fern' ? { k: 'fern', h } : key === 'mr_grass' ? { k: 'grass', h } : null;
   }
   switch (key) {
