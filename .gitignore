@@ -20,3 +20,4 @@ art_src/refs_el_morro/*
 # t99 Isla de Cabras / El Canuelo reference photos + HABS drawings (mixed licences, reference only; see CREDITS.json)
 art_src/refs_canuelo/*
 !art_src/refs_canuelo/CREDITS.json
+autopilot_shots/
