@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import './possess.css';
-import type { Game } from '../game/Game';
+import type { FpSfxName, Game } from '../game/Game';
 import { MANUAL_BONUS } from '../game/Game';
 import { unitById } from '../data/units';
 import { Tower } from '../entities/Tower';
@@ -92,6 +92,32 @@ export class Possess {
   joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 }; lookId = -1; lookX = 0; lookY = 0;
   ctl: ManualCtl = { aim: 0, fire: false, target: null, mx: 0, my: 0 };
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
+  /** t101 first-person audio: per-weapon report, hit tick, kill confirm, footsteps, vehicle engine. */
+  kills = 0; steps = 0; lastSfx = ''; private killE: Enemy | null = null; private killT = 0; private stepN = 0; private engOn = false;
+  /** Which report your own weapon makes (re-read per shot, so boarding a vehicle / tier-ups switch sound). */
+  weaponSfx(): FpSfxName {
+    const o = this.obj;
+    if (o instanceof Enemy) return 'bite';
+    if (o instanceof Tower) {
+      const id = o.data.id, pk = o.data.projectile ?? 'bullet';
+      if (id === 'sniper_monkey') return 'marksman';
+      if (id === 'unsc_tank' || pk === 'shell') return 'cannon';
+      if (id === 'unsc_heli' || id === 'unsc_autoturret' || id === 'unsc_flak' || pk === 'flak') return 'chaingun';
+      if (pk === 'rail' || id === 'unsc_rail') return 'rail';
+      if (pk === 'laser' || pk === 'tesla' || pk === 'magic') return 'beam';
+      if (pk === 'bullet') return 'rifle';
+      return 'dart';
+    }
+    const w = o.t(this.g).weapon;
+    if (o.data.vehicle) return w.projectile === 'shell' ? 'cannon' : 'chaingun';
+    if (w.type === 'melee') return 'melee';
+    if (w.beam || w.type === 'energy') return 'beam';
+    if (w.projectile === 'arrow') return 'arrow';
+    if (w.projectile === 'shell') return 'cannon';
+    if (w.projectile === 'dart') return 'dart';
+    if (/smg/i.test(w.name)) return 'smg';
+    return 'rifle';
+  }
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMeshes = new Map<string, THREE.InstancedMesh>(); private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
   /** t76: per-enemy-type instanced GLB sets (one InstancedMesh per GLB primitive, shared matrices) + boss/blimp templates. */
@@ -704,7 +730,7 @@ export class Possess {
   // t74: Marksman Scout aim-down-scope (hold RMB or Shift): FOV zoom, slower look, scope sight picture
   get canScope(): boolean { return this.obj instanceof Tower && this.obj.data.id === 'sniper_monkey'; }
   ads = false; adsK = 0;
-  setAds(on: boolean) { this.ads = on && this.canScope && this.alive; }
+  setAds(on: boolean) { const was = this.ads; this.ads = on && this.canScope && this.alive; if (this.ads && !was) this.g.fpAudio?.shot('scope'); }
   private updateAds(dt: number) {
     const k = Math.max(0, Math.min(1, this.adsK + (this.ads ? 1 : -1) * dt * 7));
     if (k === this.adsK) return; this.adsK = k;
@@ -858,21 +884,32 @@ export class Possess {
     if (this.lastShot < 0) this.lastShot = shotNo;
     if (shotNo !== this.lastShot) {
       this.lastShot = shotNo; this.shots++; this.flashT = this.isBug ? 0 : 0.06; this.kick = 1;
-      if (o instanceof Enemy) { if (this.g.overrun?.prey?.(o, aim)) { this.hits++; this.hitT = 0.15; } }
+      const ws = this.weaponSfx(); this.lastSfx = ws; g.fpAudio?.shot(ws);
+      if (o instanceof Enemy) { if (this.g.overrun?.prey?.(o, aim)) { this.hits++; this.hitT = 0.15; g.fpAudio?.shot('hit'); } }
       else {
       const end = best ? new THREE.Vector3(best.x * S, this.ey(best), best.y * S) : eye.clone().addScaledVector(d, Math.min(range, 40));
       const pk = this.obj instanceof Tower ? (this.obj.data.projectile ?? 'bullet') : 'bullet';
       const railish = pk === 'rail' || pk === 'laser';
       this.tracer(this.flash.getWorldPosition(new THREE.Vector3()), end, SHOT_COL[pk] ?? 0xfff0a0, railish ? 0.22 : 0.1);
       this.gunRoll = (Math.random() - 0.5) * 0.05;
-      if (best) { this.hits++; this.hitT = 0.15; }
+      // t101: hit tick from the enemy the sim actually resolved this shot against (crosshair target or hitscan ray)
+      const hitE = best ?? g.manualTgt; g.manualTgt = null;
+      if (hitE) { this.hits++; this.hitT = 0.15; g.fpAudio?.shot('hit'); this.killE = hitE; this.killT = 0.9; }
       }
     }
     this.hitT -= dt; this.el.cross.classList.toggle('hit', this.hitT > 0);
+    // t101: kill confirm when the enemy you just hit goes down (within ~0.9 s of your hit)
+    if (this.killE) { this.killT -= dt; if (!this.killE.alive) { this.kills++; g.fpAudio?.shot('kill'); this.killE = null; } else if (this.killT <= 0) this.killE = null; }
     this.flashT -= dt; this.flash.visible = this.flashT > 0; if (this.flash.visible) this.flash.rotation.z = Math.random() * 3;
     // recoil: kick back + muzzle climb + a little random roll; walking bob for troops
     const moving = !this.isTower && (Math.abs(ctl.mx) + Math.abs(ctl.my) > 0.1); this.bob += dt * (moving ? 9 : 1.5);
     const bobA = moving ? 0.012 : 0.003;
+    // t101: footsteps on each stride (troops on foot + turned monsters); engine loop in Raider / Scorpion / Tank
+    const inVeh = (o instanceof Unit && !!o.data.vehicle) || (o instanceof Tower && o.data.id === 'unsc_tank');
+    const sn = Math.floor(this.bob / Math.PI);
+    if (sn !== this.stepN) { this.stepN = sn; if (moving && !inVeh && !g.paused) { this.steps++; g.fpAudio?.shot('step', this.isBug ? 0.7 : 1); } }
+    if (inVeh) { this.engOn = true; g.fpAudio?.engine(!g.paused, moving ? 1 : 0, (o instanceof Unit && o.data.id === 'scorpion') || o instanceof Tower); }
+    else if (this.engOn) { this.engOn = false; g.fpAudio?.engine(false, 0, false); }
     this.kick = Math.max(0, this.kick - dt * 9); const big = this.vm.kind === 'tank_cannon' ? 2.5 : 1;
     this.gun.position.set(this.gunBase.x + Math.cos(this.bob) * bobA, this.gunBase.y + Math.abs(Math.sin(this.bob)) * bobA - this.kick * 0.01, this.gunBase.z + this.kick * 0.06 * big);
     this.gun.rotation.set(this.kick * 0.09, 0, this.gunRoll * this.kick);
@@ -1174,12 +1211,13 @@ export class Possess {
   setMove(fwd: number, side: number) { this.joy.x = side; this.joy.y = -fwd; }
   state() {
     const o = this.obj;
-    return { kind: this.isTower ? 'tower' : this.isBug ? 'bug' : 'unit', ovr: this.ovr, abN: this.abN, hp: o instanceof Enemy ? o.hp : o.health.hp, id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope, veh: o instanceof Unit ? !!o.data.vehicle : false, unitId: o instanceof Unit ? o.data.id : '', nearParked: o instanceof Unit ? this.g.nearParked(o)?.kind ?? '' : '', boardM: BOARD_M, fort: !!this.fort };
+    return { kind: this.isTower ? 'tower' : this.isBug ? 'bug' : 'unit', ovr: this.ovr, abN: this.abN, hp: o instanceof Enemy ? o.hp : o.health.hp, id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope, veh: o instanceof Unit ? !!o.data.vehicle : false, unitId: o instanceof Unit ? o.data.id : '', nearParked: o instanceof Unit ? this.g.nearParked(o)?.kind ?? '' : '', boardM: BOARD_M, fort: !!this.fort, kills: this.kills, steps: this.steps, sfx: this.lastSfx, weaponSfx: this.weaponSfx(), engine: this.engOn };
   }
 
   /** Leave first person: release the entity back to its AI and restore the 2D view. */
   exit(msg?: string) {
     if (!this.alive) return; this.ads = false; this.alive = false; setFineHeights(null);
+    if (this.engOn) { this.engOn = false; this.g.fpAudio?.engine(false, 0, false); }
     cancelAnimationFrame(this.raf);
     removeEventListener('resize', this.resize); removeEventListener('keydown', this.onKey, true); removeEventListener('keyup', this.onKeyUp, true);
     removeEventListener('mousemove', this.onMouse); removeEventListener('mouseup', this.onUp); document.removeEventListener('pointerlockchange', this.onLock);

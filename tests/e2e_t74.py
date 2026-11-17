@@ -85,12 +85,17 @@ with sync_playwright() as p:
     info = pg.evaluate("""() => { const cur = window.__possess.cur; if (!cur) return {ok:false}; cur.aimNearest();
       return {ok:true, vmKind: cur.vm.kind, towers3d: cur.vm.towers3d, size: cur.vm.size}; }""")
     st = lambda: pg.evaluate("() => window.__possess.cur.state()")
+    def fov_until(ok, tries=30):
+        for _ in range(tries):
+            if ok(st()['fov']): return
+            pg.wait_for_timeout(300)
     s0 = st(); print('hip', s0, flush=True)
     check(s0['canScope'] and not s0['adsActive'] and abs(s0['fov']-70) < 1, 'sniper hipfire fov 70, can scope')
     pg.evaluate("""() => { const cur=window.__possess.cur; const g=window.__game.g; const e=g.enemies.find(x=>x.alive&&x.data.family==='bloon'); if(e&&cur) cur.aimAt(e.x,e.y,1.5); }""")
     pg.wait_for_timeout(500); shot(pg, '01_fp_sniper_hipfire')
     # real right-mouse hold on the canvas
     pg.mouse.move(800, 480); pg.mouse.down(button='right'); pg.wait_for_timeout(1500)
+    fov_until(lambda f: f < 20)  # t101: poll — headless swiftshader runs the zoom in slow game time
     s1 = st(); print('ads', s1, flush=True)
     check(s1['adsActive'] and s1['fov'] < 20, f"RMB hold -> scoped, fov {s1['fov']}")
     vis = pg.evaluate("() => { const e=document.getElementById('ps-scope'); return !!e && !e.hidden; }")
@@ -107,9 +112,9 @@ with sync_playwright() as p:
     s2 = st(); print('after fire', s2, flush=True)
     check(s2['adsActive'] and s2['shots'] > shots0, f"fires while scoped ({shots0}->{s2['shots']})")
     shot(pg, '03_fp_sniper_ads_far_target')
-    pg.mouse.up(button='right'); pg.wait_for_timeout(1500)
+    pg.mouse.up(button='right'); pg.wait_for_timeout(1500); fov_until(lambda f: abs(f - 70) < 1)
     s3 = st(); check(not s3['adsActive'] and abs(s3['fov']-70) < 1, f"release -> hipfire fov {s3['fov']}")
-    pg.keyboard.down('Shift'); pg.wait_for_timeout(1500); s4 = st(); pg.keyboard.up('Shift'); pg.wait_for_timeout(1500); s5 = st()
+    pg.keyboard.down('Shift'); pg.wait_for_timeout(1500); fov_until(lambda f: f < 20); s4 = st(); pg.keyboard.up('Shift'); pg.wait_for_timeout(1500); fov_until(lambda f: abs(f - 70) < 1); s5 = st()
     check(s4['adsActive'] and s4['fov'] < 20 and not s5['adsActive'], 'Shift hold scopes / release unscopes')
     exit_fp()
     possess(placed['dart']); pg.wait_for_timeout(800)

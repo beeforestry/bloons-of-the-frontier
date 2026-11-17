@@ -39,6 +39,9 @@ import { ABILITIES, EMP, HIJACK, RALLY, STIM, VET_AURA } from '../data/abilities
 
 /** Anything bugs / acid can hurt. */
 export type Damageable = (Tower | Unit | Building | Barrier) & { takeDamage(g: Game, n: number): void };
+/** t101: first-person (Possess) weapon + foley cues, played only for the local player's possessed tower/troop/monster. */
+export type FpSfxName = 'rifle' | 'marksman' | 'smg' | 'chaingun' | 'cannon' | 'beam' | 'rail' | 'dart' | 'arrow' | 'melee' | 'bite' | 'hit' | 'kill' | 'step' | 'scope';
+export interface FpAudio { shot(n: FpSfxName, k?: number): void; engine(on: boolean, speed: number, heavy: boolean): void }
 export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap' | 'wave' | 'victory' | 'defeat';
 export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number; owner?: number; /** MAC: the exact aimed point (clears terrain there even when the sweep snaps to a lane). */ aim?: Vec }
 export interface Decal { x: number; y: number; r: number; ang: number; t: number }
@@ -143,6 +146,10 @@ export class Game {
   shocks: { x: number; y: number; r: number; t: number; dur: number }[] = [];
   /** WebAudio hook (main.ts wires Sfx); no-op headless. */
   sfxHook: (n: SfxName, x?: number, y?: number) => void = () => {};
+  /** t101: first-person audio (set by main.ts; null in headless tools). */
+  fpAudio: FpAudio | null = null;
+  /** t101: the real enemy the last manual (possessed) shot was resolved against — first-person hit tick / kill confirm. */
+  manualTgt: Enemy | null = null;
   /** Floating damage numbers on/off (quality governor) + live count. */
   dmgNumbers = true;
   private dmgLive = 0;
@@ -838,7 +845,7 @@ export class Game {
     const m = tw.manual!, range = tw.range(c.range), antiAir = !!tw.data.antiAir || (tw.data.hitsAir ?? true);
     let tgt = m.target && m.target.alive && dist(m.target, tw) <= range * 1.25 + m.target.data.radius ? m.target : null;
     if (!tgt && (tw.data.hitscan || c.chain || c.devour != null)) tgt = this.rayEnemy({ x: tw.x, y: tw.y }, m.aim, range * 1.1, antiAir, 10);
-    this.stats.manualShots++;
+    this.stats.manualShots++; this.manualTgt = tgt;
     const direct = !!tgt && tgt === m.target;
     const c2: CombatStats = direct ? { ...c, damage: c.damage * MANUAL_BONUS, specialDamage: c.specialDamage != null ? c.specialDamage * MANUAL_BONUS : undefined } : c;
     if (!tgt) {
@@ -856,7 +863,7 @@ export class Game {
     let tgt = m.target && m.target.alive && dist(m.target, u) <= range * 1.3 + m.target.data.radius ? m.target : null;
     const direct = !!tgt;
     if (!tgt && (t.stats.range < 60 || w.hitscan)) tgt = this.rayEnemy(u, m.aim, Math.max(range, 40) * 1.1, antiAir, t.stats.range < 60 ? 18 : 8);
-    this.stats.manualShots++;
+    this.stats.manualShots++; this.manualTgt = tgt;
     if (tgt) { if (direct) this.stats.manualHits++; this.unitAttack(u, tgt, t, direct ? MANUAL_BONUS : 1); return; }
     if (t.stats.range < 60) { this.fx({ kind: 'text', x: u.x + Math.cos(m.aim) * 20, y: u.y - 12, text: '⚔', color: '#fff', dur: 0.2 }); return; }
     const from = { x: u.x + u.facing * 8, y: u.y - 12 };
