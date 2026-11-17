@@ -35,3 +35,25 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 - Kill-confirm visual (crosshair X flash) to pair with the new sound.
 - Mobile: a haptic `navigator.vibrate` pulse on hit/kill.
 - The Marksman screenshot showed a tilted horizon right after firing (recoil roll plus shake). Worth checking whether the camera roll should be clamped while scoped.
+
+## 2026-11-17 — t101b: "Métele con ganas" push (shipped, daytime)
+
+**What shipped.** Details and the per-item verification are in `PROGRESS_t101.md`.
+- **Marksman horizon:** the scope no longer tilts after a shot. The camera's yaw-then-pitch order had been commented out by accident in t99.
+- **Parked Raider Buggies and Bulwark Scorpions are now solid.** This applies to troops, driven vehicles and Overrun monsters. Boarding with F still works, and stepping out never leaves you stuck.
+- **Isla de Cabras riprap and breakwaters:** smooth, grey, normal-mapped procedural boulders replace the faceted low-poly rocks.
+- **Tidebreaker Destroyer range** is now 260/285/315 (was 220/245/275). It covers 95% or more of every Isla de Cabras lane (the worst lane was 66%). Bot water runs: 3/3 wins.
+- **Phone:** the menu hint and the tutorial now name 🏗 Build / 👥 Troops instead of "bottom panel".
+- **Old San Juan backdrop** behind El Morro, built from USGS lidar terrain plus the NOAA 2017 aerial, with extruded pastel blocks. It is also visible across the bay from Isla de Cabras.
+
+**Commits.** main `4d20ab3`, gh-pages `2a7904f` (BASE=/bloons-of-the-frontier/, .nojekyll kept). Live bundle `assets/index-CvpcDdyL.js`.
+
+**Tests.**
+- e2e_t101b: PASS locally and live.
+- e2e_t53, t80, t97, t99, t74, t101: PASS.
+- e2e_t78: the same Overrun timer/bite checks also fail on the previous live build (headless timing), so this change didn't cause them.
+
+**Ideas for next time.**
+- El Cañuelo interior rooms from the HABS PR-52 drawings.
+- Per-building roof heights from the 3DEP point cloud (first returns) instead of hashed storeys.
+- Look into e2e_t78's Overrun timer checks under headless swiftshader.
