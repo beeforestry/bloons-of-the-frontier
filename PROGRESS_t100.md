@@ -21,3 +21,6 @@ References restored after the t99 deploy-script accident (gitignored, reference 
 CREDITS.json, plus `user_share/ElMorroSanJuan07.jpg`, `ElMorroSanJuanSide03.jpg` from boricuaonline.com and `A-sentry-box-at-El-Morro-San-Juan-Puerto-Rico.jpg`
 from notaboutthemiles.com) and `art_src/refs_canuelo` (all CREDITS entries). `exterior-stairs-at-el-morro.jpg` (hellolittlehome.com) is not restored: the site
 serves a bot challenge page.
+
+Shipped: main 2793001 (water rules, highlight, ease, tooling), 65b8e3c (balance notes), 6671931 (this file). gh-pages 3247bcf, live bundle `index-Ctb-NMu-.js`.
+Tests: validator OK; e2e_t99 (now with water-placement checks) passed locally and live; e2e_t53, t80 and t97 passed. Screenshots: `screenshots/t100/{local,live}_2d_water_*`.
