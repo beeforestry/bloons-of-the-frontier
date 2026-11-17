@@ -17,3 +17,5 @@ Not done: El Cañuelo interior rooms (time went to the Old San Juan backdrop; le
 ## Tests
 build (tsc + validator + vite) OK · e2e_t101b PASS · e2e_t53, t80, t97, t99, t74, t101 PASS ·
 e2e_t78 (Overrun timer/bite checks): same 6 failures on the current live build before this change (headless timing), not caused by t101b.
+
+Shipped: main 4d20ab3 (code, data, tests) + 484b065 (notes); gh-pages 2a7904f, live bundle `assets/index-CvpcDdyL.js` (e2e_t101b PASS live).
