@@ -53,7 +53,7 @@ export interface Telegraph { x: number; y: number; lane: number; t: number; dur:
 export interface ParkedVeh { id: number; kind: string; x: number; y: number; ang: number; hp: number }
 /** t80: how close (metres) a trooper must be to a parked vehicle to climb in. */
 export const BOARD_M = 6;
-export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.8 };
+export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.8, tropical: 0.8 };
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
 export interface Effect {
@@ -1037,7 +1037,25 @@ export class Game {
   /** Open water (terrain below the water plane). Flat maps without terrain have no water pads. */
   isWaterAt(x: number, y: number) {
     const ter = this.map.terrain; if (!ter) return false;
-    return groundH(this.map, x, y) < ter.water + 0.55;
+    return groundH(this.map, x, y) < ter.water + 0.55 && !this.onShoal(x, y);
+  }
+  /** t100: on a rubble breakwater (map.water.shoals) — the bare-earth lidar reads it as sea. */
+  onShoal(x: number, y: number) {
+    const w = this.map.water; if (!w?.shoals) return false;
+    const hw = w.shoalW ?? 40;
+    for (const L of w.shoals) for (let k = 0; k < L.length - 1; k++) {
+      const [ax, ay] = L[k], [bx, by] = L[k + 1], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
+      if (Math.hypot(x - ax - t * dx, y - ay - t * dy) < hw) return true;
+    }
+    return false;
+  }
+  /** t100: unbuildable shoreline (beach, riprap, breakwater) next to open water — amphibious towers only (map.water.shore). */
+  isShoreAt(x: number, y: number) {
+    const w = this.map.water; if (!w?.shore || this.isWaterAt(x, y) || this.grid.isBlockedAt(x, y)) return false;
+    if (x < 0 || y < 0 || x > this.map.width || y > this.map.height) return false;
+    for (const [wx, wy, wr] of this.map.walls ?? []) if (Math.hypot(wx - x, wy - y) < wr + 34) return false;   // El Canuelo's walls / interior edge
+    return this.onShoal(x, y) || this.nearWater(x, y, 40);
   }
   /** Land cell within `r` px of open water (shoreline for Harbor Beacon). */
   nearWater(x: number, y: number, r = 36) {
@@ -1055,8 +1073,8 @@ export class Game {
     const water = this.isWaterAt(x, y), land = this.grid.isLandAt(x, y);
     if (place === 'land') return land;
     if (place === 'water') return water;
-    if (place === 'air') return water || land;
-    if (place === 'amphibious') return water || (land && this.nearWater(x, y));
+    if (place === 'air') return water || land || this.onShoal(x, y);
+    if (place === 'amphibious') return water || (land && this.nearWater(x, y)) || this.isShoreAt(x, y);
     return land;
   }
   /** Is a tower of `id` allowed with its centre at (x, y)? */

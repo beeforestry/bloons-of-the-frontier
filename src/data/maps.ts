@@ -25,6 +25,10 @@ export interface MapDef {
   walls?: [number, number, number, number][];
   /** t80: world vehicles parked on the grounds [unitId ('warthog' | 'scorpion'), x, y, angle rad] — enter / exit with F. */
   parked?: [string, number, number, number][];
+  /** t100: water placement rules. `shoals` = rubble breakwaters the lidar reads as water (polylines, `shoalW` px half-width):
+   *  never open water (no ships), but shoreline for amphibious towers. `shore` = amphibious towers may also stand on the
+   *  unbuildable beach / riprap band next to open water (not on lanes, the fort, the HQ or obstacles). */
+  water?: { shore?: boolean; shoals?: [number, number][][]; shoalW?: number };
   /** 3D heightfield + prop billboards for Possess (Tropical Island, El Morro). */
   terrain?: TerrainDef;
   grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[]; land?: string; landRes?: number };

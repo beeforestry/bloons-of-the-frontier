@@ -22,6 +22,14 @@ window.__bot = (() => {
         if (!g.grid.isLandAt(x, y)) continue; let cov = 0; for (const s of samples) if (Math.hypot(s.x - x, s.y - y) < 150) cov++;
         cells.push({ ...g.grid.worldToCell({ x, y }), x, y, cov: cov + 0.5 }); } }
   }
+  // t100: optional water / shoreline candidates (window.__BOT_WATER) so destroyers + Harbor Beacons get bay spots
+  if (window.__BOT_WATER && g.isWaterAt) {
+    for (let y = 24; y < g.map.height; y += 40) for (let x = 24; x < g.map.width; x += 40) {
+      if (!g.isWaterAt(x, y) && !(g.isShoreAt && g.isShoreAt(x, y))) continue;
+      let cov = 0, near = 1e9; for (const s of samples) { const d = Math.hypot(s.x - x, s.y - y); if (d < 200) cov++; near = Math.min(near, d); }
+      if (cov && near > 40) cells.push({ ...g.grid.worldToCell({ x, y }), x, y, cov, water: true });
+    }
+  }
   cells.sort((a, b) => b.cov - a.cov);
   for (const x of cells) { const q = x.x !== undefined ? x : g.grid.cellCenter(x.c, x.r); x.li = laneOf(q.x, q.y); }
   const spotFor = (id) => {

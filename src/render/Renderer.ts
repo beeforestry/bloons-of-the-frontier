@@ -236,7 +236,7 @@ export class Renderer {
     if (v.power === 'heal' && v.mouse) { c.setLineDash([8, 6]); this.ringAt(v.mouse.x, v.mouse.y, HEAL.radius, '#9ff7b0', 3); c.setLineDash([]); }
     if (v.rallyFor && v.mouse) { c.globalAlpha = 0.7; this.ringAt(v.mouse.x, v.mouse.y, 22, '#ffd84a', 3); c.globalAlpha = 1; }
     if (v.placing && v.mouse && towerById(v.placing).kind === 'path') this.roadGhost(v.placing, v.mouse);
-    else if (v.placing && v.hoverCell) this.ghost(v.placing, v.hoverCell);
+    else if (v.placing && v.hoverCell) { this.waterZones(v.placing); this.ghost(v.placing, v.hoverCell); }
     if (v.deploying && v.mouse) { c.globalAlpha = 0.7; this.ringAt(v.mouse.x, v.mouse.y, 24, '#7fd3ff', 3); c.globalAlpha = 1; }
     if (v.box) this.dragBox(v.box);
     for (const t of g.telegraphs) this.telegraph(t);
@@ -491,6 +491,24 @@ export class Renderer {
     const c = this.ctx;
     c.fillStyle = ok ? 'rgba(255,255,255,0.12)' : 'rgba(255,60,60,0.16)'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill();
     this.ringAt(x, y, r, ok ? 'rgba(255,255,255,0.6)' : 'rgba(255,80,80,0.7)', 2);
+  }
+  /** t100: while placing a water / amphibious tower, tint every spot it may use (open water, shoreline) — cached per tower + layout. */
+  private zoneCache: { key: string; cv: HTMLCanvasElement; s: number } | null = null;
+  private waterZones(id: string) {
+    const g = this.g, d = towerById(id), place = d.placeOn;
+    if ((place !== 'water' && place !== 'amphibious') || !g.map.terrain) return;
+    const key = `${id}|${g.towers.length}|${g.buildings.length}|${g.map.id}`;
+    if (this.zoneCache?.key !== key) {
+      const s = 24, W = Math.ceil(g.map.width / s), H = Math.ceil(g.map.height / s);
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d')!; const im = x.createImageData(W, H);
+      for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+        const px = (i + 0.5) * s, py = (j + 0.5) * s; if (!g.spotOk(id, px, py)) continue;
+        const k = (j * W + i) * 4, shore = !g.isWaterAt(px, py);
+        im.data[k] = shore ? 255 : 60; im.data[k + 1] = shore ? 214 : 200; im.data[k + 2] = shore ? 90 : 255; im.data[k + 3] = 95;
+      }
+      x.putImageData(im, 0, 0); this.zoneCache = { key, cv, s };
+    }
+    const c = this.ctx, z = this.zoneCache!; c.save(); c.imageSmoothingEnabled = true; c.drawImage(z.cv, 0, 0, z.cv.width * z.s, z.cv.height * z.s); c.restore();
   }
   private ghost(id: string, cell: Cell & { x?: number; y?: number; bad?: boolean }) {
     const g = this.g, d = towerById(id), t0 = d.tiers[0], p = cell.x !== undefined ? { x: cell.x, y: cell.y! } : g.grid.cellCenter(cell.c, cell.r);

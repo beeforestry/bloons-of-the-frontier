@@ -52,6 +52,8 @@ export class PlacementSystem<T extends Occupant = Occupant> {
     if (this.fineLand) return this.fineLand(x, y);
     return this.land[i];
   }
+  /** t100: cell under (x, y) is held by a map obstacle / env structure. */
+  isBlockedAt(x: number, y: number) { const { c, r } = this.worldToCell({ x, y }); return this.inBounds(c, r) && this.blocked.has(this.idx(c, r)); }
   /** Release every cell held by t (free-placed towers hold the cells under their footprint circle). */
   releaseOwner(t: T) { for (let i = 0; i < this.occ.length; i++) if (this.occ[i] === t) this.occ[i] = null; }
   /** Mark free cells whose centre lies inside the circle as held by t (keeps farms / envs off it). */

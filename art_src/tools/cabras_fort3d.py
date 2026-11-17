@@ -196,5 +196,12 @@ if __name__ == '__main__':
     lanes = m['lanes']; pw = m['pathWidth']
     m['deco'] = flora(h, lum, green, sd, land, fl, water, lanes, pw)
     m['parked'] = parked_spots(land, fl, lanes, pw)
+    # t100: the long rubble breakwater south of the lagoon has no lidar returns, the west jetty and the old pier are too thin
+    # for the 3 m sim grid (all read as sea) -> traced on the NOAA aerial
+    # (game px) as a shoal: no ships on it, but amphibious towers (Harbor Beacon) may stand on it like the rest of the shore.
+    m['water'] = {'shore': True, 'shoalW': 44, 'shoals': [[[388, 2183], [453, 2118], [733, 1997], [863, 2010], [1121, 2067], [1423, 2110], [1941, 2153],
+        [2243, 2183], [2588, 2162], [3019, 2153], [3364, 2127], [3450, 2144], [3579, 2162], [3881, 2196], [4140, 2239], [4400, 2275]],
+        [[335, 1560], [330, 1620], [320, 1780], [280, 1940], [240, 2100], [200, 2260], [170, 2350]],   # west jetty (lidar too thin at 3 m)
+        [[110, 865], [200, 800], [290, 735]], [[220, 700], [270, 620]]]}                                  # old pier deck + stem
     json.dump(d, open(J, 'w'), separators=(',', ':'))
     json.dump(meta, open('/tmp/t99/cabras3d_meta.json', 'w'))

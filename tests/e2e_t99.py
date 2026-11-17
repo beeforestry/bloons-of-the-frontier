@@ -9,7 +9,7 @@ import argparse, functools, http.server, json, math, os, socketserver, threading
 from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ap = argparse.ArgumentParser(); ap.add_argument('--url'); ap.add_argument('--no-shots', action='store_true'); ap.add_argument('--tag', default='local'); ap.add_argument('--dist', default=''); ap.add_argument('--quick', action='store_true'); args = ap.parse_args()
-OUT = os.path.join(ROOT, 'screenshots', 't99'); os.makedirs(OUT, exist_ok=True)
+OUT = os.path.join(ROOT, 'screenshots', os.environ.get('SHOTS', 't99')); os.makedirs(OUT, exist_ok=True)
 if args.url: URL = args.url if args.url.endswith('/') or args.url.endswith('.html') else args.url + '/'
 else:
     class Q(http.server.SimpleHTTPRequestHandler):
@@ -69,6 +69,35 @@ with sync_playwright() as p:
     G('H.sandbox(); H.addCredits(90000)')
     pl = G('(() => { const g = H.g; let free = 0, n = 0, at = null; for (let y = 900; y < 1700; y += 24) for (let x = 400; x < 4000; x += 24) { n++; if (g.spotOk("dart_monkey", x, y)) { free++; if (!at) at = [x, y]; } } const t = at && g.placeTower("dart_monkey", { c: 0, r: 0, x: at[0], y: at[1] }); return { free, n, at, placed: !!t }; })()')
     check(pl['placed'] and pl['free'] > 150, f"free placement on the island's land ({pl})")
+    # ------------------------------------------------------------ t100: water placement (bay, channel, shore water)
+    wm = G("""(() => { const g = H.g, m = g.map, S = 48, out = { water: 0, D: 0, B: 0, H: 0, landOnWater: 0, shipOnLand: 0, onLane2: 0 };
+      for (let y = S / 2; y < m.height; y += S) for (let x = S / 2; x < m.width; x += S) { const w = g.isWaterAt(x, y);
+        if (w) out.water++; if (g.spotOk('unsc_destroyer', x, y)) { out.D++; if (!w) out.shipOnLand++; } if (g.spotOk('unsc_beacon', x, y)) out.B++; if (g.spotOk('unsc_heli', x, y)) out.H++;
+        if (w && (g.spotOk('dart_monkey', x, y) || g.spotOk('unsc_tank', x, y))) out.landOnWater++; }
+      const P2 = g.paths[2]; for (let d = 100; d < P2.length - 100; d += 60) { const q = P2.at(d); if (g.spotOk('unsc_destroyer', q.x, q.y) || g.spotOk('unsc_beacon', q.x, q.y)) out.onLane2++; }
+      const ok = { D: [], B: [] }; for (let y = 24; y < m.height; y += 48) for (let x = 24; x < m.width; x += 48) { if (g.spotOk('unsc_destroyer', x, y)) ok.D.push([x, y]); if (g.spotOk('unsc_beacon', x, y)) ok.B.push([x, y]); }
+      out.cover = { D: g.paths.map(P => { let n = 0, c = 0; for (let d = 0; d < P.length; d += 40) { const q = P.at(d); if (q.x < 0 || q.y < 0 || q.x > m.width || q.y > m.height) continue; n++; if (ok.D.some(([x, y]) => Math.hypot(x - q.x, y - q.y) <= 220)) c++; } return +(c / n).toFixed(2); }),
+                    B: g.paths.map(P => { let n = 0, c = 0; for (let d = 0; d < P.length; d += 40) { const q = P.at(d); if (q.x < 0 || q.y < 0 || q.x > m.width || q.y > m.height) continue; n++; if (ok.B.some(([x, y]) => Math.hypot(x - q.x, y - q.y) <= 240)) c++; } return +(c / n).toFixed(2); }) };
+      const pr = (x, y) => ({ w: g.isWaterAt(x, y), D: g.spotOk('unsc_destroyer', x, y), B: g.spotOk('unsc_beacon', x, y), L: g.spotOk('dart_monkey', x, y) });
+      out.probe = { bay: pr(1400, 1900), channel: pr(600, 1800), north: pr(2000, 400), breakwater: pr(1400, 2110), jetty: pr(280, 1940), pier: pr(200, 800), fort: pr(356, 1386), lawn: pr(700, 1386) };
+      out.ease = g.waves.mapEase; return out; })()""")
+    print('  water', {k: v for k, v in wm.items() if k != 'probe'}); print('  probes', wm['probe'])
+    pb = wm['probe']
+    check(wm['water'] >= 4000 and wm['D'] >= 3300 and wm['B'] >= wm['D'], f"open water {wm['water']} cells (48 px), destroyer spots {wm['D']}, Harbor Beacon spots {wm['B']} (pre-t99: 3498 / 2930 / 3006)")
+    check(pb['bay']['D'] and pb['channel']['D'] and pb['north']['D'] and pb['bay']['B'], 'destroyer + beacon place in the lagoon, the bay channel and the north shore water')
+    check(not pb['breakwater']['w'] and not pb['breakwater']['D'] and pb['breakwater']['B'] and not pb['jetty']['D'] and not pb['pier']['D'], 'breakwater / jetty / pier: no ships, beacon allowed (shoreline)')
+    check(wm['landOnWater'] == 0 and wm['shipOnLand'] == 0 and not pb['lawn']['D'] and pb['lawn']['L'] and not pb['fort']['B'] and not pb['fort']['L'], 'land towers never on water, ships never on land, nothing on El Canuelo')
+    check(wm['onLane2'] == 0, 'the bay landing route itself stays clear of water towers')
+    check(min(wm['cover']['D']) >= 0.6 and min(wm['cover']['B']) >= 0.95, f"water towers reach the lanes (destroyer {wm['cover']['D']}, beacon {wm['cover']['B']} of each lane within range)")
+    check(abs(wm['ease'] - 0.8) < 1e-6, f"Isla de Cabras wave HP ease {wm['ease']} (same as El Morro)")
+    placed = G("""(() => { const g = H.g, out = []; for (const [id, x, y] of [['unsc_destroyer', 1500, 1760], ['unsc_destroyer', 2150, 1720], ['unsc_destroyer', 1150, 1950], ['unsc_destroyer', 1950, 820], ['unsc_beacon', 1300, 2110], ['unsc_beacon', 2600, 1555]]) {
+      const s = g.placementSpot(id, { x, y }); const t = s && g.placeTower(id, s); out.push([id, x, y, !!t]); } return out; })()""")
+    print('  placed', placed)
+    check(sum(1 for p in placed if p[3]) >= 5, f"water towers placed in the bay ({sum(1 for p in placed if p[3])}/6)")
+    G('H.camFocus(1800, 1700, 0.42)'); pg.wait_for_timeout(500)
+    G("H.setView({ placing: 'unsc_destroyer', mouse: { x: 1700, y: 1880 }, hoverCell: H.g.placementSpot('unsc_destroyer', { x: 1700, y: 1880 }) })"); pg.wait_for_timeout(900); shot(pg, '2d_water_destroyer_zones')
+    G("H.setView({ placing: 'unsc_beacon', mouse: { x: 1700, y: 2120 }, hoverCell: H.g.placementSpot('unsc_beacon', { x: 1700, y: 2120 }) })"); pg.wait_for_timeout(900); shot(pg, '2d_water_beacon_zones')
+    G("H.setView({ placing: null, hoverCell: null, mouse: null })"); G('H.camFocus(1800, 1600, 0.3)'); pg.wait_for_timeout(700); shot(pg, '2d_water_towers_bay')
     G('H.setSpeed(3)'); G('H.startWave()'); pg.wait_for_timeout(9000)
     en = G('H.g.enemies.filter(e => e.alive).map(e => ({ lane: e.lane, x: Math.round(e.x), y: Math.round(e.y) }))')
     check(len(en) > 0 and all(0 <= e['x'] <= 4416 + 400 for e in en), f'wave 1 enemies walk the lanes ({len(en)} alive)')
