@@ -203,3 +203,14 @@ Shipped textures (all downscaled to 512 px WebP, `public/assets/tex/`), all **Po
   CC BY-SA 3.0: Jaro Nemčok, Carlo Giovannetti (Thief12); CC BY-SA 4.0: AllenMarrero, Caballero1967; public domain: National Archives
   "Causeway to Cabras Island (circa 1906)", Mariomaster1589 "Fortsanjuandelacruz.JPG".
   No Google Earth / Google Maps imagery, no Sketchfab / 3D Warehouse / Cults meshes.
+
+## t101b — Old San Juan backdrop, Isla de Cabras boulders
+
+- **Old San Juan behind El Morro** (`public/assets/maps/morro/oldsj.dat`, `oldsj.jpg`; built by `art_src/tools/oldsj_backdrop.py`):
+  ground heights from the **USGS 3DEP 1 m lidar DEM**, project PR_PRVI_E_2018, tile `USGS_1m_x80y205_PR_PRVI_E_2018.tif` (**US public domain**),
+  resampled to 3 m in the El Morro map frame; colour from the **NOAA NGS Hurricane Maria aerial**, layer `20170924b-rgb`, 2017-09-24, z18
+  (**CC0 / US public domain**). Building footprints were classified from that aerial (bright roofs vs streets / trees / sea) and extruded
+  2–4 storeys; facades are an original shader (pastel palette + window grid). No third-party meshes, no OpenStreetMap data, no Google imagery.
+  Landmark positions sanity-checked against Wikipedia coordinates (facts only): Cuartel de Ballajá, Santa María Magdalena de Pazzis Cemetery, La Perla.
+- **Riprap / breakwater boulders** (Isla de Cabras, first person): procedural three.js geometry (`src/fps/flora.ts` `boulderGeo`), textured with the
+  existing Poly Haven **Rock 06** (`tex/lh_rock.webp`, `lh_rock_n.webp`, **CC0**). Replaces the faceted Kenney rocks. No new textures downloaded.

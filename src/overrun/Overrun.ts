@@ -366,17 +366,17 @@ export class Overrun {
     const side = e.ov.side;
     for (const off of [0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8]) {
       const a = ang + off * side, nx = e.x + Math.cos(a) * step, ny = e.y + Math.sin(a) * step;
-      if (g.walkable(nx, ny)) { e.x = nx; e.y = ny; if (off) { e.ov.stuckT += step; if (e.ov.stuckT > 220) { e.ov.side = -side; e.ov.stuckT = 0; } } else e.ov.stuckT = 0; return; }
+      if (g.walkable(nx, ny, e.x, e.y)) { e.x = nx; e.y = ny; if (off) { e.ov.stuckT += step; if (e.ov.stuckT > 220) { e.ov.side = -side; e.ov.stuckT = 0; } } else e.ov.stuckT = 0; return; }
       if (axes) break;
     }
-    if (axes) { const nx = e.x + Math.cos(ang) * step, ny = e.y + Math.sin(ang) * step; if (g.walkable(nx, e.y)) e.x = nx; else if (g.walkable(e.x, ny)) e.y = ny; }
+    if (axes) { const nx = e.x + Math.cos(ang) * step, ny = e.y + Math.sin(ang) * step; if (g.walkable(nx, e.y, e.x, e.y)) e.x = nx; else if (g.walkable(e.x, ny, e.x, e.y)) e.y = ny; }
   }
   /** Keep monsters from stacking into one blob. */
   private separate(g: Game, e: Enemy, me: number) {
     for (const o of g.enemies) {
       if (o === e || !o.alive || !o.hunt) continue;
       const dx = e.x - o.x, dy = e.y - o.y, dd = Math.hypot(dx, dy), want = this.px((me + this.bodyM(o)) * 0.9);
-      if (dd > 0.01 && dd < want) { const push = (want - dd) * 0.25, nx = e.x + (dx / dd) * push, ny = e.y + (dy / dd) * push; if (g.walkable(nx, ny)) { e.x = nx; e.y = ny; } }
+      if (dd > 0.01 && dd < want) { const push = (want - dd) * 0.25, nx = e.x + (dx / dd) * push, ny = e.y + (dy / dd) * push; if (g.walkable(nx, ny, e.x, e.y)) { e.x = nx; e.y = ny; } }
     }
   }
   /** Visual body radius (m) of a monster, matching the first-person model scale. */

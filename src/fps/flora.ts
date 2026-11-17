@@ -5,7 +5,7 @@
 // Burnt variant = same geometry with charred bark, shrunken dead crown (warzone / fortress).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { assetUrl } from '../assetUrl';
 
@@ -15,9 +15,11 @@ import { assetUrl } from '../assetUrl';
 const TEXF: Partial<Record<FloraKind | 'fern' | 'grass' | 'dead', string>> = {
   palm: 'palm', palm_bend: 'palm', palm_tall: 'palm', oak: 'oak', tree: 'oak', tree_detailed: 'jungle',
   pine: 'pine', pine_round: 'pine', bush: 'bush', bush_big: 'bush', fern: 'fern', grass: 'grass', dead: 'dead',
+  // t101b: rocks are smooth procedural boulders (Poly Haven Rock 06, CC0) instead of the faceted low-poly Kenney rocks
+  rock: 'boulder2', rock_big: 'boulder', rock_small: 'boulder3', rock_tall: 'boulder2',
 };
 /** Near (full-detail) radius per model, metres; grass is dropped entirely past GRASS_MAX. */
-export const LOD_FAR: Record<string, number> = { palm: 22, oak: 20, jungle: 20, pine: 20, dead: 20, bush: 10, fern: 9, grass: 7 };
+export const LOD_FAR: Record<string, number> = { palm: 22, oak: 20, jungle: 20, pine: 20, dead: 20, bush: 10, fern: 9, grass: 7, boulder: 16, boulder2: 14, boulder3: 11 };
 const GRASS_MAX = 34;
 const tloader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 type TexModel = { lod: THREE.BufferGeometry[]; mat: THREE.MeshStandardMaterial };
@@ -31,6 +33,7 @@ function charred<M extends THREE.Material>(m: M): M {
 function matFor(tm: TexModel, detail: number, burnt = false): THREE.Material {
   let l = lowMats.get(tm); if (!l) lowMats.set(tm, (l = []));
   if (burnt) return (l[3 + detail] ??= charred(detail === 0 ? new THREE.MeshLambertMaterial({ map: tm.mat.map, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ map: tm.mat.map, normalMap: detail >= 2 ? tm.mat.normalMap : null, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.4 })));
+  if (tm.mat.userData.keep) return detail >= 1 ? tm.mat : (l[0] ??= Object.assign(tm.mat.clone(), { normalMap: null, onBeforeCompile: tm.mat.onBeforeCompile, customProgramCacheKey: tm.mat.customProgramCacheKey })); // t101b boulders: own shader
   if (detail >= 2) return tm.mat;
   return (l[detail] ??= detail === 1
     ? new THREE.MeshStandardMaterial({ map: tm.mat.map, roughness: 0.9, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.6 })
@@ -39,6 +42,7 @@ function matFor(tm: TexModel, detail: number, burnt = false): THREE.Material {
 /** Unit-height LOD0/LOD1 geometry (base y=0, trunk at origin) + the model's PBR material. */
 function loadTex(file: string): Promise<TexModel> {
   let p = texModels.get(file);
+  if (!p && /^boulder\d?$/.test(file)) { p = Promise.resolve(boulderModel(+(file.slice(7) || 1))); texModels.set(file, p); }
   if (!p) {
     p = tloader.loadAsync(assetUrl(`assets/flora_tex/${file}.glb`)).then((gl) => {
       gl.scene.updateMatrixWorld(true);
@@ -58,6 +62,58 @@ function loadTex(file: string): Promise<TexModel> {
     texModels.set(file, p);
   }
   return p;
+}
+
+// ---------------------------------------------------------------- t101b: procedural boulders
+/** Smooth value-noise on the unit sphere (deterministic per seed). */
+function vnoise(x: number, y: number, z: number, seed: number): number {
+  const h = (i: number, j: number, k: number) => { let n = (i * 374761393 + j * 668265263 + k * 2147483647 + seed * 144665) | 0; n = (n ^ (n >>> 13)) * 1274126177; return ((n ^ (n >>> 16)) >>> 0) / 4294967295; };
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), u = x - xi, v = y - yi, w = z - zi;
+  const f = (t: number) => t * t * (3 - 2 * t), a = f(u), b = f(v), c = f(w);
+  const L = (p: number, q: number, t: number) => p + (q - p) * t;
+  return L(L(L(h(xi, yi, zi), h(xi + 1, yi, zi), a), L(h(xi, yi + 1, zi), h(xi + 1, yi + 1, zi), a), b),
+    L(L(h(xi, yi, zi + 1), h(xi + 1, yi, zi + 1), a), L(h(xi, yi + 1, zi + 1), h(xi + 1, yi + 1, zi + 1), a), b), c);
+}
+/** One weathered armour-stone: a subdivided icosahedron pushed out by 3-octave noise, squashed and cut by a few flat
+ *  cleavage faces (riprap is quarried, not river-rounded), smooth normals, per-triangle planar UVs. Base y=0, unit height,
+ *  with ~30 % of it below y=0 so it sits bedded into the bank. */
+function boulderGeo(detail: number, seed: number): THREE.BufferGeometry {
+  let g: THREE.BufferGeometry = new THREE.IcosahedronGeometry(1, detail);
+  g.deleteAttribute('normal'); g.deleteAttribute('uv'); g = mergeVertices(g);
+  const pos = g.attributes.position as THREE.BufferAttribute, v = new THREE.Vector3();
+  const cuts: THREE.Vector3[] = []; for (let i = 0; i < 4; i++) { const a = vnoise(i * 3.1, seed, 0.5, seed) * 6.283, b = (vnoise(seed, i * 2.3, 1.5, seed) - 0.5) * 2.2; cuts.push(new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b))); }
+  const sx = 1.05 + vnoise(seed, 1, 2, 7) * 0.45, sz = 0.85 + vnoise(seed, 3, 4, 9) * 0.3, sy = 0.62 + vnoise(seed, 5, 6, 11) * 0.22;
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize();
+    let r = 1, amp = 0.22, fr = 1.6; for (let o = 0; o < 3; o++) { r += (vnoise(v.x * fr + 9, v.y * fr + 3, v.z * fr + 5, seed + o) - 0.5) * amp; amp *= 0.45; fr *= 2.3; }
+    for (const c of cuts) { const d = v.dot(c) * r; if (d > 0.78) r *= 0.78 / Math.max(0.78, d) + (d - 0.78) * 0.15; }
+    v.multiplyScalar(r); v.x *= sx; v.y *= sy; v.z *= sz; if (v.y < -0.2) v.y = -0.2 + (v.y + 0.2) * 0.35; // flatter underside
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  const ng = g.toNonIndexed(), p = ng.attributes.position as THREE.BufferAttribute, n = ng.attributes.normal as THREE.BufferAttribute, uv = new Float32Array(p.count * 2);
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), fnm = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let t = 0; t < p.count; t += 3) {
+    a.fromBufferAttribute(p, t); b.fromBufferAttribute(p, t + 1); c.fromBufferAttribute(p, t + 2); fnm.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a));
+    const ax = Math.abs(fnm.x), ay = Math.abs(fnm.y), az = Math.abs(fnm.z);
+    for (let k = 0; k < 3; k++) { const q = [a, b, c][k], [u0, v0] = ay >= ax && ay >= az ? [q.x, q.z] : ax >= az ? [q.z, q.y] : [q.x, q.y]; uv[(t + k) * 2] = u0 * 0.45 + seed * 0.37; uv[(t + k) * 2 + 1] = v0 * 0.45 + seed * 0.21; }
+  }
+  ng.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); void n;
+  ng.computeBoundingBox(); const bb = ng.boundingBox!, hgt = bb.max.y - bb.min.y, vis = 0.7;
+  // visible part (above y=0) = unit height; the bottom 30 % is bedded below ground
+  ng.translate(0, -bb.min.y - hgt * (1 - vis), 0); ng.scale(1 / (hgt * vis), 1 / (hgt * vis), 1 / (hgt * vis));
+  return ng;
+}
+/** Boulder "model" for the textured LOD path (3 seeded shape variants; each instance also gets its own yaw, tilt and footprint). */
+function boulderModel(seed: number): TexModel {
+  const near = boulderGeo(6, seed), far = boulderGeo(2, seed);
+  const L = new THREE.TextureLoader(), map = L.load(assetUrl('assets/tex/lh_rock.webp')), nor = L.load(assetUrl('assets/tex/lh_rock_n.webp'));
+  for (const t of [map, nor]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; } map.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshStandardMaterial({ map, normalMap: nor, color: 0xffffff, roughness: 0.93, metalness: 0, envMapIntensity: 0.5 }); mat.normalScale.set(1.1, 1.1); mat.name = 'flora_tex_boulder'; mat.userData.keep = true;
+  // Isla de Cabras riprap is grey limestone / basalt: pull the warm Rock 06 albedo toward a cool grey, keep its detail
+  mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n { float l = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); diffuseColor.rgb = mix(vec3(l), diffuseColor.rgb, 0.22) * vec3(0.97, 0.97, 1.0) * 1.15; }'); };
+  mat.customProgramCacheKey = () => 'boulder';
+  return { lod: [near, far], mat };
 }
 
 export const FLORA = {
@@ -151,7 +207,9 @@ export async function floraField(items: FloraItem[], shadows: boolean, detail = 
     near.userData.texModel = far.userData.texModel = tm; near.userData.burnt = far.userData.burnt = burnt;
     const set = { file, near, far, mats: [] as THREE.Matrix4[], cols: [] as THREE.Color[], pos: [] as THREE.Vector3[] };
     list.forEach((it, i) => {
-      d.position.set(it.x, it.y, it.z); d.rotation.set(it.tilt ?? 0, it.rot, (it.tilt ?? 0) * 0.6); d.scale.setScalar(it.h); d.updateMatrix();
+      d.position.set(it.x, it.y, it.z); d.rotation.set(it.tilt ?? 0, it.rot, (it.tilt ?? 0) * 0.6); d.scale.setScalar(it.h);
+      if (file.startsWith('boulder')) { const r1 = (((i * 2246822519) >>> 0) % 1000) / 1000, r2 = (((i * 3266489917) >>> 0) % 1000) / 1000; d.rotation.set((r1 - 0.5) * 0.5, it.rot, (r2 - 0.5) * 0.4); d.scale.set(it.h * (1.1 + r1 * 0.7), it.h, it.h * (1.0 + r2 * 0.6)); }
+      d.updateMatrix();
       const v = 0.88 + (((i * 2654435761) >>> 0) % 1000) / 1000 * 0.24;
       // burnt = charred tint over the real texture (warzone palms / fortress trees)
       set.mats.push(d.matrix.clone()); set.cols.push(new THREE.Color(v, v, v)); set.pos.push(new THREE.Vector3(it.x, it.y + it.h * 0.4, it.z));

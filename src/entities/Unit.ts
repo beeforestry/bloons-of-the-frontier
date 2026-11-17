@@ -261,7 +261,7 @@ export class Unit implements Buffable {
     if (L > 0.05) {
       // t55: walk at the same metres/second on every map (El Morro is 0.125 m/px vs 0.05 elsewhere)
       const k = (Math.min(1, L) / L) * speed * dt * Math.min(1, 0.05 / (g.map.mpp ?? 0.05)), nx = this.x + m.mx * k, ny = this.y + m.my * k;
-      if (g.walkable(nx, ny)) { this.x = nx; this.y = ny; } else if (g.walkable(nx, this.y)) this.x = nx; else if (g.walkable(this.x, ny)) this.y = ny;
+      if (g.walkable(nx, ny, this.x, this.y)) { this.x = nx; this.y = ny; } else if (g.walkable(nx, this.y, this.x, this.y)) this.x = nx; else if (g.walkable(this.x, ny, this.x, this.y)) this.y = ny;
       this.moving = true;
   }
     this.facing = Math.cos(m.aim) >= 0 ? 1 : -1;

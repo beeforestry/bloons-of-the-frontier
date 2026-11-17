@@ -21,6 +21,7 @@ import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH, setFineHeights } from '../data/terrain';
 import { loadFort, fortH, fortMesh, morroSet, garitaSpots, FORT, type FortGrid, type MorroSet } from './morro3d';
 import { carveMorro, morroT93, type T93Set } from './morro93';
+import { oldSanJuan } from './oldsj';
 import { loadCabras, cabrasH, cabrasSet, distantMorro, CABRAS, type CabrasGrid, type CabrasSet } from './cabras3d';
 import { BOARD_M } from '../game/Game';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
@@ -129,7 +130,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
+  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[] };
   private seaN: THREE.Texture | null = null;
   /** t80 El Morro: fine fort heights + set pieces; the lidar floor geometry / photo it lowers + re-uses. */
   private fort: FortGrid | null = null; private morro: MorroSet | null = null; private floorGeo: THREE.BufferGeometry | null = null; private groundPhoto: THREE.Texture | null = null;
@@ -163,7 +164,8 @@ export class Possess {
     // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
     this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; if (this.composer) this.composer.setSize(innerWidth, innerHeight); });
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, this.isCabras ? 2100 : this.real ? 1100 : 420); // t99: El Morro is ~1.4 km across the bay from Isla de Cabras this.camera.rotation.order = 'YXZ';
+    this.camera = new THREE.PerspectiveCamera(70, 1, 0.03, this.isCabras ? 2800 : this.real ? 1100 : 420); // t99: El Morro is ~1.4 km across the bay from Isla de Cabras
+    this.camera.rotation.order = 'YXZ'; // t101b: yaw-then-pitch keeps the horizon level (was swallowed by the comment above -> tilted horizon)
     this.buildWorld(); this.buildPost(); this.buildGun(); this.buildPools(); this.buildHud(); this.bindInput();
     // face the nearest enemy (or the HQ's lanes) on entry
     const near = (this.isBug ? this.g.units : this.g.enemies).filter((e) => e.alive).sort((a, b) => (a.x - obj.x) ** 2 + (a.y - obj.y) ** 2 - ((b.x - obj.x) ** 2 + (b.y - obj.y) ** 2))[0];
@@ -385,6 +387,11 @@ export class Possess {
     let mas = 0; for (let i = 0; i < f.cls.length; i++) if (f.cls[i]) mas++;
     this.vm.fort = { verts: mesh.userData.verts as number, tris: mesh.userData.tris as number, garitas: set.garitas, arcades: set.arcades, lighthouse: 1, masonry: +(mas / f.cls.length).toFixed(3) };
     logEvent(`possess: El Morro fort ${this.vm.fort.tris} tris, ${set.garitas} garitas`);
+    // t101b: Old San Juan beyond the esplanade (real lidar terrain + NOAA aerial + extruded roofs), hazy in the distance
+    if (this.vm.quality !== 'low') void oldSanJuan(S, W, H).then((m) => {
+      if (!this.alive) return; this.scene.add(m); this.vm.oldsj = { tris: m.userData.tris as number, built: m.userData.built as number };
+      this.camera.far = 1700; this.camera.updateProjectionMatrix(); const fog = this.scene.fog as THREE.Fog | null; if (fog) fog.far = Math.max(fog.far, 1450);
+    }).catch((e) => console.warn('old san juan', e));
   }
 
   private buildGun() {
@@ -1211,7 +1218,12 @@ export class Possess {
   setMove(fwd: number, side: number) { this.joy.x = side; this.joy.y = -fwd; }
   state() {
     const o = this.obj;
-    return { kind: this.isTower ? 'tower' : this.isBug ? 'bug' : 'unit', ovr: this.ovr, abN: this.abN, hp: o instanceof Enemy ? o.hp : o.health.hp, id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope, veh: o instanceof Unit ? !!o.data.vehicle : false, unitId: o instanceof Unit ? o.data.id : '', nearParked: o instanceof Unit ? this.g.nearParked(o)?.kind ?? '' : '', boardM: BOARD_M, fort: !!this.fort, kills: this.kills, steps: this.steps, sfx: this.lastSfx, weaponSfx: this.weaponSfx(), engine: this.engOn };
+    return { kind: this.isTower ? 'tower' : this.isBug ? 'bug' : 'unit', ovr: this.ovr, abN: this.abN, hp: o instanceof Enemy ? o.hp : o.health.hp, id: o instanceof Tower ? o.data.id : o.data.id, x: o.x, y: o.y, hits: this.hits, shots: this.shots, fps: Math.round(this.fps), locked: this.locked, target: !!this.ctl.target, manual: !!o.manual, possessedBy: o.possessedBy, touch: this.touch, adsActive: this.ads, adsK: +this.adsK.toFixed(2), fov: +this.camera.fov.toFixed(1), canScope: this.canScope, veh: o instanceof Unit ? !!o.data.vehicle : false, unitId: o instanceof Unit ? o.data.id : '', nearParked: o instanceof Unit ? this.g.nearParked(o)?.kind ?? '' : '', boardM: BOARD_M, fort: !!this.fort, kills: this.kills, steps: this.steps, sfx: this.lastSfx, weaponSfx: this.weaponSfx(), engine: this.engOn, roll: this.horizonRoll(), pitch: +this.pitch.toFixed(3) };
+  }
+  /** t101b: horizon tilt in degrees = how far the camera's right axis leans out of the horizontal plane (0 = level). */
+  horizonRoll(): number {
+    this.camera.updateMatrixWorld(); const r = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    return +(Math.asin(Math.max(-1, Math.min(1, r.y))) * 180 / Math.PI).toFixed(2);
   }
 
   /** Leave first person: release the entity back to its AI and restore the 2D view. */

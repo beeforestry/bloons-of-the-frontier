@@ -28,7 +28,7 @@ JS = r'''(step) => { const H = window.__game, g = H.g, m = g.map, W = m.width, H
   res.landWaterOverlap = 0; for (let y = step / 2; y < Hh; y += step) for (let x = step / 2; x < W; x += step) if (g.isWaterAt(x, y) && g.grid.isLandAt(x, y)) res.landWaterOverlap++;
   // lane coverage: share of each lane (every 40 px, inside the map) within tier-0 range of at least one valid spot
   const okPts = {}; for (const id of ['unsc_destroyer', 'unsc_beacon']) { okPts[id] = []; for (let y = step / 2; y < Hh; y += step) for (let x = step / 2; x < W; x += step) if (g.spotOk(id, x, y)) okPts[id].push([x, y]); }
-  res.cover = {}; for (const id of ['unsc_destroyer', 'unsc_beacon']) { const rg = g.towerStats ? 0 : 0; const R = (H.towerRange ? H.towerRange(id) : null) ?? ({ unsc_destroyer: 220, unsc_beacon: 240 })[id]; res.ranges[id] = R;
+  res.cover = {}; for (const id of ['unsc_destroyer', 'unsc_beacon']) { const rg = g.towerStats ? 0 : 0; const R = (H.towerRange ? H.towerRange(id) : null) ?? ({ unsc_destroyer: 260, unsc_beacon: 240 })[id]; res.ranges[id] = R;
     res.cover[id] = m.lanes.map((L, li) => { let n = 0, c = 0; const P = g.paths[li]; for (let d = 0; d < P.length; d += 40) { const q = P.at(d); if (q.x < 0 || q.y < 0 || q.x > W || q.y > Hh) continue; n++; if (okPts[id].some(([x, y]) => Math.hypot(x - q.x, y - q.y) <= R)) c++; } return n ? +(c / n).toFixed(3) : 0; }); }
   res.pathWidth = m.pathWidth; res.lanes = m.lanes.length; res.waterLevel = m.terrain && m.terrain.water; return res; }'''
 with sync_playwright() as p:

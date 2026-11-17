@@ -56,6 +56,9 @@ export interface Telegraph { x: number; y: number; lane: number; t: number; dur:
 export interface ParkedVeh { id: number; kind: string; x: number; y: number; ang: number; hp: number }
 /** t80: how close (metres) a trooper must be to a parked vehicle to climb in. */
 export const BOARD_M = 6;
+/** t101b: parked-vehicle footprint half-extents in metres [along its heading, across] (matches the t77 GLBs) + trooper body radius. */
+export const PARKED_FOOT: Record<string, [number, number]> = { warthog: [2.35, 1.2], scorpion: [3.6, 1.85] };
+export const BODY_M = 0.35;
 export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.8, tropical: 0.8 };
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
@@ -771,13 +774,26 @@ export class Game {
     return true;
   }
   /** Can a possessed troop stand here? Inside the map, off rocks/logs, towers and buildings. */
-  walkable(x: number, y: number): boolean {
+  walkable(x: number, y: number, fx?: number, fy?: number): boolean {
     if (x < 12 || y < 12 || x > this.map.width - 12 || y > this.map.height - 12) return false;
     if (this.overrun && this.isWaterAt(x, y)) return false; // t78: Overrun is fought on foot / wheels — no wading into the sea
     for (const o of this.obstacles) if (o.alive && (o.x - x) ** 2 + (o.y - y) ** 2 < 26 * 26) return false;
     for (const t of this.towers) if (t.alive && (t.x - x) ** 2 + (t.y - y) ** 2 < 20 * 20) return false;
     for (const b of this.buildings) if (b.alive && (b.x - x) ** 2 + (b.y - y) ** 2 < (b.isHQ ? 70 : 40) ** 2) return false;
+    // t101b: parked Raider Buggies / Bulwark Scorpions are solid. A body already overlapping one (spawned / just stepped out) may only move outward.
+    if (this.parked.length) { const d = this.parkedDepth(x, y); if (d > 0 && (fx == null || fy == null || d >= this.parkedDepth(fx, fy) - 1e-6)) return false; }
     return true;
+  }
+  /** t101b: how deep (metres) a point sits inside the nearest parked vehicle's footprint (oriented box grown by a body radius); <= 0 = outside. */
+  parkedDepth(x: number, y: number): number {
+    const mpp = this.map.mpp ?? 0.05; let best = 0;
+    for (const p of this.parked) {
+      const f = PARKED_FOOT[p.kind] ?? PARKED_FOOT.warthog, dx = (x - p.x) * mpp, dy = (y - p.y) * mpp;
+      if (dx * dx + dy * dy > 64) continue;
+      const c = Math.cos(p.ang), s = Math.sin(p.ang), lx = Math.abs(dx * c + dy * s), ly = Math.abs(-dx * s + dy * c);
+      const d = Math.min(f[0] + BODY_M - lx, f[1] + BODY_M - ly); if (d > best) best = d;
+    }
+    return best;
   }
   // ------------------------------------------------------------------ t80: parked world vehicles
   park(kind: string, x: number, y: number, ang = 0, hp = 1): ParkedVeh {

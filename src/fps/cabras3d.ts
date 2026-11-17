@@ -11,6 +11,7 @@ import { assetUrl } from '../assetUrl';
 import { fortMesh, loadFort, FORT, type FineWin, type FortGrid } from './morro3d';
 import { Merge, garita93, slab, tex, weathered } from './morro93';
 import { detailGround } from './groundTex';
+import { oldSanJuan } from './oldsj';
 
 /** Fine window on the 4416 x 2976 tropical map (game px of sample (0,0), px per sample). Mirrors cabras_fort3d.py. */
 export const CABRAS: FineWin = { x0: 2, y0: 34, step: 4, cols: 1104, rows: 644, off: -5 };
@@ -96,6 +97,8 @@ export async function distantMorro(S: number): Promise<THREE.Group> {
   const a = (142.8 * Math.PI) / 180, dx = Math.cos(a), dy = Math.sin(a), hw = 2208 * MPP, hh = 1488 * MPP;
   const tx = -hw * dy + hh * dx + (2044655 - 2044410) + hw, tz = -hw * dx - hh * dy + (803757 - 802455) + hh;
   g.matrixAutoUpdate = false; g.matrix.set(dy, 0, -dx, tx, 0, 1, 0, 0, dx, 0, dy, tz, 0, 0, 0, 1); g.updateMatrixWorld(true);
+  // t101b: Old San Juan behind it (same El Morro map frame)
+  try { const osj = await oldSanJuan(S, 4416, 2976); g.add(osj); g.userData.oldsj = osj.userData.tris; } catch (e) { console.warn('old san juan', e); }
   g.traverse((o) => { o.castShadow = false; o.frustumCulled = false; });
   g.userData.morroCells = FORT.cols * FORT.rows;
   return g;

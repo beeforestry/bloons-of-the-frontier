@@ -318,11 +318,11 @@ export const TOWERS: TowerData[] = [
     antiAir: true, defaultTargeting: TargetingMode.First,
     tiers: [
       { name: 'Patrol Corvette', cost: 850, blurb: 'Single deck gun on a light hull.', visual: { level: 0, scale: 1 }, maxHp: 420,
-        combat: { damage: 4, fireRate: 1.1, range: 220, pierce: 2, splash: 36, projectileSpeed: 700 } },
+        combat: { damage: 4, fireRate: 1.1, range: 260, pierce: 2, splash: 36, projectileSpeed: 700 } },
       { name: 'Coast Destroyer', cost: 780, blurb: 'Twin turrets, deeper magazine.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 540,
-        combat: { damage: 6, fireRate: 1.35, range: 245, pierce: 3, splash: 48, shots: 2, projectileSpeed: 760 } },
+        combat: { damage: 6, fireRate: 1.35, range: 285, pierce: 3, splash: 48, shots: 2, projectileSpeed: 760 } },
       { name: 'Tidebreaker Flagship', cost: 1850, blurb: 'Heavy dual mounts + flak burst.', visual: { level: 2, scale: 1.14, glow: G2 }, maxHp: 720,
-        combat: { damage: 9, fireRate: 1.6, range: 275, pierce: 4, splash: 60, shots: 2, projectileSpeed: 820 } },
+        combat: { damage: 9, fireRate: 1.6, range: 315, pierce: 4, splash: 60, shots: 2, projectileSpeed: 820 } },
     ],
   },
   {
