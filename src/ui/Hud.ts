@@ -465,7 +465,7 @@ export class Hud {
     const te = $('#tech'); if (te) te.textContent = `${g.tech}`;
     const en = $('#energy-fill'); if (en) en.style.width = `${(g.energy / MAX_ENERGY) * 100}%`;
     const ev = $('#energy'); if (ev) ev.textContent = `${Math.floor(g.energy)}`;
-    for (const pb of Array.from(document.querySelectorAll<HTMLElement>('#powers .power'))) {
+    for (const pb of Array.from(document.querySelectorAll<HTMLElement>('#powers .power[data-power]'))) {
       const id = pb.dataset.power!, pw = POWERS.find((x) => x.id === id)!, cd = g.powerCd[id] ?? 0;
       pb.classList.toggle('on', this.view.power === id);
       pb.classList.toggle('poor', !g.canCast(id));
