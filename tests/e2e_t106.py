@@ -244,9 +244,10 @@ with sync_playwright() as p:
         # statistical rate at wave 25 (~20%)
         G('H.g.waves.index = 25'); G('H.g.sellTower(H.g.towers.find(t => t.alive && t.data.id === "sniper_monkey"))')
         G('(() => { const g = H.g; H.killAllEnemies(); g.waves.active = true; for (let k = 0; k < 10; k++) { const id = H.spawn("hunter", 0, 0.45 + k * 0.01, 1e4); const e = g.enemies.find(x => x.uid === id); e.speedK = 0; } })()')
-        dt = G(f'({PLACE})("dart_monkey", 0, 0.5, 60)'); G(RESET); G(f'({SIM})(2400)')
+        dt = G(f'({PLACE})("dart_monkey", 0, 0.5, 60)'); G(f'({NEXTTO})("dart_monkey", {dt})'); G(f'({NEXTTO})("dart_monkey", {dt}, 2)'); G(RESET); G(f'({SIM})(3600)')
         ncrit = G('window.__tap.crit'); nsh = G('window.__tap.n')
-        check(nsh > 30 and 0.12 < ncrit / max(nsh, 1) < 0.30, f'observed crit rate at wave 25: {ncrit}/{nsh} = {ncrit / max(nsh, 1):.2f} (expected ~0.20)')
+        sig = 3 * (0.2 * 0.8 / max(nsh, 1)) ** 0.5 + 0.01
+        check(nsh > 60 and abs(ncrit / max(nsh, 1) - 0.2) < sig, f'observed crit rate at wave 25: {ncrit}/{nsh} = {ncrit / max(nsh, 1):.2f} (expected ~0.20)')
         G(f'H.focus(H.g.towers[{dt}].x, H.g.towers[{dt}].y, 1.8)'); G('Math.__R = Math.random; Math.random = () => Math.__R() * 0.25')
         pg.wait_for_timeout(700); pops = G("H.g.effects ? H.g.effects.filter(e => e.kind === 'dmg' && e.crit).map(e => e.text).slice(0, 4) : []")
         check(any(t.startswith('✦') for t in pops), f'crit popups marked with ✦ {pops}')

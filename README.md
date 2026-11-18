@@ -126,6 +126,15 @@ elemental neighbour counts, never its own element. This feeds the normal element
 (a Soaking Glue Slinger beside a Frost Bastion freezes enemies). Faint animated link lines show the links (brighter when
 selected), and the tower panel lists "Neighbour effects". Tuning: `PROX` in `src/systems/Proximity.ts`.
 
+## Capa 4: targeting, Overload Core, Rage, crit, knockback (t106)
+
+- **Targeting** (tower panel, or T to cycle): ⏩ First · ⏪ Last · 💪 Strongest · 🎯 Weakest · 📍 Closest · 🏰 Closest to Exit. Each has a tooltip and a tip line. Works with fusions, recipes, predictive aiming and first person.
+- **⚙ Overload Core** (powers bar): +5% damage for all towers per level for the match. Price 500 → 800 → 1280… (×1.6), max level 12. The top bar shows the level.
+- **🔥 Rage** (button or **X**): all towers fire 50% faster for 9 s, then a 30 s cooldown. Shared by the team in co-op.
+- **Crit:** 10% at the start, rising 0.4% per wave to 33%. Crits deal ×2.5 and show ✦ popups. The top bar shows the current %.
+- **Knockback:** Flame Melon Mortar and Battle Tank push enemies back along their road. Bosses resist, and repeated pushes weaken (no stun-lock).
+- **Sell:** always 70% of everything invested (upgrades, branch, fusion and recipe fees). The button shows both numbers.
+
 ## Art (v3)
 All sprites are one painterly, realistic 3/4-view set (`public/assets/v3`, WebP, ~1.2 MB). Each tower and troop tier has its own sprite, and every tier is
 visibly more advanced. Turrets use a separate rotating head with barrel recoil, and units, bugs and bloons are animated with walk/scuttle/bob motion and painted pop/death/muzzle FX.
