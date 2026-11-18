@@ -55,7 +55,7 @@ export class Debris {
     const L = src.look(d.id); if (!L) return;
     this.stats.events++; this.stats.byCause[d.cause] = (this.stats.byCause[d.cause] ?? 0) + 1;
     const load = this.live.length / this.cap;
-    if ((load > 0.95 || (this.heavy && load > 0.8)) && !d.boss) { this.stats.skipped++; return; }
+    if ((load > 0.95 || (this.heavy && load > 0.5)) && !d.boss) { this.stats.skipped++; return; }
     const simple = (load > 0.6 || this.heavy) && !d.boss; if (simple) this.stats.simplified++;
     const bloon = L.family === 'bloon', big = d.boss;
     // piece count: 3-6 normally, more for explosions / bosses, layer pops are light shreds
@@ -122,7 +122,7 @@ export class Debris {
       const f = this.pool.pop() ?? mk(); f.k = FK.Scorch; f.x = d.x; f.y = footY; f.w = Math.max(14, L.size * (big ? 0.7 : 0.42)); f.h = f.w * 0.42; f.t = 0; f.life = big ? 4 : 2.4; f.a = R(0, 6.28); this.ground.push(f);
     }
     // particles: embers + ash / sparks / ice glints / plain dust
-    const pk = simple ? 0.5 : 1, cy = footY - h * 0.45;
+    const pk = this.heavy && !d.boss ? 0.25 : simple ? 0.5 : 1, cy = footY - h * 0.45;
     if (d.cause === 'burn') {
       for (let i = 0; i < 9 * pk; i++) src.spark(d.x + R(-0.3, 0.3) * w, cy + R(-10, 10), R(-30, 30) + d.dx * 30, R(-70, -20), R(0.6, 1.2), R(2, 3.5), Math.random() < 0.5 ? 0xffa040 : 0xff6020, 'ember');
       for (let i = 0; i < 5 * pk; i++) src.spark(d.x + R(-0.3, 0.3) * w, cy, R(-20, 20), R(-30, -10), R(0.8, 1.3), R(3, 5), 0x4a4440, 'dust');
