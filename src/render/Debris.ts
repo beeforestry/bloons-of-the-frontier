@@ -30,6 +30,8 @@ export class Debris {
   readonly live: Frag[] = [];
   readonly ground: Frag[] = []; // scorch marks (drawn under the y-sorted world)
   cap = 240;
+  /** Heavy load (big wave / mobile / low quality): fewer pieces per kill, cheaper drawing. */
+  heavy = false;
   /** Stats for tests / the FPS overlay. */
   stats = { spawned: 0, events: 0, skipped: 0, peak: 0, byCause: {} as Record<string, number>, simplified: 0 };
   private cursor = 0;
@@ -53,8 +55,8 @@ export class Debris {
     const L = src.look(d.id); if (!L) return;
     this.stats.events++; this.stats.byCause[d.cause] = (this.stats.byCause[d.cause] ?? 0) + 1;
     const load = this.live.length / this.cap;
-    if (load > 0.95 && !d.boss) { this.stats.skipped++; return; }
-    const simple = load > 0.6 && !d.boss; if (simple) this.stats.simplified++;
+    if ((load > 0.95 || (this.heavy && load > 0.8)) && !d.boss) { this.stats.skipped++; return; }
+    const simple = (load > 0.6 || this.heavy) && !d.boss; if (simple) this.stats.simplified++;
     const bloon = L.family === 'bloon', big = d.boss;
     // piece count: 3-6 normally, more for explosions / bosses, layer pops are light shreds
     let n = d.layer ? 3 : bloon ? 5 : 4;
@@ -168,34 +170,40 @@ export class Debris {
     c.globalAlpha = 1;
   }
   draw(c: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+    if (!this.live.length) return;
+    // compose each fragment's transform onto the camera matrix directly (no save/restore per piece)
+    const B = c.getTransform(), lite = this.heavy;
+    const put = (x: number, y: number, a: number, flip: boolean) => {
+      const co = Math.cos(a), si = Math.sin(a), fx = flip ? -1 : 1;
+      c.setTransform((B.a * co + B.c * si) * fx, (B.b * co + B.d * si) * fx, B.a * -si + B.c * co, B.b * -si + B.d * co, B.a * x + B.c * y + B.e, B.b * x + B.d * y + B.f);
+    };
     for (const f of this.live) {
       if (f.x < x0 || f.x > x1 || f.y < y0 || f.y > y1) continue;
       const fade = Math.min(1, (f.life - f.t) / (f.life * 0.4));
-      if (f.z > 3 && f.k !== FK.Shard) { c.globalAlpha = 0.22 * fade; c.fillStyle = '#000'; c.beginPath(); c.ellipse(f.x, f.y, f.w * 0.35, f.w * 0.12, 0, 0, 6.283); c.fill(); }
+      if (!lite && f.z > 3 && f.k !== FK.Shard) { c.setTransform(B); c.globalAlpha = 0.22 * fade; c.fillStyle = '#000'; c.beginPath(); c.ellipse(f.x, f.y, f.w * 0.35, f.w * 0.12, 0, 0, 6.283); c.fill(); }
       c.globalAlpha = fade;
-      c.save();
       if (f.k === FK.Body) {
         const e = 1 - (1 - f.tip) * (1 - f.tip); // ease-out
-        c.translate(f.x, f.y); c.rotate(f.va * e); if (f.flip) c.scale(-1, 1);
+        put(f.x, f.y, f.va * e, f.flip);
         c.drawImage(f.im!, f.sx, f.sy, f.sw, f.sh, -f.w / 2, -f.h, f.w, f.h);
-      } else {
-        c.translate(f.x, f.y - f.z); c.rotate(f.a);
-        if (f.k === FK.Slice) { if (f.flip) c.scale(-1, 1); c.drawImage(f.im!, f.sx, f.sy, f.sw, f.sh, -f.w / 2, -f.h / 2, f.w, f.h); }
-        else if (f.k === FK.Shred) { // torn rubber: a curled, jagged strip
-          c.fillStyle = f.color; c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1;
-          const w = f.w / 2, h = f.h / 2, k = f.tip;
-          c.beginPath(); c.moveTo(-w, -h * 0.4); c.quadraticCurveTo(0, -h * (1.6 + k), w, -h * 0.2); c.lineTo(w * 0.6, h * 0.3); c.lineTo(w * 0.2, h * 0.9); c.lineTo(-w * 0.3, h * 0.4); c.lineTo(-w * 0.8, h); c.closePath(); c.fill(); c.stroke();
-          c.globalAlpha = fade * 0.35; c.fillStyle = '#fff'; c.beginPath(); c.ellipse(-w * 0.2, -h * 0.5, w * 0.35, h * 0.2, 0, 0, 6.283); c.fill();
-        } else if (f.k === FK.Knot) {
-          c.fillStyle = f.color; c.strokeStyle = 'rgba(0,0,0,0.4)'; c.beginPath(); c.moveTo(0, -f.h / 2); c.lineTo(f.w / 2, f.h / 2); c.lineTo(-f.w / 2, f.h / 2); c.closePath(); c.fill(); c.stroke();
-        } else if (f.k === FK.Shard) {
-          c.fillStyle = f.color; c.strokeStyle = '#ffffff'; c.lineWidth = 1;
-          c.beginPath(); c.moveTo(0, -f.h / 2); c.lineTo(f.w / 2, f.h * 0.15); c.lineTo(0, f.h / 2); c.lineTo(-f.w / 2, -f.h * 0.1); c.closePath(); c.fill(); c.stroke();
-        }
+        continue;
       }
-      c.restore();
+      put(f.x, f.y - f.z, f.a, f.k === FK.Slice && f.flip);
+      if (f.k === FK.Slice) c.drawImage(f.im!, f.sx, f.sy, f.sw, f.sh, -f.w / 2, -f.h / 2, f.w, f.h);
+      else if (f.k === FK.Shred) { // torn rubber: a curled, jagged strip
+        const w = f.w / 2, h = f.h / 2, k = f.tip;
+        c.fillStyle = f.color;
+        c.beginPath(); c.moveTo(-w, -h * 0.4); c.quadraticCurveTo(0, -h * (1.6 + k), w, -h * 0.2); c.lineTo(w * 0.6, h * 0.3); c.lineTo(w * 0.2, h * 0.9); c.lineTo(-w * 0.3, h * 0.4); c.lineTo(-w * 0.8, h); c.closePath(); c.fill();
+        if (!lite) { c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1; c.stroke(); c.globalAlpha = fade * 0.35; c.fillStyle = '#fff'; c.beginPath(); c.ellipse(-w * 0.2, -h * 0.5, w * 0.35, h * 0.2, 0, 0, 6.283); c.fill(); }
+      } else if (f.k === FK.Knot) {
+        c.fillStyle = f.color; c.beginPath(); c.moveTo(0, -f.h / 2); c.lineTo(f.w / 2, f.h / 2); c.lineTo(-f.w / 2, f.h / 2); c.closePath(); c.fill();
+      } else if (f.k === FK.Shard) {
+        c.fillStyle = f.color;
+        c.beginPath(); c.moveTo(0, -f.h / 2); c.lineTo(f.w / 2, f.h * 0.15); c.lineTo(0, f.h / 2); c.lineTo(-f.w / 2, -f.h * 0.1); c.closePath(); c.fill();
+        if (!lite) { c.strokeStyle = '#ffffff'; c.lineWidth = 1; c.stroke(); }
+      }
     }
-    c.globalAlpha = 1;
+    c.setTransform(B); c.globalAlpha = 1;
   }
   clear() { for (const f of this.live) this.pool.push(f); for (const f of this.ground) this.pool.push(f); this.live.length = 0; this.ground.length = 0; }
 }

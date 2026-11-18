@@ -21,6 +21,10 @@ export interface DeathEvent {
 export const DEATH_TUNE = {
   /** Active 2D fragment caps by render quality (0 high, 1 medium, 2 low); mobile uses the last one. */
   caps2d: [240, 150, 80],
+  /** Phones / touch screens. */
+  capMobile: 56,
+  /** More live enemies than this = heavy load (fewer pieces per kill, cheaper drawing). */
+  heavyFoes: 90,
   /** Active first-person part caps (desktop / mobile-or-low). */
   caps3d: [40, 18],
   /** Boss kill: brief slow motion (solo only) + shake. */

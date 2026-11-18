@@ -205,7 +205,9 @@ export class Renderer {
     // y-sorted world objects (culled)
     for (const pl of g.acidPools) if (this.inView(pl.x, pl.y, 80)) this.acidPool(pl);
     // t107: death debris — new events, physics, scorch marks under the world
-    this.debris.cap = this.coarse || this.vw < 800 ? DEATH_TUNE.caps2d[2] : DEATH_TUNE.caps2d[this.quality];
+    const mob = this.coarse || this.vw < 800;
+    this.debris.cap = mob ? DEATH_TUNE.capMobile : DEATH_TUNE.caps2d[this.quality];
+    this.debris.heavy = mob || this.quality >= 2 || g.enemies.length > DEATH_TUNE.heavyFoes;
     this.debris.consume(g.deaths, g.deathSeq, this.dsrc, (x, y) => this.inView(x, y, 120));
     this.debris.update(gdt);
     this.debris.drawGround(c);
