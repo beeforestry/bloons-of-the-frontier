@@ -10,6 +10,7 @@ import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
 import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
 import { PROX, updateProximity } from '../systems/Proximity';
+import { DEATH_TUNE, type DeathEvent } from '../systems/Deaths';
 import { BOOST_HP, CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadMul } from '../systems/Boosts';
 import { recipeFor, recipeFee, discover, type Recipe } from '../data/recipes';
 import { UNITS, unitById } from '../data/units';
@@ -130,7 +131,7 @@ export class Game {
     /** t103 element combos triggered, by combo id, and element stamps applied. */
     elem: {} as Record<string, number>, elemApplied: 0, elemFirst: false,
     /** t104 fusions done; projectile shots fired / that hit something (predictive-aim metric). */
-    fusions: 0, recipes: 0, proxStamps: 0, overloads: 0, rages: 0, knockbacks: 0, projShots: 0, projHits: 0, projAimShots: 0, projAimHits: 0 };
+    fusions: 0, recipes: 0, proxStamps: 0, overloads: 0, rages: 0, knockbacks: 0, deathFx: {} as Record<string, number>, projShots: 0, projHits: 0, projAimShots: 0, projAimHits: 0 };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
@@ -633,6 +634,18 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ effects
+  /** t107 death events (cosmetic queue, consumed by the 2D debris + first-person view). */
+  deaths: DeathEvent[] = []; deathSeq = 0;
+  /** t107: real-time seconds of boss-kill slow motion left (solo only; applied by the frame loop). */
+  slowT = 0;
+  emitDeath(ev: Omit<DeathEvent, 'seq'>) {
+    const d: DeathEvent = { ...ev, seq: ++this.deathSeq };
+    this.deaths.push(d); if (this.deaths.length > DEATH_TUNE.queue) this.deaths.splice(0, this.deaths.length - DEATH_TUNE.queue);
+    const st = this.stats.deathFx; st[d.cause] = (st[d.cause] ?? 0) + 1;
+    if (d.layer) return;
+    if (d.boss) { this.shake(16); if (this.net === 'solo') this.slowT = DEATH_TUNE.bossSlow.dur; }
+    else if (d.cause === 'boom') this.shake(2.5, true);
+  }
   fx(e: Effect) { e.t = 0; this.effects.push(e); if (this.effects.length > 600) this.effects.splice(0, 100); }
   sfx(n: SfxName, x?: number, y?: number) { this.sfxHook(n, x, y); }
   /** Camera shake (screen px). Max-combined (never additive), hard-capped, and rate-limited for

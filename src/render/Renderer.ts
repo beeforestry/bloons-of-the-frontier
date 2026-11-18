@@ -20,6 +20,9 @@ const TOWER_BY_SPRITE = (k: string) => TOWERS.find((t) => t.sprite === k);
 import { IMG, HEAD_PIVOT, MIL, body, flashOf, head, tintOf, clearSpriteCaches, type Img } from './sprites';
 import { Faction } from '../core/types';
 import { Particles, PK, QUALITY_CAPS } from './Particles';
+import { Debris, type DebrisSource } from './Debris';
+import { DEATH_TUNE } from '../systems/Deaths';
+import { ENEMIES } from '../data/enemies';
 import type { Barrier, EnvStructure, Obstacle } from '../entities/Garrison';
 import type { Pickup } from '../entities/Pickup';
 import type { Shortcut } from '../systems/Shortcuts';
@@ -64,6 +67,22 @@ export class Renderer {
   vw = 1; vh = 1; private dpr = 1;
   /** Pooled particles (trails, sparks, dust, pollen, leaves). */
   readonly parts = new Particles();
+  /** t107 physics-lite death debris (pooled, capped by quality / mobile). */
+  readonly debris = new Debris();
+  private coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  private dlook = new Map<string, ReturnType<DebrisSource['look']>>();
+  private readonly dsrc: DebrisSource = {
+    look: (id) => {
+      if (this.dlook.has(id)) return this.dlook.get(id)!;
+      const d = ENEMIES[id]; if (!d) return null;
+      const im = body(d.sprite) ?? null; if (!im) return { im: null, w: d.size, h: d.size, family: d.family ?? 'bug', color: d.color ?? '#c33', size: d.size };
+      const [w, h] = this.fitWH(im, d.family === 'bug' ? d.size * 1.15 : d.boss ? d.size : d.size * 1.1);
+      const v = { im, w, h, family: d.family ?? 'bug', color: d.color ?? '#c33', size: d.size };
+      if (im.width > 1) this.dlook.set(id, v); return v;
+    },
+    tint: (im, cause) => cause === 'burn' ? tintOf(im, '#1e120a', 0.72) : tintOf(im, '#d4f6ff', 0.5),
+    spark: (x, y, vx, vy, life, size, rgb, kind) => this.parts.spawn(kind === 'ember' ? PK.Ember : kind === 'dust' ? PK.Dust : PK.Glow, x, y, vx, vy, life, size, rgb),
+  };
   /** 0 = full, 1 = reduced, 2 = minimal (set by the FPS governor in main.ts). */
   quality = 0;
   /** White hit-flash silhouette (plain sprite when Reduce flashing is on). */
@@ -167,7 +186,7 @@ export class Renderer {
   draw(v: ViewState) {
     const { ctx: c, g } = this;
     const now = performance.now(), rdt = this.lastT ? Math.min(0.1, (now - this.lastT) / 1000) : 0.016; this.lastT = now;
-    const gdt = g.paused ? 0 : rdt * g.speed;
+    const gdt = g.paused ? 0 : rdt * g.speed * (g.slowT > 0 ? DEATH_TUNE.bossSlow.k : 1);
     if (this.lost) return;
     c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
     c.fillStyle = '#141a14'; c.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -185,6 +204,11 @@ export class Renderer {
     for (const p of g.pickups) if (this.inView(p.x, p.y)) this.pickup(p);
     // y-sorted world objects (culled)
     for (const pl of g.acidPools) if (this.inView(pl.x, pl.y, 80)) this.acidPool(pl);
+    // t107: death debris — new events, physics, scorch marks under the world
+    this.debris.cap = this.coarse || this.vw < 800 ? DEATH_TUNE.caps2d[2] : DEATH_TUNE.caps2d[this.quality];
+    this.debris.consume(g.deaths, g.deathSeq, this.dsrc, (x, y) => this.inView(x, y, 120));
+    this.debris.update(gdt);
+    this.debris.drawGround(c);
     const objs: { y: number; f: () => void }[] = [];
     const sel = new Set(v.selSquads);
     for (const b of g.buildings) objs.push({ y: b.y + 30, f: () => this.building(b, b === v.selBuilding) });
@@ -209,6 +233,7 @@ export class Renderer {
       c.fillStyle = q.manual ? '#ffc04a' : '#bfffd5'; c.font = 'bold 10px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
       c.fillText(q.manual ? 'II' : 'A', bx, by + 0.5); c.textBaseline = 'alphabetic';
     }
+    this.debris.draw(c, this.vx0 - 60, this.vy0 - 60, this.vx1 + 60, this.vy1 + 60);
     for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.enemy(e);
     this.emitAmbient(gdt);
     // Harbor Beacon: constant lighthouse shaft (not a blink) while locked

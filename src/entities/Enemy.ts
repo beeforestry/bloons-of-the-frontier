@@ -9,6 +9,7 @@
 //    toward nearby troops), Hunters leap, Chargers have front armor, Brood Sacs
 //    spawn Scavengers, Bile Titans lob acid at towers/troops.
 // =============================================================================
+import type { DeathCause } from '../systems/Deaths';
 import type { DamageType, EnemyData, HitOpts, Vec } from '../core/types';
 import { nextId, rand, dist } from '../core/math';
 import { ENEMIES, totalLeak, totalStrength } from '../data/enemies';
@@ -47,6 +48,8 @@ export class Enemy {
   bossPhase = 1; private bossSpawnT = 0; private bossAtkT = 0;
   /** Last unit that hit this enemy (veterancy XP on kill). */
   lastSrc: HitOpts['src'] = null;
+  /** t107: last hit (type / source point / element) -> death-effect cause + direction. */
+  lastType: DamageType = 'sharp'; lastFx = NaN; lastFy = NaN; lastElem: string | undefined; shatterT = 0;
   hitFlash = 0;
   private leapT: number; leapAnim: { from: number; to: number; t: number } | null = null;
   private spawnT: number; private acidT: number;
@@ -126,6 +129,7 @@ export class Enemy {
   update(g: Game, dt: number) {
     const d = this.data;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
+    if (this.shatterT > 0) this.shatterT -= dt;
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.slowAmt = 0; }
     if (!g.isClient) { elemTick(g, this, dt); if (!this.alive) return; }
     if (this.maxShield > 0 && !this.shieldDown && this.shield < this.maxShield) { this.shieldIdle += dt; if (this.shieldIdle > 4) this.shield = Math.min(this.maxShield, this.shield + 10 * dt); }
@@ -228,6 +232,7 @@ export class Enemy {
     }
     if (d.air && !hit?.antiAir) return 0;
     if (hit?.src) this.lastSrc = hit.src;
+    this.lastType = type; this.lastElem = hit?.elem; if (from) { this.lastFx = from.x; this.lastFy = from.y; } else { this.lastFx = NaN; }
     amount *= elemPreHit(g, this, type, hit);
     const raw = amount;
     // energy shield soaks everything first (arcane shieldBreak multiplies)
@@ -285,6 +290,7 @@ export class Enemy {
       if (!child) { this.die(g, over); return; }
       const d = this.data, count = d.children!.count;
       this.reward(g, d);
+      this.emitDeath(g, true);
       this.layersPopped++;
       // extra siblings (lead / ceramic / MOAB hold more than one bloon)
       for (let i = 1; i < count; i++) {
@@ -316,6 +322,7 @@ export class Enemy {
     const d = this.data;
     this.alive = false;
     this.reward(g, d);
+    this.emitDeath(g, false);
     if (d.children) { // bugs (Bile Titan) burst into separate children
       const child = ENEMIES[d.children.id];
       for (let i = 0; i < d.children.count; i++) {
@@ -324,6 +331,21 @@ export class Enemy {
         if (i === 0 && overflow > 0 && d.family === 'bloon') e.takeDamage(g, overflow, 'magic');
       }
     }
+  }
+
+  /** t107: cause of death from the last hit + element state (SHATTER > explosion > fire > shock > plain). */
+  deathCause(): DeathCause {
+    const s = this.el, t = this.lastType;
+    if (this.shatterT > 0 || s.frozenT > 0 || t === 'cold' || this.lastElem === 'chill') return 'ice';
+    if (t === 'explosive') return 'boom';
+    if (t === 'fire' || s.burn > 0 || this.lastElem === 'burn') return 'burn';
+    if (this.lastElem === 'shock' || s.shock > 0 || (t === 'energy' && s.wet > 0)) return 'shock';
+    return 'normal';
+  }
+  private emitDeath(g: Game, layer: boolean) {
+    let dx = this.x - this.lastFx, dy = this.y - this.lastFy, L = Math.hypot(dx, dy);
+    if (!(L > 0.5)) { dx = -Math.cos(this.ang); dy = -Math.sin(this.ang); L = 1; } // no source: knocked back against its walk
+    g.emitDeath({ uid: this.uid, id: this.data.id, x: this.x, y: this.y, dx: dx / L, dy: dy / L, cause: this.deathCause(), boss: !!this.data.boss, layer, shatter: this.shatterT > 0 });
   }
 
   // ---------------------------------------------------------------- boss phases

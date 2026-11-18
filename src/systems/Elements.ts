@@ -82,7 +82,7 @@ export function preHit(g: Game, e: Enemy, type: DamageType, hit?: HitOpts): numb
   if ((s.chill > 0 || s.frozenT > 0) && isHeavy(type, hit) && hit?.elem !== 'chill') {
     const frozen = s.frozenT > 0;
     k *= 1 + (frozen ? ELEM_TUNE.shatter.frozenK : ELEM_TUNE.shatter.k);
-    s.chill = 0;
+    s.chill = 0; e.shatterT = 0.4; // t107: ice-shard death effect
     if (frozen) { s.frozenT = 0; e.stunT = 0; g.fx({ kind: 'pop', x: e.x, y: e.y, r: e.data.size * 0.6, color: '#dff8ff', dur: 0.35 }); }
     count(g, 'shatter', e); g.sfx('smash', e.x, e.y);
   }

@@ -15,6 +15,7 @@ import { SPECS, SPEC_TUNE, specsFor } from './data/specs';
 import { discovered, isDiscovered } from './data/recipes';
 import { PROX, updateProximity } from './systems/Proximity';
 import { RAGE, CRIT, OVERLOAD, KNOCK, overloadCost } from './systems/Boosts';
+import { DEATH_TUNE } from './systems/Deaths';
 import { pickTarget } from './systems/TargetingSystem';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
@@ -475,11 +476,12 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
       if (fps.lowT >= 1.5 && r.quality < 2) { r.setQuality(r.quality + 1); fps.lowT = 0; }
       if (fps.highT >= 4 && r.quality > 0) { r.setQuality(r.quality - 1); fps.highT = 0; }
       fps.t = 0;
-      if (view.showFps && fpsEl) fpsEl.textContent = `${fps.cur.toFixed(0)} FPS · Q${r.quality} · ${r.drawn.parts} parts · ${g.enemies.length} foes · ${r.drawn.objs} drawn`;
+      if (view.showFps && fpsEl) fpsEl.textContent = `${fps.cur.toFixed(0)} FPS · Q${r.quality} · ${r.drawn.parts} parts · ${r.debris.live.length} debris · ${g.enemies.length} foes · ${r.drawn.objs} drawn`;
     }
     lastFrame = now;
     try {
-    g.update(dt);
+    let sk = 1; if (g.slowT > 0) { g.slowT -= dt; sk = DEATH_TUNE.bossSlow.k; } // t107 boss-kill slow motion (solo)
+    g.update(dt * sk);
     pauseMenu.update();
     sync?.update(dt);
     netHud?.update(dt);
@@ -547,6 +549,10 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     prox: (i: number) => { const t = g.towers[i]; return t ? { elem: t.prox?.elem ?? null, from: t.prox?.elemFrom ? g.towers.indexOf(t.prox.elemFrom) : -1, support: t.prox?.support ? g.towers.indexOf(t.prox.support) : -1, rate: t.buffs.totals.ratePct } : null; },
     proxNow: () => updateProximity(g),
     tune: { PROX, SPEC_TUNE, RAGE, CRIT, OVERLOAD, KNOCK },
+    // t107 hooks
+    deathFx: () => ({ seq: g.deathSeq, last: g.deaths.slice(-6).map((d) => ({ id: d.id, cause: d.cause, layer: d.layer, boss: d.boss, shatter: d.shatter, dx: +d.dx.toFixed(2), dy: +d.dy.toFixed(2) })), debris: r.debris.live.length, ground: r.debris.ground.length, cap: r.debris.cap, stats: r.debris.stats, byCause: g.stats.deathFx, slowT: g.slowT, kinds: r.debris.live.reduce((m, f) => { m[f.k] = (m[f.k] ?? 0) + 1; return m; }, {} as Record<number, number>), maxZ: Math.max(0, ...r.debris.live.map((f) => f.z)) }),
+    /** Kill an enemy with a given damage type from a point (x, y) -> death effect of that cause. */
+    killWith: (uid: number, type: string, fx?: number, fy?: number, elem?: string) => { const e = g.enemies.find((x) => x.uid === uid); if (!e) return false; e.takeDamage(g, 1e9, type as never, fx != null ? { x: fx, y: fy! } : undefined, elem ? { elem: elem as never, antiAir: true, ap: true } : { antiAir: true, ap: true }); return !e.alive; },
     // t106 hooks
     boosts: () => ({ overload: g.overload, cost: overloadCost(g.overload), rageT: g.rageT, rageCd: g.rageCd, crit: g.critPct, rateMul: g.rateMul(), stats: { crits: g.stats.crits, kb: g.stats.knockbacks, rages: g.stats.rages } }),
     buyOverload: () => g.buyOverload(),
