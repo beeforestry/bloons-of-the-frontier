@@ -397,3 +397,8 @@ body.role-invader #mode-toggle { display: none !important; }
 .recipe-tag { text-shadow: 0 0 6px currentColor; }
 #sel-panel .prox { font-size: 11px; color: #cfe6ff; margin-top: 2px; }
 #sel-panel .prox b { font-weight: 600; }
+.combo-guide h3 { margin: 10px 0 4px; font-size: 15px; }
+.cg-recipes { display: grid; gap: 4px; }
+.cg-rec { padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.05); font-size: 12px; }
+.cg-rec.unknown { opacity: 0.8; border: 1px dashed #8a7aaa; }
+.cg-count { font-size: 12px; color: #c9a6ff; }

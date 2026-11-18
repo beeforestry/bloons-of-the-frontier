@@ -12,6 +12,8 @@ import { assetUrl } from './assetUrl';
 import { PLAYABLE_MAPS, DEFAULT_MAP, resolveMap, resolveMapId } from './data/maps';
 import { validateAll, towerPower } from './data/validate';
 import { SPECS, specsFor } from './data/specs';
+import { discovered, isDiscovered } from './data/recipes';
+import { updateProximity } from './systems/Proximity';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
 import { Sfx } from './audio/Sfx';
@@ -535,6 +537,11 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     branchInfo: (i: number) => { const t = g.towers[i]; if (!t) return null; const sp = specsFor(t.data.id);
       return { id: t.data.id, tier: t.tier, branch: t.branch, pick: t.branchPick, name: t.t.name, elem: t.elem ?? null, glow: t.t.visual.glow ?? null, power: towerPower(t.t), specs: sp ? sp.map((b) => b.name) : null }; },
     specList: () => Object.keys(SPECS),
+    recipe: (i: number) => { const t = g.towers[i]; if (!t) return null; const rp = g.recipePartner(t); return rp ? { id: rp.r.id, partner: g.towers.indexOf(rp.o), known: isDiscovered(rp.r.id) } : null; },
+    fuseRecipe: (i: number, j?: number) => { const nt = g.fuseRecipe(g.towers[i], j == null ? null : g.towers[j]); return nt ? g.towers.indexOf(nt) : -1; },
+    discovered: () => discovered(),
+    prox: (i: number) => { const t = g.towers[i]; return t ? { elem: t.prox?.elem ?? null, from: t.prox?.elemFrom ? g.towers.indexOf(t.prox.elemFrom) : -1, support: t.prox?.support ? g.towers.indexOf(t.prox.support) : -1, rate: t.buffs.totals.ratePct } : null; },
+    proxNow: () => updateProximity(g),
     predict: (uid: number, t: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? e.predict(g, t) : null; },
     // t103 element combos
     elemTune: ELEM_TUNE,

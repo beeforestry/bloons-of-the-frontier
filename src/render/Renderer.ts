@@ -188,7 +188,7 @@ export class Renderer {
     const objs: { y: number; f: () => void }[] = [];
     const sel = new Set(v.selSquads);
     for (const b of g.buildings) objs.push({ y: b.y + 30, f: () => this.building(b, b === v.selBuilding) });
-    for (const t of g.towers) if (this.inView(t.x, t.y, 200)) objs.push({ y: t.y + (t.data.airborne ? 400 : 0), f: () => this.tower(t, t === v.selTower) });
+    for (const t of g.towers) if (this.inView(t.x, t.y, 200)) objs.push({ y: t.y + (t.data.airborne ? 400 : 0), f: () => this.tower(t, t === v.selTower, v.selTower) });
     for (const pr of g.props) if (this.inView(pr.x, pr.y, 120)) objs.push({ y: pr.y, f: () => this.prop(pr) });
     for (const e of g.envs) if (this.inView(e.x, e.y, 160)) objs.push({ y: e.y + 20, f: () => this.env(e, v) });
     for (const o of g.obstacles) if (this.inView(o.x, o.y)) objs.push({ y: o.y, f: () => this.obstacle(o) });
@@ -889,7 +889,7 @@ export class Renderer {
     const c = this.ctx, [w, h] = this.fitWH(im, sz);
     c.save(); c.translate(x, y); if (rot) c.rotate(rot); if (flip) c.scale(-1, 1); c.drawImage(im, -w / 2, -h / 2, w, h); c.restore();
   }
-  private tower(t: Tower, sel: boolean) {
+  private tower(t: Tower, sel: boolean, selT: Tower | null = null) {
     const c = this.ctx;
     if (sel) {
       const r = t.combat ? t.range(t.t.combat!.range) : t.cover ? t.t.cover!.auraRadius : 0;
@@ -903,6 +903,7 @@ export class Renderer {
     const big = (t.data.footprint ?? 1) > 1, top = big ? (t.data.airborne ? 230 : 140) : 38, pw = big ? 2.6 : 1;
     if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30 * pw, PCOLORS[t.owner] ?? '#fff');
     const bm = branchMark(t);
+    if (t.prox) this.proxLinks(t, sel || (!!selT && (selT === t.prox.elemFrom || selT === t.prox.support)));
     if (t.fused) this.fusedAura(t, pw, big ? 6 : 18); else if (bm) this.specAura(t, pw, big ? 6 : 18, bm.color, !!t.data.hidden);
     if (sel && !t.fused && !t.nextTier) { const fp = this.g.fusionPartner(t); if (fp) this.fusionLink(t, fp); const rp = this.g.recipePartner(t); if (rp) this.fusionLink(t, rp.o, isDiscovered(rp.r.id) ? towerById(rp.r.id).mark?.color ?? '#c9a6ff' : '#c9a6ff'); }
     if (t.disabled) c.globalAlpha = 0.55;
@@ -936,6 +937,20 @@ export class Renderer {
     c.beginPath(); c.ellipse(t.x, y, R * 1.32, R * 0.53, 0, 0, 7); c.stroke(); c.setLineDash([]);
     for (let i = 0; i < 3; i++) { const a = T * 1.6 + (i * Math.PI * 2) / 3; this.additive(IMG.fx_spark, t.x + Math.cos(a) * R * 1.2, y + Math.sin(a) * R * 0.48 - 6, 14, a, 0.85); }
     c.restore();
+  }
+  /** t105 proximity: faint animated link to the adjacent ice / fire / support tower (brighter when either end is selected). */
+  private proxLinks(t: Tower, hi: boolean) {
+    const c = this.ctx, T = this.g.time, p = t.prox!;
+    const one = (o: Tower | null, col: string) => {
+      if (!o || !o.alive) return;
+      c.strokeStyle = col; c.globalAlpha = hi ? 0.85 : 0.22; c.lineWidth = hi ? 2.5 : 1.5; c.setLineDash([2, 6]); c.lineDashOffset = -T * 18;
+      c.beginPath(); c.moveTo(o.x, o.y + 12); c.lineTo(t.x, t.y + 12); c.stroke();
+      const k = (T * 0.8 + t.uid * 0.13) % 1; c.fillStyle = col; c.beginPath(); c.arc(o.x + (t.x - o.x) * k, o.y + 12 + (t.y - o.y) * k, hi ? 3 : 2, 0, 7); c.fill();
+    };
+    c.save();
+    one(p.elemFrom, p.elem === 'chill' ? '#9fe8ff' : '#ff8a3a');
+    if (p.support !== p.elemFrom) one(p.support, '#9aff7a');
+    c.setLineDash([]); c.restore();
   }
   /** t105 specialized / recipe tower: a steady coloured ground ring (recipes: a slowly turning double ring with motes). */
   private specAura(t: Tower, pw: number, dy: number, col: string, recipe: boolean) {

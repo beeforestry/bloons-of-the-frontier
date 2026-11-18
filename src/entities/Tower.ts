@@ -6,6 +6,7 @@
 //   FarmTower    - periodic credit crates + wave bonus        (tier.farm)
 // e.g. the Frost Wall-Nut Bastion is Cover + (weak) Combat.
 // =============================================================================
+import type { ProxState } from '../systems/Proximity';
 import { TargetingMode, type CombatStats, type ManualCtl, type TowerData, type TowerTier } from '../core/types';
 import { nextId, easeInOut } from '../core/math';
 import { AuraEmitter, BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
@@ -71,6 +72,8 @@ export class Tower implements Buffable, Garrisonable {
   fused = false;
   /** t105: tier-3 specialization branch (0 / 1), chosen when reaching the last tier; null = none / not specialised. */
   branch: number | null = null;
+  /** t105 proximity bonus from adjacent towers (src/systems/Proximity.ts). */
+  prox: ProxState | null = null;
 
   constructor(readonly data: TowerData, public cell: Cell & { x?: number; y?: number }, g: Game) {
     const c = g.grid.cellCenter(cell.c, cell.r);

@@ -13,6 +13,7 @@ import { UNITS, unitById } from '../data/units';
 import { canFuseType, fusedTier, fusionFee } from '../data/fusion';
 import { specsFor, branchTier } from '../data/specs';
 import { recipeFee, isDiscovered, type Recipe } from '../data/recipes';
+import { proxLines } from '../systems/Proximity';
 import { Faction, TARGETING_ORDER, TARGETING_LABEL, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
 import { ABILITIES } from '../data/abilities';
 import { ENEMIES } from '../data/enemies';
@@ -74,11 +75,12 @@ function deltaLine(a: TowerTier, b: TowerTier, td?: TowerData): string {
   return d.join('');
 }
 /** t103: element + combo hint under a tower's stats (or a teaser when a later tier unlocks it). */
-function elemInfo(td: TowerData, t: TowerTier): string {
-  if (!td.element) return '';
-  const e = ELEMENTS[td.element], cs = combosFor(td.element).map((id) => COMBOS[id].name.charAt(0) + COMBOS[id].name.slice(1).toLowerCase()).join(', ');
+function elemInfo(td: TowerData, t: TowerTier, el: TowerData['element'] | null = td.element): string {
+  if (!el) return '';
+  const e = ELEMENTS[el], cs = [...new Set([...combosFor(el), ...(td.element2 ? combosFor(td.element2) : [])])].map((id) => COMBOS[id].name.charAt(0) + COMBOS[id].name.slice(1).toLowerCase()).join(', ');
   const first = td.tiers.findIndex((x) => !!x.combat?.status);
-  const head = t.combat?.status ? `${e.icon} Hits leave <b style="color:${e.color}">${e.name}</b> (${t.combat.status}s)` : `${e.icon} Tier ${first + 1} unlocks <b style="color:${e.color}">${e.name}</b>`;
+  const e2 = td.element2 ? ELEMENTS[td.element2] : null;
+  const head = t.combat?.status ? `${e.icon} Hits leave <b style="color:${e.color}">${e.name}</b>${e2 ? ` / ${e2.icon} <b style="color:${e2.color}">${e2.name}</b> (alternating)` : ''} (${t.combat.status}s)` : `${e.icon} Tier ${first + 1} unlocks <b style="color:${e.color}">${e.name}</b>`;
   return `<div class="sp-sub sp-elem">${head} · combos: ${cs} <button class="btn mini" id="sp-combos" title="Element combos guide">⚗ ?</button></div>`;
 }
 function bldLine(t: BuildingTier) {
@@ -299,7 +301,7 @@ export class Hud {
       const tags = [t.data.antiAir ? '✈ Anti-air' : '', t.data.armorPiercing ? 'Armor-piercing' : '', t.data.fixedLane ? 'Fixed lane' : '', t.data.hitsAir === false ? 'Air only' : ''].filter(Boolean).join(' · ');
       p.innerHTML = `<div class="sp-head">${th(t.t.visual.sprite ?? t.data.sprite, t.tier, 56)}<div><div class="sp-name">${t.t.name}</div>
         <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${t.branch != null && specsFor(t.data.id) ? ` · <b class="br-tag" style="color:${specsFor(t.data.id)![t.branch].color}">${specsFor(t.data.id)![t.branch].icon} ${specsFor(t.data.id)![t.branch].name}</b>` : ''}${t.fused ? ' · <b class="fused-tag">★ FUSED</b>' : ''}${tags ? ' · ' + tags : ''}</div></div></div>
-        <div class="sp-stats">${statLine(t.t, t.data)}</div>${elemInfo(t.data, t.t)}<div class="sp-live"></div>
+        <div class="sp-stats">${statLine(t.t, t.data)}</div>${elemInfo(t.data, t.t, t.elem)}<div class="sp-live"></div>
         ${n && t.branchPick ? this.branchPanel(t) : n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n, t.data).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n, t.data)}</div></button>` : this.fusePanel(t, fp) + this.recipeBtn(t, rp, rfee)}
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
@@ -435,7 +437,8 @@ export class Hud {
   private liveTower(t: Tower) {
     const el = $('#sel-panel .sp-live'); if (!el) return;
     const b = t.buffs.totals;
-    el.innerHTML = `HP ${Math.ceil(t.health.hp)}/${Math.ceil(t.health.max)}${b.bonusMaxHp || b.bonusRangePct ? ` · <span class="buff">Cover buff +${b.bonusMaxHp}HP +${Math.round(b.bonusRangePct * 100)}% range</span>` : ''}${t.disabled ? ' · <span class="bad">OFFLINE</span>' : ''}`;
+    const pl = proxLines(t);
+    el.innerHTML = `HP ${Math.ceil(t.health.hp)}/${Math.ceil(t.health.max)}${b.bonusMaxHp || b.bonusRangePct ? ` · <span class="buff">Cover buff +${b.bonusMaxHp}HP +${Math.round(b.bonusRangePct * 100)}% range</span>` : ''}${t.disabled ? ' · <span class="bad">OFFLINE</span>' : ''}${pl.length ? `<div class="prox" id="sp-prox"><b>Neighbour effects:</b> ${pl.join(' · ')}</div>` : ''}`;
   }
 
   // ---------------------------------------------------------------- per-frame

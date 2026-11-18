@@ -84,7 +84,7 @@ window.__bot = (() => {
         const cell = (FUSE && fuseSpot(id)) || spotFor(id);
         if (!cell || !g.placeTower(id, cell)) { rot++; continue; }
         rot++; maxTowers = Math.max(maxTowers, g.towers.length);
-      } else if (cheapUp) { if (!cheapUp.upgrade(g)) break; } else break;
+      } else if (cheapUp) { if (!cheapUp.upgrade(g, cheapUp.uid % 2)) break; } else break;
     }
     fuseAll();
     if (g.res.credits > 250 || g.waves.index % 4 === 3) macro();

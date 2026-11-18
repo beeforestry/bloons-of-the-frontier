@@ -1,6 +1,8 @@
 // t103: "Element combos" guide overlay (menu button + tower panel ⚗ button). English with Spanish subtitles.
 import { COMBOS, ELEMENTS, type ComboId } from '../systems/Elements';
-import { TOWERS } from '../data/towers';
+import { TOWERS, towerById } from '../data/towers';
+import { RECIPES, discovered, isDiscovered } from '../data/recipes';
+import { PROX } from '../systems/Proximity';
 import type { Element, TowerData } from '../core/types';
 
 /** Which tower tiers stamp which element, e.g. "Tesla Coil (all tiers)", "Corrosive Glue Slinger (tier 2+)". */
@@ -33,6 +35,13 @@ export function openComboGuide() {
     <br><span class="cg-es">Algunas torres marcan un estado al pegar. Si llega otro distinto, reaccionan.</span></p>
     <div class="cg-els">${els}</div><div class="cg-combos">${cbs}</div>
     <p class="cg-es">🔥 + ❄ se anulan (fire melts frost). Bosses resist freeze · Los jefes resisten el congelamiento.</p>
+    <h3>🤝 Neighbours <small>· Vecinos</small></h3>
+    <p class="cg-intro">Towers built right next to an ❄ ice tower add Chilled on every ${PROX.stampEvery}rd hit, next to a 🔥 fire tower add Burning, next to a ☀ support tower get +${Math.round(PROX.rate * 100)}% attack speed — so neighbours can set up combos.
+    <br><span class="cg-es">Las torres pegadas a una de hielo / fuego añaden su estado cada ${PROX.stampEvery} golpes; junto a una de apoyo, +${Math.round(PROX.rate * 100)}% de velocidad.</span></p>
+    <h3>⚛ Hidden fusions <small>· Fusiones ocultas</small> <span class="cg-count" id="cg-rec-count">${discovered().filter((d) => RECIPES.some((r) => r.id === d)).length}/${RECIPES.length}</span></h3>
+    <div class="cg-recipes">${RECIPES.map((r) => { const k = isDiscovered(r.id), d = towerById(r.id);
+      return `<div class="cg-rec ${k ? 'known' : 'unknown'}" data-recipe="${r.id}">${k ? `<b style="color:${d.mark?.color}">${d.name}</b> = ${towerById(r.a).name} + ${r.b.map((b) => towerById(b).name).join(' / ')}<div>${d.tiers[0].blurb}</div>` : `<b>???</b> <i>${r.hint}</i>`}</div>`; }).join('')}</div>
+    <p class="cg-es">Two DIFFERENT max-tier towers side by side may react… · Dos torres distintas al máximo, juntas, pueden reaccionar…</p>
     <p class="cg-credit">Idea inspired by <a href="https://github.com/vega-star/lightkeepers" target="_blank" rel="noopener">Lightkeepers</a> (vega-star, Apache-2.0).</p>
     <button class="btn" id="cg-close">Close · Cerrar</button></div>`;
   document.body.appendChild(ov);

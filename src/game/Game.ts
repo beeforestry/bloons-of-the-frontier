@@ -9,6 +9,7 @@ import { dist, dist2, rand } from '../core/math';
 import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
 import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
+import { PROX, updateProximity } from '../systems/Proximity';
 import { recipeFor, recipeFee, discover, type Recipe } from '../data/recipes';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
@@ -695,7 +696,9 @@ export class Game {
     const crit = Math.random() < 0.08; if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
     // t103 element status + heavy-impact flag (Shatter); the tank's roof MG (secondary) carries neither
-    { const el = tw.data.element2 && shotNo % 2 === 1 ? tw.data.element2 : tw.elem; if (el && c.status && shotNo < 900) { hit.elem = el; hit.elemDur = c.status; } }
+    { const el = tw.data.element2 && shotNo % 2 === 1 ? tw.data.element2 : tw.elem; if (el && c.status && shotNo < 900) { hit.elem = el; hit.elemDur = c.status; }
+      // t105 proximity: every 3rd shot carries the adjacent ice / fire tower's element instead (combo setups)
+      const pe = tw.prox?.elem; if (pe && shotNo < 900 && shotNo % PROX.stampEvery === 0) { hit.elem = pe; hit.elemDur = PROX.dur; this.stats.proxStamps++; } }
     if (type === 'explosive' || HEAVY_TOWERS.has(tw.data.id)) hit.heavy = shotNo < 900;
     const dmg0 = c.damage * (crit ? 2 : 1);
     if (c.chain) { this.teslaChain(tw, targets[0], dmg0, c, hit); return; }
@@ -1564,6 +1567,7 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ main update
+  private proxT = 0;
   update(dtReal: number) {
     if (this.paused !== this.wasPaused) { this.wasPaused = this.paused; this.resetShake(); }
     if (this.paused || this.state !== 'playing') { this.updateEffects(dtReal); return; }
@@ -1583,6 +1587,7 @@ export class Game {
     if (!this.isClient && !this.overrun) this.waves.update(this, dt);
     this.versus?.update(this, dt);
     this.overrun?.update(this, dt);
+    this.proxT -= dt; if (this.proxT <= 0) { this.proxT = PROX.every; updateProximity(this); }
     for (const t of this.towers) { const n0 = this.projectiles.length; this.curOwner = t.owner; t.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = t.owner; }
     for (const u of this.units) { const n0 = this.projectiles.length; this.curOwner = u.squad.owner; u.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = u.squad.owner; }
     this.curOwner = -1;
