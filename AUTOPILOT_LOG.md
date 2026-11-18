@@ -109,3 +109,16 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 - Hard El Morro with an aggressive fusing bot: the v1 numbers went from wave 62 to 92/94, so fusion was cut to v2 (wave 75/84, still a loss).
 
 **Box note.** The box was reset mid-run. Lost edits were redone, and work is now committed at checkpoints.
+
+## 2026-11-18 — t105: tier-3 specializations, hidden fusion recipes, proximity effects (shipped, ~02:00)
+
+**What shipped.** Details are in `PROGRESS_t105.md`.
+- **Specializations.** 16 towers × 2 permanent branches at the last tier, with panel buttons, a coloured ring + emblem in 2D and FP, and element branches.
+  Fusion only between towers with the same branch. Save and co-op are handled. The validator checks both branches vs tier 2.
+- **Hidden fusions.** Storm Core (Tesla + Frost Oakshield), Inferno Battery (Flame Melon + Dart / Solar Pea), Elite Barracks (Firebase + Sunflower).
+  The button shows "???" until discovered (localStorage). The ⚗ almanac lists them. Co-op and save are handled.
+- **Neighbour effects.** Ice / fire neighbours add their status every 3rd hit; a support neighbour gives +6% rate. Link lines and a panel list show them. Combos trigger.
+
+**Balance.** `balance/t105_specs.md`. Branches were trimmed ~30% after the fusing bot reached wave 92/94 on hard El Morro (now 75/83, same as t104).
+
+**Tests.** e2e_t105 PASS (local A–E, live A–D). t104/t103/t97/t53/t101/t74/t99 PASS. t80 PASS on rerun. Known pre-existing: t78, t101b, e2e_mp versus.

@@ -39,3 +39,10 @@
 - e2e_t104 (count updated to gold FX only), t103, t97, t53, t101, t74: PASS. t80: PASS on rerun (one flaky FP flora check, also flaky on base).
 
 ## Balance — see `balance/t105_*.md|json`
+See `balance/t105_specs.md`. Shipped v2: medium El Morro wins unchanged; Isla de Cabras R1 3/4 (same as base);
+hard El Morro no-fuse 62 → 67; hard El Morro with the fusing bot 75/83 (t104: 75/84). v1 branches (92/94 with fusing) were trimmed ~30%.
+
+## Not done / notes
+- The balance bot doesn't try hidden recipes (they are a discovery feature). Recipe power is gated by the validator (>1.1× every parent) and by cost.
+- Co-op section E is local only (the http relay is blocked as mixed content on the https site).
+- Capa 4 not started.
