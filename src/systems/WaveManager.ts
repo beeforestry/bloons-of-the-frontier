@@ -5,6 +5,7 @@
 import type { WaveData } from '../core/types';
 import type { Game } from '../game/Game';
 import { procWave } from '../data/waves';
+import { boostHpMul } from './Boosts';
 
 export class WaveManager {
   index = 0; // waves completed / index of next wave
@@ -17,6 +18,8 @@ export class WaveManager {
   hpMul = 1;
   /** Per-map enemy HP ease (tighter / longer-lane maps are a touch more forgiving). */
   mapEase = 1;
+  /** t106: Capa-4 power offset (BOOST_HP of the difficulty). */
+  boostHp = 0;
   constructor(readonly waves: WaveData[], readonly diffHp = 1, readonly diffCount = 1, readonly diffLate = 1) {}
   get total() { return this.waves.length; }
   get current() { return this.active ? this.index + 1 : this.index; }
@@ -37,7 +40,7 @@ export class WaveManager {
     const ramp = Math.min(1, 0.35 + this.index / 25);
     // t50: tougher + bigger waves on Medium/Hard, ramped in over waves 15-35 (early economy untouched)
     const lr = Math.max(0, Math.min(1, (this.index - 14) / 20)), cm = 1 + (this.diffCount - 1) * lr;
-    this.hpMul = sc.hp * (this.diffHp > 1 ? 1 + (this.diffHp - 1) * ramp : this.diffHp) * (1 + (this.diffLate - 1) * lr) * this.mapEase;
+    this.hpMul = sc.hp * (this.diffHp > 1 ? 1 + (this.diffHp - 1) * ramp : this.diffHp) * (1 + (this.diffLate - 1) * lr) * this.mapEase * boostHpMul(this.boostHp, this.index);
     w.groups.forEach((grp, gi) => {
       const big = grp.count > 2, n = Math.round(grp.count * (big ? sc.count * cm : 1));
       const spacing = grp.spacing / Math.sqrt(sc.count * (big ? cm : 1));

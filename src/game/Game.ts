@@ -10,7 +10,7 @@ import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
 import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
 import { PROX, updateProximity } from '../systems/Proximity';
-import { CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadMul } from '../systems/Boosts';
+import { BOOST_HP, CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadMul } from '../systems/Boosts';
 import { recipeFor, recipeFee, discover, type Recipe } from '../data/recipes';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
@@ -213,6 +213,7 @@ export class Game {
   constructor(readonly map: MapDef = resolveMap(DEFAULT_MAP), readonly diff: Difficulty = DIFFICULTIES[1]) {
     applyCostMul(diff.cost);
     this.waves = new WaveManager(buildWaves(diff.waves), diff.hp, diff.count, diff.late);
+    this.waves.boostHp = BOOST_HP[diff.id] ?? 0; // t106
     this.waves.mapEase = MAP_EASE[map.id] ?? 1;
     this.res = new ResourceManager(this.bus, diff.cash ?? START_CREDITS);
     this.grid = new PlacementSystem<Tower>(map);

@@ -18,3 +18,8 @@ export const overloadCost = (lvl: number) => Math.round((OVERLOAD.base * OVERLOA
 export const overloadMul = (lvl: number) => 1 + OVERLOAD.dmgPer * lvl;
 /** Tower crit chance at wave index `w` (0-based, 0 before the first wave). */
 export const critChance = (w: number) => Math.min(CRIT.cap, CRIT.base + CRIT.perWave * Math.max(0, w));
+
+/** t106 balance: Overload + Rage + scaling crit add a lot of late power, so enemy HP gets a matching ramp
+ *  (none before wave 10, full `k` by wave 60, then keeps growing on 100-wave runs). Per difficulty. */
+export const BOOST_HP: Record<string, number> = { easy: 0, medium: 0.25, hard: 0.6, impoppable: 0.6 };
+export const boostHpMul = (k: number, i: number) => 1 + k * Math.max(0, Math.min(1, (i - 10) / 50)) * (1 + Math.max(0, i - 60) / 40);
