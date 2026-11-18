@@ -10,6 +10,7 @@ import type { ViewState } from '../render/Renderer';
 import { FACTIONS, factionInfo } from '../data/factions';
 import { TOWERS, towerById } from '../data/towers';
 import { UNITS, unitById } from '../data/units';
+import { canFuseType, fusedTier, fusionFee } from '../data/fusion';
 import { Faction, TARGETING_ORDER, TARGETING_LABEL, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
 import { ABILITIES } from '../data/abilities';
 import { ENEMIES } from '../data/enemies';
@@ -281,7 +282,8 @@ export class Hud {
     if (!t && !s && this.shortcutPanel(p)) return;
     if (!t && !s && this.basePanel(p)) return;
     if (!t && grp.length > 1) return this.groupPanel(p, grp);
-    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}`
+    const fp = t && !t.nextTier && !t.fused ? g.fusionPartner(t) : null;
+    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}:${t.fused}:${fp?.uid ?? 0}:${fp ? g.res.credits >= fusionFee(t.data) : 0}`
       : s ? `s${s.uid}:${s.units.length}:${g.unitTier(s.data.id)}:${s.units.filter((u) => u.garrison).length}:${s.stance}:${s.targeting}:${s.units.map((u) => u.stars).join('')}:${this.view.queueMode}:${this.view.patrolMode}:${s.auto}:${s.manual}:${s.autoTask}` : '';
     if (key === this.lastSel) { if (t) this.liveTower(t); return; }
     this.lastSel = key;
@@ -293,9 +295,9 @@ export class Hud {
       p.style.setProperty('--fc', f.color);
       const tags = [t.data.antiAir ? '✈ Anti-air' : '', t.data.armorPiercing ? 'Armor-piercing' : '', t.data.fixedLane ? 'Fixed lane' : '', t.data.hitsAir === false ? 'Air only' : ''].filter(Boolean).join(' · ');
       p.innerHTML = `<div class="sp-head">${th(t.t.visual.sprite ?? t.data.sprite, t.tier, 56)}<div><div class="sp-name">${t.t.name}</div>
-        <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${tags ? ' · ' + tags : ''}</div></div></div>
+        <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${t.fused ? ' · <b class="fused-tag">★ FUSED</b>' : ''}${tags ? ' · ' + tags : ''}</div></div></div>
         <div class="sp-stats">${statLine(t.t, t.data)}</div>${elemInfo(t.data, t.t)}<div class="sp-live"></div>
-        ${n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n, t.data).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n, t.data)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
+        ${n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n, t.data).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n, t.data)}</div></button>` : this.fusePanel(t, fp)}
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
         ${t.data.movable && this.mine(t) ? `<div class="sp-sub">Click the map to relocate${t.data.airborne ? ' (flies over water)' : ''}${t.data.autoChase && t.tier >= 2 ? ' · Hunter Patrol auto-chases' : ''}${t.t.combat?.secondary ? ' · Roof gunner active' : ''}</div>` : ''}
@@ -304,6 +306,7 @@ export class Hud {
         ${t.isFarm ? '<div class="sp-sub">Tip: your free Sprout Farmhand can pack farms — press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
       const cg = $('#sp-combos', p); if (cg) cg.onclick = () => openComboGuide();
       const up = $('#sp-up', p); if (up) up.onclick = () => { t.upgrade(g); this.lastSel = ''; this.refresh(true); };
+      const fu = $('#sp-fuse', p); if (fu && fp) fu.onclick = () => { g.fuseTowers(t, fp); this.lastSel = ''; this.refresh(true); };
       for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-tgt]'))) el.onclick = () => { g.setTargeting(t, el.dataset.tgt as never); this.lastSel = ''; this.refresh(true); };
       const ab = $('#sp-abil', p); if (ab) ab.onclick = () => t.useAbility(g);
       const ps = $('#sp-possess', p); if (ps) ps.onclick = () => this.possessSelected();
@@ -399,6 +402,17 @@ export class Hud {
   }
   /** Hotkeys 1..n fire the ability bar. */
   abilityUse: (() => void)[] = [];
+  /** t104: Fuse button (partner adjacent) / how-to hint (max tier, no partner) / fused badge. */
+  private fusePanel(t: Tower, fp: Tower | null): string {
+    if (t.fused) return '<div class="maxed fused">★ FUSED super-tower · fully upgraded</div>';
+    if (!canFuseType(t.data)) return '<div class="maxed">★ Max tier</div>';
+    const ft = fusedTier(t.data), fee = ft.cost;
+    if (fp && this.mine(t)) {
+      const dl = deltaLine(t.t, ft, t.data);
+      return `<button class="btn up fuse" id="sp-fuse" title="Merge the highlighted neighbour into this tower: frees one spot" ${this.g.res.credits < fee ? 'disabled' : ''}>⚛ Fuse with neighbour <b>¢${fee}</b><div class="delta">${dl}</div></button>`;
+    }
+    return `<div class="maxed">★ Max tier</div><div class="sp-sub fuse-hint">⚛ Fusion: build a 2nd max-tier ${t.data.name} right next to this one, then fuse them into a ★ super-tower (¢${fee}).</div>`;
+  }
   private liveTower(t: Tower) {
     const el = $('#sel-panel .sp-live'); if (!el) return;
     const b = t.buffs.totals;

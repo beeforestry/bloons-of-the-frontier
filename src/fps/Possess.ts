@@ -93,6 +93,24 @@ function elemBadge(e: Enemy): Badge | null {
 }
 const BADGES = new Map<Badge, THREE.CanvasTexture>();
 /** Vector-drawn badge (no emoji font needed): dark disc + coloured glyph. */
+let fusedBadgeTex: THREE.CanvasTexture | null = null;
+/** t104 fused-tower decoration (world units): two flat gold rings, an additive light column, a ★ badge sprite. */
+function fusedGroup(r: number): THREE.Group {
+  const gr = new THREE.Group(), gold = 0xffd84a;
+  const mat = (o: number) => new THREE.MeshBasicMaterial({ color: gold, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
+  const r1 = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.05, 6, 48), mat(0.9)); r1.rotation.x = -Math.PI / 2;
+  const r2 = new THREE.Mesh(new THREE.RingGeometry(r * 1.12, r * 1.2, 48, 1, 0, Math.PI * 1.6), mat(0.7)); r2.rotation.x = -Math.PI / 2;
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.35, r * 0.6, 1, 24, 1, true), mat(0.06));
+  if (!fusedBadgeTex) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d')!;
+    c.fillStyle = '#2a1d00'; c.strokeStyle = '#ffd84a'; c.lineWidth = 5; c.beginPath(); c.arc(32, 32, 27, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#ffd84a'; c.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + (k * Math.PI) / 5, rr = k % 2 ? 8 : 19; c.lineTo(32 + Math.cos(a) * rr, 33 + Math.sin(a) * rr); } c.closePath(); c.fill();
+    fusedBadgeTex = new THREE.CanvasTexture(cv);
+  }
+  const badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: fusedBadgeTex, transparent: true, fog: false })); badge.scale.setScalar(Math.max(0.35, r * 0.32)); badge.renderOrder = 5;
+  gr.add(r1, r2, col, badge); gr.name = 'fusedFx';
+  return gr;
+}
 function badgeTex(k: Badge): THREE.CanvasTexture {
   let t = BADGES.get(k); if (t) return t;
   const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d')!;
@@ -961,6 +979,7 @@ export class Possess {
     this.syncParked();
     this.syncEntities(dt);
     this.syncElemIcons();
+    this.syncFused();
     this.hud(dt);
     return true;
   }
@@ -1009,6 +1028,25 @@ export class Possess {
   }
   /** t103: floating status badges (drop / flame / snowflake / bolt / ice / steam) over the nearest enemies that carry one. */
   private elemIcons: THREE.Sprite[] = [];
+  /** t104: fused towers get a gold double halo ring, a soft light column and a ★ medallion over the model. */
+  fusedFx = new Map<Tower, THREE.Group>();
+  private syncFused() {
+    const g = this.g, live = new Set<Tower>(), now = performance.now() / 1000;
+    for (const t of g.towers) {
+      if (!t.alive || !t.fused) continue; live.add(t);
+      let fx = this.fusedFx.get(t);
+      if (!fx) { fx = fusedGroup(g.towerRadius(t.data.id) * S * 1.7); this.scene.add(fx); this.fusedFx.set(t, fx); }
+      const m = this.towerModels.get(t);
+      if (m && (!fx.userData.h || now - (fx.userData.at as number) > 1)) { const bb = new THREE.Box3().setFromObject(m.root); fx.userData.h = Math.max(0.6, bb.max.y - bb.min.y); fx.userData.at = now; }
+      const h = (fx.userData.h as number) || 1.2, mine = t === this.obj;
+      fx.position.set(t.x * S, standH(g.map, t.x, t.y) + 0.04, t.y * S);
+      const [r1, r2, col, badge] = fx.children as [THREE.Mesh, THREE.Mesh, THREE.Mesh, THREE.Sprite];
+      r1.rotation.z = now * 0.8; r2.rotation.z = -now * 1.3; r2.position.y = 0.15 + Math.sin(now * 2.2) * 0.08;
+      col.scale.y = h * 1.6; col.position.y = h * 0.8; (col.material as THREE.MeshBasicMaterial).opacity = 0.05 + 0.03 * Math.sin(now * 3);
+      badge.position.y = h + 0.3; badge.visible = !mine; col.visible = !mine;
+    }
+    for (const [t, fx] of this.fusedFx) if (!live.has(t)) { this.scene.remove(fx); this.fusedFx.delete(t); }
+  }
   private syncElemIcons() {
     const cam = this.camera.position, list: [number, Enemy, { x: number; y: number; z: number }][] = [];
     for (const [e, p] of this.seen) { if (!e.alive || !elemBadge(e)) continue; list.push([(p.x - cam.x) ** 2 + (p.z - cam.z) ** 2, e, p]); }

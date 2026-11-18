@@ -11,6 +11,10 @@ export interface ProjectileOpts {
   /** t45 acid: lingering corrosive puddle left where it bursts. */
   pool?: { r: number; dur: number; dps: number };
   hitsAir?: boolean; hitsGround?: boolean; scale?: number; hit?: HitOpts;
+  /** t104: counted in g.stats.projShots / projHits (predictive-aim hit-rate metric). */
+  track?: boolean;
+  /** t104: the centre (aimed) shot of a volley — counted separately in projAimShots / projAimHits. */
+  aimed?: boolean;
 }
 
 export class Projectile {
@@ -50,6 +54,7 @@ export class Projectile {
       const t = Math.min(1, this.lobT);
       this.x = this.sx + (o.lob.tx - this.sx) * t; this.y = this.sy + (o.lob.ty - this.sy) * t;
       this.height = Math.sin(t * Math.PI) * (o.lob.arc ?? 90);
+      if (t >= 1 && o.track) { const R = o.splash ?? 40; if (g.enemies.some((e) => e.alive && dist2(e, this) <= (R + e.data.radius) ** 2 && canHit(e, { hitsAir: o.hitsAir, hitsGround: o.hitsGround, antiAir: o.hit?.antiAir }))) { g.stats.projHits++; if (o.aimed) g.stats.projAimHits++; } }
       if (t >= 1) { this.alive = false; g.splash(this.x, this.y, o.splash ?? 40, o.damage, o.type, this.origin, o.kind === 'melon' ? 'boom_fire' : o.kind.startsWith('acid') ? 'acid' : 'boom', o.hit, o.slow); if (o.pool) g.acidPool(this.x, this.y, o.pool, o.slow, o.type, o.hit); }
       return;
     }
@@ -67,6 +72,7 @@ export class Projectile {
       if (!e.alive || this.hit.has(e)) continue;
       if (!canHit(e, { hitsAir: o.hitsAir, hitsGround: o.hitsGround, antiAir: o.hit?.antiAir })) continue;
       if (dist2(e, this) > (e.data.radius + 6) ** 2) continue;
+      if (o.track && this.hit.size === 0) { g.stats.projHits++; if (o.aimed) g.stats.projAimHits++; }
       this.hit.add(e);
       if (o.splash) { this.alive = false; g.splash(this.x, this.y, o.splash, o.damage, o.type, this.origin, o.kind === 'flak' ? 'boom_fire' : o.kind.startsWith('acid') ? 'acid' : 'boom', o.hit, o.slow); if (o.pool) g.acidPool(this.x, this.y, o.pool, o.slow, o.type, o.hit); return; }
       e.takeDamage(g, o.damage, o.type, this.origin, o.hit);

@@ -1,0 +1,602 @@
+[
+ {
+  "map": "morro",
+  "tower": "dart_monkey",
+  "off": {
+   "id": "dart_monkey",
+   "tier": 2,
+   "shots": 168,
+   "hits": 129,
+   "aim": 56,
+   "aimHits": 52
+  },
+  "on": {
+   "id": "dart_monkey",
+   "tier": 2,
+   "shots": 168,
+   "hits": 135,
+   "aim": 56,
+   "aimHits": 56
+  },
+  "off%": 76.8,
+  "on%": 80.4,
+  "offA%": 92.9,
+  "onA%": 100.0
+ },
+ {
+  "map": "morro",
+  "tower": "ninja_monkey",
+  "off": {
+   "id": "ninja_monkey",
+   "tier": 2,
+   "shots": 312,
+   "hits": 179,
+   "aim": 156,
+   "aimHits": 124
+  },
+  "on": {
+   "id": "ninja_monkey",
+   "tier": 2,
+   "shots": 312,
+   "hits": 176,
+   "aim": 156,
+   "aimHits": 133
+  },
+  "off%": 57.4,
+  "on%": 56.4,
+  "offA%": 79.5,
+  "onA%": 85.3
+ },
+ {
+  "map": "morro",
+  "tower": "wizard_monkey",
+  "off": {
+   "id": "wizard_monkey",
+   "tier": 2,
+   "shots": 104,
+   "hits": 104,
+   "aim": 104,
+   "aimHits": 104
+  },
+  "on": {
+   "id": "wizard_monkey",
+   "tier": 2,
+   "shots": 104,
+   "hits": 104,
+   "aim": 104,
+   "aimHits": 104
+  },
+  "off%": 100.0,
+  "on%": 100.0,
+  "offA%": 100.0,
+  "onA%": 100.0
+ },
+ {
+  "map": "morro",
+  "tower": "solar_pea_fusion",
+  "off": {
+   "id": "solar_pea_fusion",
+   "tier": 2,
+   "shots": 192,
+   "hits": 149,
+   "aim": 64,
+   "aimHits": 60
+  },
+  "on": {
+   "id": "solar_pea_fusion",
+   "tier": 2,
+   "shots": 192,
+   "hits": 156,
+   "aim": 64,
+   "aimHits": 64
+  },
+  "off%": 77.6,
+  "on%": 81.2,
+  "offA%": 93.8,
+  "onA%": 100.0
+ },
+ {
+  "map": "morro",
+  "tower": "repeater_gatling",
+  "off": {
+   "id": "repeater_gatling",
+   "tier": 2,
+   "shots": 279,
+   "hits": 131,
+   "aim": 93,
+   "aimHits": 46
+  },
+  "on": {
+   "id": "repeater_gatling",
+   "tier": 2,
+   "shots": 279,
+   "hits": 131,
+   "aim": 93,
+   "aimHits": 46
+  },
+  "off%": 47.0,
+  "on%": 47.0,
+  "offA%": 49.5,
+  "onA%": 49.5
+ },
+ {
+  "map": "morro",
+  "tower": "gatling_cherry_bomber",
+  "off": {
+   "id": "gatling_cherry_bomber",
+   "tier": 2,
+   "shots": 196,
+   "hits": 185,
+   "aim": 196,
+   "aimHits": 185
+  },
+  "on": {
+   "id": "gatling_cherry_bomber",
+   "tier": 2,
+   "shots": 198,
+   "hits": 198,
+   "aim": 198,
+   "aimHits": 198
+  },
+  "off%": 94.4,
+  "on%": 100.0,
+  "offA%": 94.4,
+  "onA%": 100.0
+ },
+ {
+  "map": "morro",
+  "tower": "star_emperor",
+  "off": {
+   "id": "star_emperor",
+   "tier": 2,
+   "shots": 186,
+   "hits": 131,
+   "aim": 62,
+   "aimHits": 55
+  },
+  "on": {
+   "id": "star_emperor",
+   "tier": 2,
+   "shots": 186,
+   "hits": 139,
+   "aim": 62,
+   "aimHits": 61
+  },
+  "off%": 70.4,
+  "on%": 74.7,
+  "offA%": 88.7,
+  "onA%": 98.4
+ },
+ {
+  "map": "morro",
+  "tower": "unsc_autoturret",
+  "off": {
+   "id": "unsc_autoturret",
+   "tier": 2,
+   "shots": 344,
+   "hits": 328,
+   "aim": 344,
+   "aimHits": 328
+  },
+  "on": {
+   "id": "unsc_autoturret",
+   "tier": 2,
+   "shots": 344,
+   "hits": 343,
+   "aim": 344,
+   "aimHits": 343
+  },
+  "off%": 95.3,
+  "on%": 99.7,
+  "offA%": 95.3,
+  "onA%": 99.7
+ },
+ {
+  "map": "morro",
+  "tower": "unsc_flak",
+  "off": {
+   "id": "unsc_flak",
+   "tier": 2,
+   "shots": 237,
+   "hits": 169,
+   "aim": 79,
+   "aimHits": 78
+  },
+  "on": {
+   "id": "unsc_flak",
+   "tier": 2,
+   "shots": 237,
+   "hits": 171,
+   "aim": 79,
+   "aimHits": 78
+  },
+  "off%": 71.3,
+  "on%": 72.2,
+  "offA%": 98.7,
+  "onA%": 98.7
+ },
+ {
+  "map": "morro",
+  "tower": "unsc_tank",
+  "off": {
+   "id": "unsc_tank",
+   "tier": 2,
+   "shots": 145,
+   "hits": 142,
+   "aim": 145,
+   "aimHits": 142
+  },
+  "on": {
+   "id": "unsc_tank",
+   "tier": 2,
+   "shots": 145,
+   "hits": 142,
+   "aim": 145,
+   "aimHits": 142
+  },
+  "off%": 97.9,
+  "on%": 97.9,
+  "offA%": 97.9,
+  "onA%": 97.9
+ },
+ {
+  "map": "morro",
+  "tower": "flame_melon_mortar",
+  "off": {
+   "id": "flame_melon_mortar",
+   "tier": 2,
+   "shots": 26,
+   "hits": 26,
+   "aim": 26,
+   "aimHits": 26
+  },
+  "on": {
+   "id": "flame_melon_mortar",
+   "tier": 2,
+   "shots": 26,
+   "hits": 26,
+   "aim": 26,
+   "aimHits": 26
+  },
+  "off%": 100.0,
+  "on%": 100.0,
+  "offA%": 100.0,
+  "onA%": 100.0
+ },
+ {
+  "map": "morro",
+  "tower": "glue_slinger",
+  "off": {
+   "id": "glue_slinger",
+   "tier": 2,
+   "shots": 56,
+   "hits": 55,
+   "aim": 56,
+   "aimHits": 55
+  },
+  "on": {
+   "id": "glue_slinger",
+   "tier": 2,
+   "shots": 56,
+   "hits": 55,
+   "aim": 56,
+   "aimHits": 55
+  },
+  "off%": 98.2,
+  "on%": 98.2,
+  "offA%": 98.2,
+  "onA%": 98.2
+ },
+ {
+  "map": "tropical",
+  "tower": "dart_monkey",
+  "off": {
+   "id": "dart_monkey",
+   "tier": 2,
+   "shots": 168,
+   "hits": 114,
+   "aim": 56,
+   "aimHits": 49
+  },
+  "on": {
+   "id": "dart_monkey",
+   "tier": 2,
+   "shots": 168,
+   "hits": 110,
+   "aim": 56,
+   "aimHits": 56
+  },
+  "off%": 67.9,
+  "on%": 65.5,
+  "offA%": 87.5,
+  "onA%": 100.0
+ },
+ {
+  "map": "tropical",
+  "tower": "ninja_monkey",
+  "off": {
+   "id": "ninja_monkey",
+   "tier": 2,
+   "shots": 312,
+   "hits": 138,
+   "aim": 156,
+   "aimHits": 108
+  },
+  "on": {
+   "id": "ninja_monkey",
+   "tier": 2,
+   "shots": 312,
+   "hits": 139,
+   "aim": 156,
+   "aimHits": 116
+  },
+  "off%": 44.2,
+  "on%": 44.6,
+  "offA%": 69.2,
+  "onA%": 74.4
+ },
+ {
+  "map": "tropical",
+  "tower": "wizard_monkey",
+  "off": {
+   "id": "wizard_monkey",
+   "tier": 2,
+   "shots": 108,
+   "hits": 106,
+   "aim": 108,
+   "aimHits": 106
+  },
+  "on": {
+   "id": "wizard_monkey",
+   "tier": 2,
+   "shots": 108,
+   "hits": 106,
+   "aim": 108,
+   "aimHits": 106
+  },
+  "off%": 98.1,
+  "on%": 98.1,
+  "offA%": 98.1,
+  "onA%": 98.1
+ },
+ {
+  "map": "tropical",
+  "tower": "solar_pea_fusion",
+  "off": {
+   "id": "solar_pea_fusion",
+   "tier": 2,
+   "shots": 192,
+   "hits": 130,
+   "aim": 64,
+   "aimHits": 55
+  },
+  "on": {
+   "id": "solar_pea_fusion",
+   "tier": 2,
+   "shots": 192,
+   "hits": 126,
+   "aim": 64,
+   "aimHits": 64
+  },
+  "off%": 67.7,
+  "on%": 65.6,
+  "offA%": 85.9,
+  "onA%": 100.0
+ },
+ {
+  "map": "tropical",
+  "tower": "repeater_gatling",
+  "off": {
+   "id": "repeater_gatling",
+   "tier": 2,
+   "shots": 294,
+   "hits": 140,
+   "aim": 98,
+   "aimHits": 46
+  },
+  "on": {
+   "id": "repeater_gatling",
+   "tier": 2,
+   "shots": 294,
+   "hits": 140,
+   "aim": 98,
+   "aimHits": 46
+  },
+  "off%": 47.6,
+  "on%": 47.6,
+  "offA%": 46.9,
+  "onA%": 46.9
+ },
+ {
+  "map": "tropical",
+  "tower": "gatling_cherry_bomber",
+  "off": {
+   "id": "gatling_cherry_bomber",
+   "tier": 2,
+   "shots": 202,
+   "hits": 185,
+   "aim": 202,
+   "aimHits": 185
+  },
+  "on": {
+   "id": "gatling_cherry_bomber",
+   "tier": 2,
+   "shots": 202,
+   "hits": 201,
+   "aim": 202,
+   "aimHits": 201
+  },
+  "off%": 91.6,
+  "on%": 99.5,
+  "offA%": 91.6,
+  "onA%": 99.5
+ },
+ {
+  "map": "tropical",
+  "tower": "star_emperor",
+  "off": {
+   "id": "star_emperor",
+   "tier": 2,
+   "shots": 186,
+   "hits": 114,
+   "aim": 62,
+   "aimHits": 52
+  },
+  "on": {
+   "id": "star_emperor",
+   "tier": 2,
+   "shots": 186,
+   "hits": 108,
+   "aim": 62,
+   "aimHits": 61
+  },
+  "off%": 61.3,
+  "on%": 58.1,
+  "offA%": 83.9,
+  "onA%": 98.4
+ },
+ {
+  "map": "tropical",
+  "tower": "unsc_autoturret",
+  "off": {
+   "id": "unsc_autoturret",
+   "tier": 2,
+   "shots": 344,
+   "hits": 289,
+   "aim": 344,
+   "aimHits": 289
+  },
+  "on": {
+   "id": "unsc_autoturret",
+   "tier": 2,
+   "shots": 344,
+   "hits": 339,
+   "aim": 344,
+   "aimHits": 339
+  },
+  "off%": 84.0,
+  "on%": 98.5,
+  "offA%": 84.0,
+  "onA%": 98.5
+ },
+ {
+  "map": "tropical",
+  "tower": "unsc_flak",
+  "off": {
+   "id": "unsc_flak",
+   "tier": 2,
+   "shots": 237,
+   "hits": 138,
+   "aim": 79,
+   "aimHits": 65
+  },
+  "on": {
+   "id": "unsc_flak",
+   "tier": 2,
+   "shots": 237,
+   "hits": 144,
+   "aim": 79,
+   "aimHits": 78
+  },
+  "off%": 58.2,
+  "on%": 60.8,
+  "offA%": 82.3,
+  "onA%": 98.7
+ },
+ {
+  "map": "tropical",
+  "tower": "unsc_tank",
+  "off": {
+   "id": "unsc_tank",
+   "tier": 2,
+   "shots": 149,
+   "hits": 141,
+   "aim": 149,
+   "aimHits": 141
+  },
+  "on": {
+   "id": "unsc_tank",
+   "tier": 2,
+   "shots": 150,
+   "hits": 145,
+   "aim": 150,
+   "aimHits": 145
+  },
+  "off%": 94.6,
+  "on%": 96.7,
+  "offA%": 94.6,
+  "onA%": 96.7
+ },
+ {
+  "map": "tropical",
+  "tower": "unsc_destroyer",
+  "off": {
+   "id": "unsc_destroyer",
+   "tier": 2,
+   "shots": 120,
+   "hits": 87,
+   "aim": 120,
+   "aimHits": 87
+  },
+  "on": {
+   "id": "unsc_destroyer",
+   "tier": 2,
+   "shots": 120,
+   "hits": 85,
+   "aim": 120,
+   "aimHits": 85
+  },
+  "off%": 72.5,
+  "on%": 70.8,
+  "offA%": 72.5,
+  "onA%": 70.8
+ },
+ {
+  "map": "tropical",
+  "tower": "flame_melon_mortar",
+  "off": {
+   "id": "flame_melon_mortar",
+   "tier": 2,
+   "shots": 26,
+   "hits": 26,
+   "aim": 26,
+   "aimHits": 26
+  },
+  "on": {
+   "id": "flame_melon_mortar",
+   "tier": 2,
+   "shots": 26,
+   "hits": 26,
+   "aim": 26,
+   "aimHits": 26
+  },
+  "off%": 100.0,
+  "on%": 100.0,
+  "offA%": 100.0,
+  "onA%": 100.0
+ },
+ {
+  "map": "tropical",
+  "tower": "glue_slinger",
+  "off": {
+   "id": "glue_slinger",
+   "tier": 2,
+   "shots": 56,
+   "hits": 54,
+   "aim": 56,
+   "aimHits": 54
+  },
+  "on": {
+   "id": "glue_slinger",
+   "tier": 2,
+   "shots": 56,
+   "hits": 53,
+   "aim": 56,
+   "aimHits": 53
+  },
+  "off%": 96.4,
+  "on%": 94.6,
+  "offA%": 96.4,
+  "onA%": 94.6
+ }
+]

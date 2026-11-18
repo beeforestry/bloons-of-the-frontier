@@ -900,11 +900,14 @@ export class Renderer {
     }
     const big = (t.data.footprint ?? 1) > 1, top = big ? (t.data.airborne ? 230 : 140) : 38, pw = big ? 2.6 : 1;
     if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30 * pw, PCOLORS[t.owner] ?? '#fff');
+    if (t.fused) this.fusedAura(t, pw, big ? 6 : 18);
+    if (sel && !t.fused && !t.nextTier) { const fp = this.g.fusionPartner(t); if (fp) this.fusionLink(t, fp); }
     if (t.disabled) c.globalAlpha = 0.55;
     this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aimVis, false, t.recoil, (t.uid % 7) * 0.9, { charge: t.charge, since: t.sinceFire, engaged: t.engaged });
     if (t.hypno) { const n = t.hypno.mine.filter((e) => e.alive).length; if (n) this.label(t.x, t.y - 44, '🌀'.repeat(n), '#ff7ae6', 11); }
     c.globalAlpha = 1;
     this.pips(t.x, t.y + (big ? 74 : 26), t.tier, t.t.visual.glow);
+    if (t.fused) this.fusedBadge(t.x + 22 * pw, t.y - top + 6);
     if (t.possessedBy >= 0) this.possessBadge(t.x, t.y - top - 16, t.possessedBy);
     if (t.health.frac < 0.999 || (this.g.net !== 'solo' && this.g.mode === 'coop')) this.bar(t.x, t.y - top, big ? 84 : 40, t.health.frac, t.disabled ? '#888' : this.g.net !== 'solo' && this.g.mode === 'coop' ? PCOLORS[t.owner] ?? '#5fe06a' : '#5fe06a', t.uid);
     if (t.disabled) this.label(t.x, t.y - 46, 'OFFLINE', '#ff8a7a');
@@ -915,6 +918,38 @@ export class Renderer {
       const pu = t.pulse; c.strokeStyle = pu > 0 ? `rgba(255,${Math.round(220 - pu * 120)},120,${0.6 + pu * 0.4})` : '#fff'; c.lineWidth = 2 + pu * 3;
       c.setLineDash(sel ? [5, 4] : []); c.beginPath(); c.ellipse(t.x, t.y + (big ? 6 : 18), 30 * pw + pu * 10, 12 * pw + pu * 4, 0, 0, 7); c.stroke(); c.setLineDash([]);
     }
+  }
+  /** t104 fused super-tower: pulsing gold ground glow + two counter-rotating dashed rings + orbiting sparks. */
+  private fusedAura(t: Tower, pw: number, dy: number) {
+    const c = this.ctx, T = this.g.time, R = 34 * pw, y = t.y + dy, pulse = 0.5 + 0.5 * Math.sin(T * 3 + t.uid);
+    c.save();
+    const gr = c.createRadialGradient(t.x, y, 2, t.x, y, R * 1.5);
+    gr.addColorStop(0, `rgba(255,216,74,${0.35 + pulse * 0.2})`); gr.addColorStop(1, 'rgba(255,216,74,0)');
+    c.fillStyle = gr; c.beginPath(); c.ellipse(t.x, y, R * 1.5, R * 0.62, 0, 0, 7); c.fill();
+    c.lineWidth = 2.5; c.strokeStyle = '#ffd84a'; c.setLineDash([9, 6]); c.lineDashOffset = -T * 30;
+    c.beginPath(); c.ellipse(t.x, y, R * 1.12, R * 0.45, 0, 0, 7); c.stroke();
+    c.strokeStyle = 'rgba(255,243,176,0.8)'; c.lineWidth = 1.5; c.setLineDash([4, 8]); c.lineDashOffset = T * 40;
+    c.beginPath(); c.ellipse(t.x, y, R * 1.32, R * 0.53, 0, 0, 7); c.stroke(); c.setLineDash([]);
+    for (let i = 0; i < 3; i++) { const a = T * 1.6 + (i * Math.PI * 2) / 3; this.additive(IMG.fx_spark, t.x + Math.cos(a) * R * 1.2, y + Math.sin(a) * R * 0.48 - 6, 14, a, 0.85); }
+    c.restore();
+  }
+  /** Gold ★ medallion over a fused tower. */
+  private fusedBadge(x: number, y: number) {
+    const c = this.ctx;
+    c.save(); c.fillStyle = '#2a1d00'; c.strokeStyle = '#ffd84a'; c.lineWidth = 2;
+    c.beginPath(); c.arc(x, y, 9, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#ffd84a'; c.beginPath();
+    for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + (k * Math.PI) / 5, r = k % 2 ? 2.8 : 6.6; c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
+    c.closePath(); c.fill(); c.restore();
+  }
+  /** Selected max-tier tower: dashed gold link to the neighbour it can fuse with. */
+  private fusionLink(a: Tower, b: Tower) {
+    const c = this.ctx, T = this.g.time;
+    c.save(); c.strokeStyle = 'rgba(255,216,74,0.9)'; c.lineWidth = 3; c.setLineDash([6, 6]); c.lineDashOffset = -T * 24;
+    c.beginPath(); c.moveTo(a.x, a.y + 10); c.lineTo(b.x, b.y + 10); c.stroke(); c.setLineDash([]);
+    c.beginPath(); c.ellipse(b.x, b.y + 18, 30, 12, 0, 0, 7); c.stroke();
+    c.restore();
+    this.label((a.x + b.x) / 2, (a.y + b.y) / 2 - 8, '⚛ fuse', '#ffd84a', 11);
   }
   private pips(x: number, y: number, tier: number, glow?: string) {
     const c = this.ctx;

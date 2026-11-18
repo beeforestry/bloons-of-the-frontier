@@ -1,0 +1,1 @@
+dart_monkey,ninja_monkey,unsc_destroyer,gatling_cherry_bomber,unsc_autoturret,unsc_beacon,tesla_coil,wizard_monkey,unsc_destroyer,unsc_flak,repeater_gatling,chomper,boomerang_monkey,sniper_monkey,glue_slinger,hypno_shroom,arcane_obelisk,star_emperor,unsc_rail,flame_melon_mortar,super_monkey

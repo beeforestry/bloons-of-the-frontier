@@ -4,7 +4,7 @@ Usage: /workspace/.venv-pw/bin/python tests/balance_sim.py [--maps garden,jungle
 import argparse, functools, http.server, json, os, socketserver, threading, time
 from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ap = argparse.ArgumentParser(); ap.add_argument('--maps', default='garden,jungle,fortress,morro'); ap.add_argument('--diffs', default='easy,medium,hard,impoppable'); ap.add_argument('--out', default='sim'); ap.add_argument('--dist', default=''); ap.add_argument('--rot', default=''); ap.add_argument('--water', action='store_true'); ap.add_argument('--ease', type=float, default=0); ap.add_argument('--pre', default=''); args = ap.parse_args()
+ap = argparse.ArgumentParser(); ap.add_argument('--maps', default='garden,jungle,fortress,morro'); ap.add_argument('--diffs', default='easy,medium,hard,impoppable'); ap.add_argument('--out', default='sim'); ap.add_argument('--dist', default=''); ap.add_argument('--rot', default=''); ap.add_argument('--water', action='store_true'); ap.add_argument('--ease', type=float, default=0); ap.add_argument('--pre', default=''); ap.add_argument('--fuse', action='store_true'); args = ap.parse_args()
 class Q(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 h = socketserver.TCPServer(('127.0.0.1', 0), functools.partial(Q, directory=args.dist or os.path.join(ROOT, 'dist'))); threading.Thread(target=h.serve_forever, daemon=True).start()
@@ -18,6 +18,7 @@ with sync_playwright() as p:
             pg.goto(f'http://127.0.0.1:{h.server_address[1]}/index.html?map={m}&diff={d}'); pg.wait_for_function('window.__game')
             if args.rot: pg.evaluate(f'window.__BOT_ROT = {json.dumps(args.rot.split(","))}')
             if args.water: pg.evaluate('window.__BOT_WATER = true')
+            if args.fuse: pg.evaluate('window.__BOT_FUSE = true')
             if args.ease: pg.evaluate(f'window.__game.g.waves.mapEase = {args.ease}')
             if args.pre: pg.evaluate(args.pre)
             pg.evaluate(BOT)
@@ -28,7 +29,7 @@ with sync_playwright() as p:
                 last = r; curve.append((r['wave'], r['hq'], r['credits'], r['towers']))
                 if r['state'] != 'playing' or r['wave'] >= total or time.time() - t0 > 420: break
             row = {'map': m, 'diff': d, 'total': total, 'reached': last['wave'] if last else 0, 'won': bool(last and last['state'] == 'won'),
-                   'hq': last['hq'] if last else 0, 'hqMax': last['hqMax'] if last else 0, 'towers': last['towers'] if last else 0, 'leaked': last['leaked'] if last else 0, 'secs': round(time.time() - t0), 'curve': curve}
+                   'hq': last['hq'] if last else 0, 'hqMax': last['hqMax'] if last else 0, 'towers': last['towers'] if last else 0, 'leaked': last['leaked'] if last else 0, 'fusions': last.get('fusions', 0) if last else 0, 'secs': round(time.time() - t0), 'curve': curve}
             print({k: v for k, v in row.items() if k != 'curve'}, curve[-6:], flush=True); res.append(row); pg.close()
     b.close()
 os.makedirs(os.path.join(ROOT, 'balance'), exist_ok=True)

@@ -3,6 +3,7 @@
 // Autosaved at each wave end and on page hide; the main menu offers "Continue".
 // A save that fails the version / map-size check is ignored (and cleared).
 // =============================================================================
+import { fusionFee } from '../data/fusion';
 import type { Game } from './Game';
 import type { TargetingMode } from '../core/types';
 import type { DifficultyId } from '../data/difficulty';
@@ -15,7 +16,7 @@ export interface SaveData {
   v: number; at: number; map: string; mapW: number; mapH: number; diff: DifficultyId;
   wave: number; freeplay: boolean; credits: number; scrap: number; energy: number; hq: number;
   unitTiers: Record<string, number>; armory: string[];
-  towers: { id: string; c: number; r: number; x?: number; y?: number; tier: number; tg: TargetingMode }[];
+  towers: { id: string; c: number; r: number; x?: number; y?: number; tier: number; tg: TargetingMode; fu?: number }[];
   buildings: { pad: number; id: string; tier: number }[];
   squads: { id: string; x: number; y: number; n: number; auto: boolean; tg: TargetingMode }[];
 }
@@ -27,7 +28,7 @@ export function snapshot(g: Game, diff: DifficultyId): SaveData {
     v: SAVE_V, at: Date.now(), map: g.map.id, mapW: g.map.width, mapH: g.map.height, diff,
     wave: g.waves.index, freeplay: g.waves.freeplay, credits: Math.floor(w.credits), scrap: Math.floor(w.scrap), energy: g.energy, hq: Math.ceil(g.hq.health.hp),
     unitTiers: { ...g.unitTiers }, armory: [...g.armory],
-    towers: g.towers.filter((t) => t.alive).map((t) => ({ id: t.data.id, c: t.cell.c, r: t.cell.r, x: Math.round(t.x), y: Math.round(t.y), tier: t.tier, tg: t.targeting })),
+    towers: g.towers.filter((t) => t.alive).map((t) => ({ id: t.data.id, c: t.cell.c, r: t.cell.r, x: Math.round(t.x), y: Math.round(t.y), tier: t.tier, tg: t.targeting, ...(t.fused ? { fu: 1 } : {}) })),
     buildings: g.buildings.filter((b) => b.alive && b.built && b.pad).map((b) => ({ pad: g.pads.indexOf(b.pad!), id: b.data.id, tier: b.tier })).filter((b) => b.pad >= 0),
     squads: g.squads.filter((s) => s.alive).map((s) => { const c = s.center; return { id: s.data.id, x: Math.round(c.x), y: Math.round(c.y), n: s.units.filter((u) => u.alive).length, auto: s.auto, tg: s.targeting }; }),
   };
@@ -58,6 +59,7 @@ export function applySave(g: Game, s: SaveData) {
       // exact spot first; fall back to the saved cell (legacy cell-centre placements can fail the stricter free-spot check)
       const tw = (t.x !== undefined && !g.gridKind(t.id) ? g.placeTower(t.id, { c: t.c, r: t.r, x: t.x, y: t.y }) : null) ?? g.placeTower(t.id, { c: t.c, r: t.r }); if (!tw) continue;
       while (tw.tier < t.tier && tw.upgrade(g)) { /* */ }
+      if (t.fu && tw.isMaxTier) tw.applyFusion(g, tw.invested + fusionFee(tw.data)); // t104: fused tower = two max towers + fee
       tw.targeting = t.tg;
     } catch { /* tower id gone */ }
   }

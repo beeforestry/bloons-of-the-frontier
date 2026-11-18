@@ -1,4 +1,5 @@
 // Entry point: boot assets, map select, input handling, main loop, test hooks.
+import { fusedTier } from './data/fusion';
 import { openComboGuide } from './ui/ComboGuide';
 import { ELEM_TUNE } from './systems/Elements';
 import { canSee, blockers as losBlockers } from './systems/LineOfSight';
@@ -522,6 +523,13 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     spawn: (id: string, lane?: number, frac?: number, hpMul = 1) => { if (lane === undefined) return g.spawnEnemy(id, 0).uid; const L = lane % g.paths.length; return g.spawnEnemy(id, g.paths[L].length * (frac ?? 0), 0, L, hpMul).uid; },
     damageBoss: (frac: number) => { for (const e of g.enemies) if (e.alive && e.data.bossKit) { e.shield = 0; e.hp = Math.max(1, e.maxHp * frac); } },
     stats: () => ({ ...g.stats }),
+    // t104 fusion + predictive aiming
+    fusion: (i: number) => { const t = g.towers[i]; if (!t) return null; const fp = g.fusionPartner(t);
+      return { id: t.data.id, uid: t.uid, tier: t.tier, fused: t.fused, max: t.isMaxTier, name: t.t.name, sell: t.sellValue, invested: t.invested, partner: fp ? g.towers.indexOf(fp) : -1,
+        fee: fusedTier(t.data).cost, dmg: t.t.combat?.damage ?? 0, rate: t.t.combat?.fireRate ?? 0, range: t.t.combat?.range ?? 0, pierce: t.t.combat?.pierce ?? 0, maxHp: t.health.max, scale: t.t.visual.scale ?? 1, x: t.x, y: t.y }; },
+    fuse: (i: number, j?: number) => g.fuseTowers(g.towers[i], j == null ? null : g.towers[j]),
+    setLead: (on: boolean) => { g.leadAim = on; },
+    predict: (uid: number, t: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? e.predict(g, t) : null; },
     // t103 element combos
     elemTune: ELEM_TUNE,
     elemTowers: () => TOWERS.filter((t) => t.element).map((t) => ({ id: t.id, el: t.element, tiers: t.tiers.map((x) => x.combat?.status ?? 0) })),

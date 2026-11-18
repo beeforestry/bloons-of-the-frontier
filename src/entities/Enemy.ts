@@ -332,6 +332,22 @@ export class Enemy {
     if (this.bossAtkT <= 0) this.bossAtkT = g.bossAttack(this) ? k.attackEvery * fz : 0.6;
   }
 
+  // ---------------------------------------------------------------- t104 predictive aiming
+  /** Where this enemy will be in `t` seconds if it keeps walking its lane at its current (slowed/surged) speed.
+   *  Stunned time, blocked/at-gate/leaping/hunting/ally enemies stay put. Lateral offset is kept; swarm wobble ignored. */
+  predict(g: Game, t: number): Vec {
+    if (!this.alive || t <= 0 || this.ally || this.hunt || this.blockedBy || this.atBase || this.leapAnim) return { x: this.x, y: this.y };
+    const mv = Math.max(0, t - Math.max(0, this.stunT));
+    if (mv <= 0) return { x: this.x, y: this.y };
+    const slowFor = this.slowT > 0 ? Math.min(mv, this.slowT) : 0, surgeFor = this.surgeT > 0 ? Math.min(mv, this.surgeT) : 0;
+    const base = this.data.speed * this.speedK;
+    // integrate piecewise: slow and surge expire on their own timers
+    const dist = base * (mv - slowFor * this.slowAmt + surgeFor * 0.3 * (1 - this.slowAmt));
+    const path = this.route ?? g.paths[this.lane] ?? g.path;
+    const p = path.at(Math.min(path.length, this.progress + Math.max(0, dist)));
+    const off = this.lateral + this.divert;
+    return { x: p.x - Math.sin(p.ang) * off, y: p.y + Math.cos(p.ang) * off };
+  }
   // ---------------------------------------------------------------- hypnotized ally
   /** Walks BACKWARD along its lane, stopping to brawl the nearest enemy. */
   updateAlly(g: Game, dt: number) {

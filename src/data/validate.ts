@@ -14,6 +14,7 @@ import MIL_SPRITES from './military.sprites.json';
 // =============================================================================
 import type { TowerData, TowerTier, UnitData, UnitTier } from '../core/types';
 import { TOWERS } from './towers';
+import { canFuseType, fusedTier } from './fusion';
 import { UNITS } from './units';
 import { ENEMIES } from './enemies';
 import { WAVES } from './waves';
@@ -87,6 +88,22 @@ export function validateTower(t: TowerData): Issue[] {
     if (!(towerPower(tier) > towerPower(a))) out.push({ owner: t.id, tier: i, msg: 'overall power did not increase' });
     checkVisual(t.id, i, a.visual, tier.visual, out);
   });
+  // t104: the synthetic FUSED tier must be strictly better than the last real tier (and look it)
+  if (canFuseType(t)) {
+    const a = t.tiers[t.tiers.length - 1], f = fusedTier(t), i = t.tiers.length, lbl = (m: string) => `fused: ${m}`;
+    const sub: Issue[] = [];
+    if (f.maxHp <= a.maxHp) sub.push({ owner: t.id, tier: i, msg: 'maxHp did not increase' });
+    compareNumbers(t.id, i, 'combat', a.combat, f.combat, sub);
+    compareNumbers(t.id, i, 'cover', a.cover, f.cover, sub);
+    compareNumbers(t.id, i, 'farm', a.farm, f.farm, sub);
+    compareNumbers(t.id, i, 'aura', a.aura, f.aura, sub);
+    compareNumbers(t.id, i, 'orbs', a.orbs, f.orbs, sub);
+    compareNumbers(t.id, i, 'hypno', a.hypno, f.hypno, sub);
+    if (!(towerPower(f) > towerPower(a))) sub.push({ owner: t.id, tier: i, msg: 'overall power did not increase' });
+    checkVisual(t.id, i, a.visual, f.visual, sub);
+    if (!((f.visual.scale ?? 1) > (a.visual.scale ?? 1))) sub.push({ owner: t.id, tier: i, msg: 'fused model is not bigger' });
+    out.push(...sub.map((x) => ({ ...x, msg: lbl(x.msg) })));
+  }
   return out;
 }
 

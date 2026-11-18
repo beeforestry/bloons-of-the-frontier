@@ -7,6 +7,7 @@ import { Faction, TargetingMode, TARGETING_ORDER, type AbilityId, type ManualCtl
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
 import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
+import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
@@ -26,7 +27,7 @@ import type { Buffable } from '../systems/BuffSystem';
 import { Tower } from '../entities/Tower';
 import { Enemy } from '../entities/Enemy';
 import { Squad, Unit, WorkerUnit } from '../entities/Unit';
-import { Projectile } from '../entities/Projectile';
+import { Projectile, type ProjectileOpts } from '../entities/Projectile';
 import { Pickup } from '../entities/Pickup';
 import { BuildPad, Building } from '../entities/Building';
 import { BUILDINGS, HEAL, MAC, MAX_ENERGY, POWERS, TRAIN_DISCOUNT, buildingById } from '../data/buildings';
@@ -121,7 +122,9 @@ export class Game {
     combos: 0, powers: 0, hover: 0, hypno: 0, allyKills: 0, bossPhase2: 0, bossAttacks: 0, bossKills: 0, chain: 0, devoured: 0, vetAura: 0, rally: 0,
     orbs: 0, scrap: 0, promotions: 0, abilities: 0, possessions: 0, manualShots: 0, manualHits: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, freeCollectors: 0, scrapBy: {} as Record<string, number>,
     /** t103 element combos triggered, by combo id, and element stamps applied. */
-    elem: {} as Record<string, number>, elemApplied: 0, elemFirst: false };
+    elem: {} as Record<string, number>, elemApplied: 0, elemFirst: false,
+    /** t104 fusions done; projectile shots fired / that hit something (predictive-aim metric). */
+    fusions: 0, projShots: 0, projHits: 0, projAimShots: 0, projAimHits: 0 };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
@@ -713,11 +716,11 @@ export class Game {
       // Roof MG secondary (shotNo >= 900): bullet tracers, not the main gun's shell/rail.
       const sec = shotNo >= 900 && !!c.secondary;
       if (sec) {
-        const ang = Math.atan2(targets[0].y - muzzle.y, targets[0].x - muzzle.x);
-        this.projectiles.push(new Projectile({
+        const lp = this.leadPoint(muzzle, targets[0], c.projectileSpeed ?? 1100), ang = Math.atan2(lp.y - muzzle.y, lp.x - muzzle.x);
+        this.shoot({
           kind: 'bullet', x: muzzle.x, y: muzzle.y, angle: ang, speed: c.projectileSpeed ?? 1100,
           damage: dmg0, type: 'ballistic', pierce: c.pierce, hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround, hit,
-        }));
+        });
         this.sfx('fire', tw.x, tw.y);
         return;
       }
@@ -741,26 +744,47 @@ export class Game {
     const special = c.specialRate && shotNo % Math.round(1 / c.specialRate) === 0;
     if (kind === 'glue') { this.fireAcid(tw, tgt, c, muzzle, dmg0, type, hit); return; }
     if (kind === 'melon') {
-      this.projectiles.push(new Projectile({ kind, x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg0, type: 'fire', pierce: 1, splash: c.splash, hit,
-        lob: { tx: tgt.x + Math.cos(tgt.ang) * tgt.data.speed * 0.5, ty: tgt.y + Math.sin(tgt.ang) * tgt.data.speed * 0.5, dur: 0.75 } }));
+      const lp = this.leadLob(tgt, 0.75, 0.5);
+      this.shoot({ kind, x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg0, type: 'fire', pierce: 1, splash: c.splash, hit,
+        lob: { tx: lp.x, ty: lp.y, dur: 0.75 } });
       return;
     }
     const shots = c.shots ?? 1;
-    const base = (tw.fixedAim ?? Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x)) + (kind === 'boomerang' ? -0.8 : 0);
     // Skyranger: chin minigun (bullet) + rocket pods on T1+ (shell every 4th volley)
     const heliRocket = tw.data.id === 'unsc_heli' && tw.tier >= 1 && shotNo % 4 === 0;
+    // t104: lead the target (boomerangs curve and fixed-lane guns don't aim, so they keep the old aim)
+    const pSpeed = heliRocket ? (c.projectileSpeed ?? 600) * 0.75 : c.projectileSpeed ?? 600;
+    const aimAt = kind === 'boomerang' || tw.fixedAim != null ? tgt : this.leadPoint(muzzle, tgt, pSpeed);
+    const base = (tw.fixedAim ?? Math.atan2(aimAt.y - muzzle.y, aimAt.x - muzzle.x)) + (kind === 'boomerang' ? -0.8 : 0);
     for (let i = 0; i < shots; i++) {
       const spread = shots > 1 ? (i - (shots - 1) / 2) * (kind === 'shuriken' ? 0.22 : kind === 'boomerang' ? 0.5 : heliRocket ? 0.12 : 0.16) : 0;
       const pk = special ? 'gpea' : heliRocket ? 'shell' : kind;
-      this.projectiles.push(new Projectile({
-        kind: pk, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: (heliRocket ? (c.projectileSpeed ?? 600) * 0.75 : c.projectileSpeed ?? 600),
+      (kind === 'boomerang' ? (o: ProjectileOpts) => { this.projectiles.push(new Projectile(o)); } : (o: ProjectileOpts) => this.shoot(o, Math.abs(i - (shots - 1) / 2) < 0.6))({
+        kind: pk, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: pSpeed,
         damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? 2 : 1) * (heliRocket ? 1.6 : 1), type: special || heliRocket ? 'explosive' : type, pierce: heliRocket ? Math.max(2, c.pierce) : c.pierce,
         splash: special ? c.splash : heliRocket ? 36 + tw.tier * 10 : kind === 'magic' || kind === 'flak' ? c.splash : undefined, slow: c.slow,
         homing: kind === 'magic' ? tgt : null, scale: special ? 1.8 : heliRocket ? 1.5 : tw.data.id === 'arcane_obelisk' ? 2 : 1, hit,
         hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround,
-      }));
+      });
     }
   }
+  // ------------------------------------------------------------------ t104 predictive aiming
+  /** Lead finite-speed shots (false = old aim-at-current-position; test/sim toggle). */
+  leadAim = true;
+  /** Aim point for a projectile of `speed` px/s fired from `from` at `e`: iterate time-of-flight -> predicted path position. */
+  leadPoint(from: Vec, e: Enemy, speed: number): Vec {
+    const real = typeof (e as Partial<Enemy>).predict === 'function';
+    if (!this.leadAim || !real || !(speed > 0) || !e.alive) return { x: e.x, y: e.y };
+    let p: Vec = { x: e.x, y: e.y };
+    for (let i = 0; i < 4; i++) p = e.predict(this, Math.min(2.5, dist(from, p) / speed));
+    return p;
+  }
+  /** Landing point for a lobbed shot that lands after `dur` s (old behaviour: crude heading guess `oldK` s ahead). */
+  leadLob(e: Enemy, dur: number, oldK: number): Vec {
+    if (this.leadAim && typeof (e as Partial<Enemy>).predict === 'function') return e.predict(this, dur);
+    return { x: e.x + Math.cos(e.ang) * e.data.speed * oldK, y: e.y + Math.sin(e.ang) * e.data.speed * oldK };
+  }
+  private shoot(o: ProjectileOpts, aimed = true) { this.stats.projShots++; if (aimed) this.stats.projAimShots++; this.projectiles.push(new Projectile({ ...o, track: true, aimed })); }
   // ------------------------------------------------------------------ first-person possession (t37)
   /** Every tower / unit currently possessed (any player). */
   possessed(): (Tower | Unit | Enemy)[] { return [...this.towers.filter((t) => t.alive && t.manual), ...this.units.filter((u) => u.alive && u.manual), ...this.enemies.filter((e) => e.alive && e.manual)]; }
@@ -959,15 +983,15 @@ export class Game {
   /** t45 Glue Slinger delivery per tier, matching the sprite: T1 slingshot-lobbed glass vial, T2 hand sprayer stream, T3 hazmat cannon canister. */
   private fireAcid(tw: Tower, tgt: Enemy, c: CombatStats, muzzle: Vec, dmg: number, type: DamageType, hit: HitOpts) {
     const d = Math.cos(tw.aim) >= 0 ? 1 : -1; muzzle = { x: tw.x + d * 22, y: tw.y - [42, 32, 30][tw.tier] }; // slingshot pouch / sprayer nozzle / cannon mouth on the sprite
-    const lead = (s: number) => ({ x: tgt.x + Math.cos(tgt.ang) * tgt.data.speed * s, y: tgt.y + Math.sin(tgt.ang) * tgt.data.speed * s });
+    const lead = (s: number) => this.leadLob(tgt, s, s); // t104: true path prediction over the lob time
     const base = { x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg, type, pierce: 1, splash: c.splash, slow: c.slow, hit, hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround };
-    if (tw.tier === 0) { const p = lead(0.4); this.projectiles.push(new Projectile({ ...base, kind: 'acid_vial', lob: { tx: p.x, ty: p.y, dur: 0.55, arc: 70 }, pool: { r: (c.splash ?? 28) * 0.75, dur: 2, dps: dmg * 0.3 } })); return; }
+    if (tw.tier === 0) { const p = this.leadAim ? lead(0.55) : lead(0.4); this.shoot({ ...base, kind: 'acid_vial', lob: { tx: p.x, ty: p.y, dur: 0.55, arc: 70 }, pool: { r: (c.splash ?? 28) * 0.75, dur: 2, dps: dmg * 0.3 } }); return; }
     if (tw.tier === 1) {
-      const a = Math.atan2(tgt.y - muzzle.y, tgt.x - muzzle.x), sp = c.projectileSpeed ?? 500;
-      for (let i = 0; i < 3; i++) { const pr = new Projectile({ ...base, kind: 'acid_spray', angle: a + (i - 1) * 0.05, speed: sp * (1 - i * 0.07), damage: dmg / 3, pool: i === 0 ? { r: (c.splash ?? 40) * 0.6, dur: 2.5, dps: dmg * 0.3 } : undefined }); pr.life = (c.range * 1.25) / (sp * (1 - i * 0.07)); this.projectiles.push(pr); }
+      const sp = c.projectileSpeed ?? 500, lp = this.leadPoint(muzzle, tgt, sp * 0.93), a = Math.atan2(lp.y - muzzle.y, lp.x - muzzle.x);
+      for (let i = 0; i < 3; i++) { const pr = new Projectile({ ...base, kind: 'acid_spray', angle: a + (i - 1) * 0.05, speed: sp * (1 - i * 0.07), damage: dmg / 3, pool: i === 0 ? { r: (c.splash ?? 40) * 0.6, dur: 2.5, dps: dmg * 0.3 } : undefined, track: true, aimed: i === 0 }); pr.life = (c.range * 1.25) / (sp * (1 - i * 0.07)); this.stats.projShots++; if (i === 0) this.stats.projAimShots++; this.projectiles.push(pr); }
       return;
     }
-    const p = lead(0.3); this.projectiles.push(new Projectile({ ...base, kind: 'acid_can', lob: { tx: p.x, ty: p.y, dur: 0.48, arc: 42 }, pool: { r: (c.splash ?? 60) * 0.8, dur: 3, dps: dmg * 0.3 } }));
+    const p = this.leadAim ? lead(0.48) : lead(0.3); this.shoot({ ...base, kind: 'acid_can', lob: { tx: p.x, ty: p.y, dur: 0.48, arc: 42 }, pool: { r: (c.splash ?? 60) * 0.8, dur: 3, dps: dmg * 0.3 } });
   }
   splash(x: number, y: number, r: number, dmg: number, type: DamageType, from?: Vec, look: 'boom' | 'boom_fire' | 'acid' = 'boom', hit?: HitOpts, slow?: number) {
     if (type === 'explosive' || type === 'fire') r *= this.comboMul(x, y, r);
@@ -999,7 +1023,7 @@ export class Game {
       else this.beam(from, tgt, dmg, w.type, 1, '#ffe08a', 1.5, hit);
       return;
     }
-    const ang = Math.atan2(tgt.y - u.y, tgt.x - u.x);
+    const ulp = this.leadPoint({ x: u.x, y: u.y - 10 }, tgt, 800), ang = Math.atan2(ulp.y - (u.y - 10), ulp.x - u.x);
     this.projectiles.push(new Projectile({ kind: w.projectile ?? 'bullet', x: u.x, y: u.y - 10, angle: ang, speed: 800, damage: dmg, type: w.type, pierce: 1, splash: w.splash, hitsAir: w.hitsAir, hit }));
   }
   lobAcid(from: Enemy, target: Damageable, dmg: number) {
@@ -1207,6 +1231,36 @@ export class Game {
     t.remove();
     this.towers = this.towers.filter((x) => x !== t); this.losVer++;
     this.fx({ kind: 'text', x: t.x, y: t.y - 20, text: `+${t.sellValue}`, color: '#ffe14d', dur: 1 });
+  }
+  /** t104: the nearest tower `t` can fuse with right now (same type + owner, both last tier, unfused, adjacent), or null. */
+  fusionPartner(t: Tower): Tower | null {
+    if (!t.alive || t.fused || !t.isMaxTier || !canFuseType(t.data)) return null;
+    let best: Tower | null = null, bd = Infinity;
+    for (const o of this.towers) {
+      if (o === t || !o.alive || o.fused || o.data.id !== t.data.id || !o.isMaxTier || o.owner !== t.owner) continue;
+      const d = dist(o, t), reach = this.towerRadius(t.data.id) + this.towerRadius(o.data.id) + FUSION.reach;
+      if (d <= reach && d < bd) { bd = d; best = o; }
+    }
+    return best;
+  }
+  /** t104: fuse `b` into `a` (a keeps its spot and becomes the Fused super-tower; b's spot is freed). Networked (Sync G_METHODS). */
+  fuseTowers(a: Tower, b?: Tower | null): boolean {
+    const p = b ?? this.fusionPartner(a);
+    if (!p || !a.alive || a.fused || !a.isMaxTier || !canFuseType(a.data) || p.data.id !== a.data.id || p === a || !p.alive || p.fused || !p.isMaxTier || p.owner !== a.owner
+      || dist(a, p) > this.towerRadius(a.data.id) * 2 + FUSION.reach) { this.toast('Fusion needs two max-tier towers of the same type side by side', '#ff8a7a'); this.sfx('error'); return false; }
+    if (a.disabled || p.disabled) { this.toast('Repair the tower before fusing', '#ff8a7a'); this.sfx('error'); return false; }
+    const fee = fusionFee(a.data);
+    if (!this.res.spend({ credits: fee })) { this.toast(`Fusion costs ¢${fee}`, '#ff8a7a'); this.sfx('error'); return false; }
+    // the partner's troops hop over, then it dissolves into the survivor (beam of light toward it)
+    this.fx({ kind: 'beam', x: p.x, y: p.y - 20, x2: a.x, y2: a.y - 20, color: '#ffd84a', width: 6, dur: 0.45 });
+    this.fx({ kind: 'dust', x: p.x, y: p.y + 10, r: 34, color: '#ffe9a0', dur: 0.6 });
+    const add = p.invested + fee;
+    this.grid.releaseOwner(p); p.remove();
+    this.towers = this.towers.filter((x) => x !== p); this.losVer++;
+    a.applyFusion(this, add);
+    this.stats.fusions++;
+    this.sfx('upgrade'); this.shake(5);
+    return true;
   }
   /** Relocate a movable vehicle (tank / gunship). Cancels auto-chase until it arrives. */
   moveTower(t: Tower, at: Vec): boolean {

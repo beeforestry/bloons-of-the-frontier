@@ -17,6 +17,7 @@ import type { Unit } from './Unit';
 import type { Enemy } from './Enemy';
 import { gEject, type Garrisonable } from './Garrison';
 import { ABILITIES, SWEEP } from '../data/abilities';
+import { fusedTier } from '../data/fusion';
 
 export class Tower implements Buffable, Garrisonable {
   readonly uid = nextId();
@@ -65,6 +66,8 @@ export class Tower implements Buffable, Garrisonable {
   moveTo: { x: number; y: number } | null = null;
   /** Player cancelled auto-chase with a manual move until arrival. */
   chaseHold = false;
+  /** t104: fused super-tower (two max-tier towers of this type merged). Uses the synthetic fused tier. */
+  fused = false;
 
   constructor(readonly data: TowerData, public cell: Cell & { x?: number; y?: number }, g: Game) {
     const c = g.grid.cellCenter(cell.c, cell.r);
@@ -81,7 +84,8 @@ export class Tower implements Buffable, Garrisonable {
   gProtect() { return this.t.cover?.garrisonProtect ?? 0.5; }
   gRange() { return this.t.cover?.garrisonRangePct ?? 0.35; }
   gOpen() { return this.alive && !this.disabled; }
-  get t(): TowerTier { return this.data.tiers[this.tier]; }
+  get t(): TowerTier { return this.fused ? fusedTier(this.data) : this.data.tiers[this.tier]; }
+  get isMaxTier() { return this.tier >= this.data.tiers.length - 1; }
   get nextTier(): TowerTier | undefined { return this.data.tiers[this.tier + 1]; }
   get sellValue() { return Math.floor(this.invested * 0.7); }
   get isFarm() { return !!this.farm; }
@@ -113,6 +117,17 @@ export class Tower implements Buffable, Garrisonable {
     return true;
   }
 
+  /** t104: become the fused super-tower (no spend here: Game.fuseTowers pays the fee / Save + Sync replay it). */
+  applyFusion(g: Game, addInvested: number) {
+    if (this.fused) return;
+    this.tier = this.data.tiers.length - 1;
+    this.fused = true; this.invested += addInvested;
+    const ft = this.t; this.health.setBase(ft.maxHp, 0); this.health.hp = this.health.max;
+    this.attachModules(); this.cover?.aura.refresh(); this.flora?.aura.refresh();
+    g.fx({ kind: 'ring', x: this.x, y: this.y, r: 70, color: ft.visual.glow ?? '#ffd84a', dur: 0.9 });
+    g.fx({ kind: 'ring', x: this.x, y: this.y, r: 40, color: '#fff3b0', dur: 0.6 });
+    g.fx({ kind: 'text', x: this.x, y: this.y - 52, text: '★ FUSED!', color: '#ffd84a', dur: 1.4 });
+  }
   repair(g: Game, amount: number) {
     if (this.disabled) {
       this.disabledT -= amount * 0.25; // workers bring knocked-out towers back faster

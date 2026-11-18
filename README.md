@@ -59,6 +59,27 @@ Open **⚗ Element combos** on the main menu, or **⚗ ?** in a selected tower's
 The idea comes from **[Lightkeepers](https://github.com/vega-star/lightkeepers)** by vega-star (Apache-2.0), a tower-defense tech demo built around combining elements.
 No code or art was taken from it; this is our own implementation.
 
+## Tower fusion + predictive aiming (t104)
+**Fusion.** Build two towers of the same type, take both to their last tier, and put them side by side (their footprints
+touching, up to 40 px apart). Select either one: the panel shows **⚛ Fuse with neighbour** with the fee and the stat
+changes, and a dashed gold line marks the partner. Fusing merges the partner into the selected tower and frees its spot.
+- Fused tower: ×1.4 damage, +10% fire rate, +8% range, +1 pierce/chain, ×1.2 splash, ×1.8 HP, and every other stat at least
+  as good (support auras, farm income ×2.1, slows capped at 75%). Visual level +1, model 15% bigger, gold glow.
+- Overall about 2× one max tower (the pair's power in one spot). Fee: 40% of one tower's full price (e.g. Dart Scout ¢390,
+  Apex Laser Scout ¢2,685). Sell value stays 70% of everything
+  invested (both towers + fee).
+- Look: gold aura with counter-rotating rings, orbiting sparks and a ★ medallion in 2D; gold halo rings, a light column and
+  a ★ badge over the model in first person; the name gets "★ Fused".
+- Same owner only (co-op), not path objects or single-use pods, a fused tower can't fuse again. Save/Continue and co-op
+  sync keep the fused state. Data: `src/data/fusion.ts`; the validator checks that every fused tier is strictly stronger.
+
+**Predictive aiming.** Towers with finite-speed projectiles now lead their target: `Enemy.predict(t)` walks the enemy
+along its lane at its current speed (slow and surge timers included, stunned/blocked/leaping enemies stay put), and the
+shot is aimed at the intercept point (4 time-of-flight iterations). Lobbed shots (Melon, Glue vial/canister) land on the
+predicted point. Troop rifles lead too. Hitscan and beam weapons, boomerangs and fixed-lane guns are unchanged. In first
+person, a shot with the crosshair on an enemy leads it; a free crosshair shot goes exactly where you aim.
+Hit rate of the aimed (centre) shot in the `tests/aim_sim.py` sim: El Morro 90.9% → 94.4%, Isla de Cabras 83.1% → 90.5%.
+
 ## Art (v3)
 All sprites are one painterly, realistic 3/4-view set (`public/assets/v3`, WebP, ~1.2 MB). Each tower and troop tier has its own sprite, and every tier is
 visibly more advanced. Turrets use a separate rotating head with barrel recoil, and units, bugs and bloons are animated with walk/scuttle/bob motion and painted pop/death/muzzle FX.

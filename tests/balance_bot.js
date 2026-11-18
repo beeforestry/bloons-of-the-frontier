@@ -62,8 +62,18 @@ window.__bot = (() => {
     if (front && g.energy >= 60) g.castPower('mac', { x: front.x, y: front.y });
     if (g.energy >= 35 && g.hq.health.hp < g.hq.health.max * 0.6) g.castPower('heal', { x: g.hq.x, y: g.hq.y });
   };
+  // t104 (window.__BOT_FUSE): an aggressive fuser — new towers of a type that already has an unfused max-tier copy
+  // are built right next to it, and every eligible pair is fused as soon as the fee is affordable.
+  const FUSE = !!window.__BOT_FUSE && !!g.fuseTowers;
+  const fuseSpot = (id) => {
+    const solo = g.towers.find((t) => t.data.id === id && !t.fused && t.isMaxTier && !g.fusionPartner(t)); if (!solo) return null;
+    const R = g.towerRadius(id) * 2 + 8;
+    for (const k of [1, 1.3]) for (let a = 0; a < 12; a++) { const s = g.placementSpot(id, { x: solo.x + Math.cos(a * 0.5236) * R * k, y: solo.y + Math.sin(a * 0.5236) * R * k }); if (s) return s; }
+    return null; };
+  const fuseAll = () => { if (!FUSE) return; for (const t of [...g.towers]) { if (!t.alive) continue; const p = g.fusionPartner(t); if (p && g.res.credits >= H.fusion(g.towers.indexOf(t)).fee) g.fuseTowers(t, p); } };
   const spend = () => {
     for (const p of g.pickups) if (p.alive) p.collect(g, 1, 'hover');
+    fuseAll();
     for (let guard = 0; guard < 60; guard++) {
       const id = ROT[rot % ROT.length], cost = H.towerCost(id);
       const ups = g.towers.filter((t) => t.nextTier).sort((a, b) => a.nextTier.cost - b.nextTier.cost);
@@ -71,11 +81,12 @@ window.__bot = (() => {
       const wantNew = g.towers.length < Math.min(70, 8 + g.waves.index * 0.8) && (!cheapUp || g.towers.length < 5 || cost <= cheapUp.nextTier.cost * 1.2);
       if (wantNew) {
         if (g.res.credits < cost) break;
-        const cell = spotFor(id);
+        const cell = (FUSE && fuseSpot(id)) || spotFor(id);
         if (!cell || !g.placeTower(id, cell)) { rot++; continue; }
         rot++; maxTowers = Math.max(maxTowers, g.towers.length);
       } else if (cheapUp) { if (!cheapUp.upgrade(g)) break; } else break;
     }
+    fuseAll();
     if (g.res.credits > 250 || g.waves.index % 4 === 3) macro();
   };
   const runWave = (maxSec = 400) => {
@@ -83,7 +94,7 @@ window.__bot = (() => {
     if (!g.waves.start(g)) return { started: false };
     let t = 0; g.speed = 1;
     while ((g.waves.active || g.enemies.length) && g.state === 'playing' && t < maxSec) { g.update(0.1); t += 0.1; if ((t * 10 | 0) % 50 === 0) { spend(); powers(); } }
-    return { started: true, t: Math.round(t), wave: g.waves.index, hq: Math.ceil(g.hq.health.hp), hqMax: g.hq.health.max, state: g.state, towers: g.towers.length, credits: Math.floor(g.res.credits), leaked: g.stats.leaked };
+    return { started: true, fusions: g.stats.fusions || 0, t: Math.round(t), wave: g.waves.index, hq: Math.ceil(g.hq.health.hp), hqMax: g.hq.health.max, state: g.state, towers: g.towers.length, credits: Math.floor(g.res.credits), leaked: g.stats.leaked };
   };
   return { runWave, spend, cells: cells.length };
 })();

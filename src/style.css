@@ -382,3 +382,8 @@ body.role-invader #mode-toggle { display: none !important; }
 .combo-guide .cg-credit a { color: inherit; }
 .sp-elem .btn.mini { padding: 0 6px; font-size: 11px; min-height: 0; margin-left: 4px; }
 @media (max-width: 820px) { .combo-guide .cg-els { grid-template-columns: 1fr; } }
+/* t104 tower fusion */
+#sel-panel .btn.up.fuse { background: linear-gradient(135deg, #6b4a00, #c28a12 55%, #ffd84a); color: #fff8dc; border-color: #ffd84a; box-shadow: 0 0 10px #ffd84a88; }
+#sel-panel .btn.up.fuse:disabled { filter: grayscale(0.6) brightness(0.7); box-shadow: none; }
+.maxed.fused, .fused-tag { color: #ffd84a; text-shadow: 0 0 6px #ffb80088; }
+.fuse-hint { color: #e8d79a; font-size: 11px; }
