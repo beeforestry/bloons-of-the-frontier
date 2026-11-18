@@ -40,7 +40,7 @@ type Ref = { $: string; u?: number; i?: number; p?: number; x?: number; y?: numb
 
 /** Game methods that become network commands on a client (and permission-checked on the host). */
 const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'moveTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
-  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl', 'toggleVehicle', 'fuseTowers'] as const;
+  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl', 'toggleVehicle', 'fuseTowers', 'fuseRecipe'] as const;
 /** Applied optimistically on the client too (instant response; the snapshot corrects). */
 const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'moveTower', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
 /** Proto methods (Tower / Building instances). */
@@ -188,7 +188,7 @@ export class Sync {
     if (name === 'startFreeplay' && pid !== 0) return 'Only the host can start Freeplay';
     const a0 = args[0];
     const ownTower = (t: unknown) => !(t instanceof Tower) || t.owner === pid;
-    if (['sellTower', 'moveTower', 'cycleTargeting', 'tw.upgrade', 'tw.useAbility', 'fuseTowers'].includes(name) && (!ownTower(a0) || (name === 'fuseTowers' && !ownTower(args[1])))) return `That's P${(a0 as Tower).owner + 1}'s tower — only its owner can upgrade or sell it`;
+    if (['sellTower', 'moveTower', 'cycleTargeting', 'tw.upgrade', 'tw.useAbility', 'fuseTowers', 'fuseRecipe'].includes(name) && (!ownTower(a0) || ((name === 'fuseTowers' || name === 'fuseRecipe') && !ownTower(args[1])))) return `That's P${(a0 as Tower).owner + 1}'s tower — only its owner can upgrade or sell it`;
     if (name === 'setTargeting' && a0 instanceof Tower && !ownTower(a0)) return `That's P${a0.owner + 1}'s tower`;
     if (['demolish', 'setRally', 'bd.upgrade', 'bd.enqueue', 'bd.cancel'].includes(name) && a0 instanceof Building && !a0.isHQ && a0.owner !== pid) return `That's P${a0.owner + 1}'s building`;
     const canSq = (s: unknown) => !(s instanceof Squad) || s.owner === pid || !!this.allowAlly.get(s.owner);

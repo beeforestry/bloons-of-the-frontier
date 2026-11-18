@@ -16,6 +16,8 @@ import type { TowerData, TowerTier, UnitData, UnitTier } from '../core/types';
 import { TOWERS } from './towers';
 import { canFuseType, fusedTier } from './fusion';
 import { specsFor, branchTier } from './specs';
+import { RECIPES, recipeParents, recipeFee } from './recipes';
+import { HIDDEN_TOWERS } from './towers';
 import { UNITS } from './units';
 import { ENEMIES } from './enemies';
 import { WAVES } from './waves';
@@ -170,6 +172,7 @@ const artKey = (k: string) => k.replace(/^proc:/, '');
 export function validateArt(): Issue[] {
   const out: Issue[] = [];
   for (const t of TOWERS) t.tiers.forEach((_, i) => { const k = artKey(t.sprite); if (!ART.has(`${k}_${i}`) && !ART.has(`${k}_head_${i}`)) out.push({ owner: t.id, tier: i, msg: `no tier art ${k}_${i}` }); });
+  for (const t of HIDDEN_TOWERS) { const k = artKey(t.sprite), i = t.lookTier ?? 0; if (!ART.has(`${k}_${i}`) && !ART.has(`${k}_head_${i}`)) out.push({ owner: t.id, tier: 0, msg: `no look art ${k}_${i}` }); }
   for (const u of UNITS) u.tiers.forEach((_, i) => { const k = artKey(u.sprite); if (!ART.has(`${k}_${i}`)) out.push({ owner: u.id, tier: i, msg: `no tier art ${k}_${i}` }); });
   for (const e of Object.values(ENEMIES)) if (!ART.has(artKey(e.sprite))) out.push({ owner: e.id, tier: 0, msg: `no art ${e.sprite}` });
   return out;
@@ -179,6 +182,22 @@ export function validateAll(): Issue[] {
   const out: Issue[] = validateArt();
   for (const t of TOWERS) out.push(...validateTower(t));
   for (const u of UNITS) out.push(...validateUnit(u));
+  // t105 hidden recipes: registered, never in the shop, single tier, strictly stronger than every parent's max tier (incl. specializations), cost = parents + fee
+  for (const r of RECIPES) {
+    const h = HIDDEN_TOWERS.find((x) => x.id === r.id);
+    if (!h) { out.push({ owner: r.id, tier: 0, msg: 'recipe tower not registered' }); continue; }
+    if (TOWERS.some((x) => x.id === r.id) || !h.hidden) out.push({ owner: r.id, tier: 0, msg: 'recipe tower must be hidden (not in the shop)' });
+    if (h.tiers.length !== 1) out.push({ owner: r.id, tier: 0, msg: 'recipe tower must have exactly one tier' });
+    const hp = towerPower(h.tiers[0]);
+    for (const pd of recipeParents(r)) {
+      const lt = pd.tiers[pd.tiers.length - 1], sp = specsFor(pd.id);
+      const best = Math.max(towerPower(lt), ...(sp ? [0, 1].map((b) => towerPower(branchTier(pd, b))) : []));
+      if (!(hp > best * 1.1)) out.push({ owner: r.id, tier: 0, msg: `not clearly stronger than parent ${pd.id} (${hp.toFixed(1)} vs ${best.toFixed(1)})` });
+      if (h.tiers[0].maxHp <= lt.maxHp) out.push({ owner: r.id, tier: 0, msg: `HP not above parent ${pd.id}` });
+      if (h.tiers[0].visual.level <= lt.visual.level || (h.tiers[0].visual.scale ?? 1) <= (lt.visual.scale ?? 1)) out.push({ owner: r.id, tier: 0, msg: `does not look bigger than parent ${pd.id}` });
+    }
+    if (!(recipeFee(r) > 0)) out.push({ owner: r.id, tier: 0, msg: 'fee must be > 0' });
+  }
   for (const b of BUILDINGS) out.push(...validateBuilding(b));
   for (const k of ['pad_empty', 'pad_build', 'fx_heal_pod', 'fx_crater']) if (!ART.has(k)) out.push({ owner: 'base', tier: 0, msg: `no art ${k}` });
   for (const u of UNITS) {

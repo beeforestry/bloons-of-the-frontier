@@ -387,3 +387,13 @@ body.role-invader #mode-toggle { display: none !important; }
 #sel-panel .btn.up.fuse:disabled { filter: grayscale(0.6) brightness(0.7); box-shadow: none; }
 .maxed.fused, .fused-tag { color: #ffd84a; text-shadow: 0 0 6px #ffb80088; }
 .fuse-hint { color: #e8d79a; font-size: 11px; }
+/* t105 tier-3 specialization */
+#sel-panel .br-row { display: flex; gap: 6px; }
+#sel-panel .btn.up.br { flex: 1; border-color: var(--bc); box-shadow: inset 0 0 0 1px var(--bc), 0 0 8px color-mix(in srgb, var(--bc) 40%, transparent); font-size: 12px; }
+#sel-panel .btn.up.br .br-ic { font-size: 15px; }
+#sel-panel .btn.up.br .br-bl { font-size: 10.5px; opacity: 0.85; margin: 2px 0; }
+.br-h { color: #e8d79a; }
+#sel-panel .btn.up.recipe { border-color: var(--bc); box-shadow: inset 0 0 0 1px var(--bc), 0 0 10px color-mix(in srgb, var(--bc) 45%, transparent); margin-top: 4px; }
+.recipe-tag { text-shadow: 0 0 6px currentColor; }
+#sel-panel .prox { font-size: 11px; color: #cfe6ff; margin-top: 2px; }
+#sel-panel .prox b { font-weight: 600; }

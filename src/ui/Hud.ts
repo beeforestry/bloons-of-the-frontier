@@ -11,6 +11,8 @@ import { FACTIONS, factionInfo } from '../data/factions';
 import { TOWERS, towerById } from '../data/towers';
 import { UNITS, unitById } from '../data/units';
 import { canFuseType, fusedTier, fusionFee } from '../data/fusion';
+import { specsFor, branchTier } from '../data/specs';
+import { recipeFee, isDiscovered, type Recipe } from '../data/recipes';
 import { Faction, TARGETING_ORDER, TARGETING_LABEL, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
 import { ABILITIES } from '../data/abilities';
 import { ENEMIES } from '../data/enemies';
@@ -283,7 +285,8 @@ export class Hud {
     if (!t && !s && this.basePanel(p)) return;
     if (!t && grp.length > 1) return this.groupPanel(p, grp);
     const fp = t && !t.nextTier && !t.fused ? g.fusionPartner(t) : null;
-    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}:${t.fused}:${fp?.uid ?? 0}:${fp ? g.res.credits >= fusionFee(t.data, t.branch) : 0}:${t.branch}`
+    const rp = t && !t.nextTier && !t.fused ? g.recipePartner(t) : null, rfee = rp ? recipeFee(rp.r, rp.o.data.id === rp.r.a ? t!.data.id : rp.o.data.id) : 0;
+    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}:${t.fused}:${fp?.uid ?? 0}:${fp ? g.res.credits >= fusionFee(t.data, t.branch) : 0}:${t.branch}:${rp ? rp.r.id + rp.o.uid + (g.res.credits >= rfee) + isDiscovered(rp.r.id) : ''}`
       : s ? `s${s.uid}:${s.units.length}:${g.unitTier(s.data.id)}:${s.units.filter((u) => u.garrison).length}:${s.stance}:${s.targeting}:${s.units.map((u) => u.stars).join('')}:${this.view.queueMode}:${this.view.patrolMode}:${s.auto}:${s.manual}:${s.autoTask}` : '';
     if (key === this.lastSel) { if (t) this.liveTower(t); return; }
     this.lastSel = key;
@@ -295,9 +298,9 @@ export class Hud {
       p.style.setProperty('--fc', f.color);
       const tags = [t.data.antiAir ? '✈ Anti-air' : '', t.data.armorPiercing ? 'Armor-piercing' : '', t.data.fixedLane ? 'Fixed lane' : '', t.data.hitsAir === false ? 'Air only' : ''].filter(Boolean).join(' · ');
       p.innerHTML = `<div class="sp-head">${th(t.t.visual.sprite ?? t.data.sprite, t.tier, 56)}<div><div class="sp-name">${t.t.name}</div>
-        <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${t.fused ? ' · <b class="fused-tag">★ FUSED</b>' : ''}${tags ? ' · ' + tags : ''}</div></div></div>
+        <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${t.branch != null && specsFor(t.data.id) ? ` · <b class="br-tag" style="color:${specsFor(t.data.id)![t.branch].color}">${specsFor(t.data.id)![t.branch].icon} ${specsFor(t.data.id)![t.branch].name}</b>` : ''}${t.fused ? ' · <b class="fused-tag">★ FUSED</b>' : ''}${tags ? ' · ' + tags : ''}</div></div></div>
         <div class="sp-stats">${statLine(t.t, t.data)}</div>${elemInfo(t.data, t.t)}<div class="sp-live"></div>
-        ${n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n, t.data).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n, t.data)}</div></button>` : this.fusePanel(t, fp)}
+        ${n && t.branchPick ? this.branchPanel(t) : n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n, t.data).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n, t.data)}</div></button>` : this.fusePanel(t, fp) + this.recipeBtn(t, rp, rfee)}
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
         ${t.data.movable && this.mine(t) ? `<div class="sp-sub">Click the map to relocate${t.data.airborne ? ' (flies over water)' : ''}${t.data.autoChase && t.tier >= 2 ? ' · Hunter Patrol auto-chases' : ''}${t.t.combat?.secondary ? ' · Roof gunner active' : ''}</div>` : ''}
@@ -306,6 +309,8 @@ export class Hud {
         ${t.isFarm ? '<div class="sp-sub">Tip: your free Sprout Farmhand can pack farms — press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
       const cg = $('#sp-combos', p); if (cg) cg.onclick = () => openComboGuide();
       const up = $('#sp-up', p); if (up) up.onclick = () => { t.upgrade(g); this.lastSel = ''; this.refresh(true); };
+      for (const bi of [0, 1]) { const bb = $(`#sp-br${bi}`, p); if (bb) bb.onclick = () => { t.upgrade(g, bi); this.lastSel = ''; this.refresh(true); }; }
+      const rb = $('#sp-recipe', p); if (rb) rb.onclick = () => { const nt = g.fuseRecipe(t, rp?.o ?? null); if (nt) { this.view.selTower = nt; } this.lastSel = ''; this.refresh(true); };
       const fu = $('#sp-fuse', p); if (fu && fp) fu.onclick = () => { g.fuseTowers(t, fp); this.lastSel = ''; this.refresh(true); };
       for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-tgt]'))) el.onclick = () => { g.setTargeting(t, el.dataset.tgt as never); this.lastSel = ''; this.refresh(true); };
       const ab = $('#sp-abil', p); if (ab) ab.onclick = () => t.useAbility(g);
@@ -402,8 +407,22 @@ export class Hud {
   }
   /** Hotkeys 1..n fire the ability bar. */
   abilityUse: (() => void)[] = [];
+  /** t105: the tier-3 pick: two permanent specialization branches. */
+  private branchPanel(t: Tower): string {
+    const sp = specsFor(t.data.id)!, n = t.nextTier!, poor = this.g.res.credits < n.cost;
+    return `<div class="sp-sub br-h">⑂ Tier 3: choose a permanent specialization</div><div class="br-row">${[0, 1].map((bi) => {
+      const b = sp[bi], bt = branchTier(t.data, bi);
+      return `<button class="btn up br" id="sp-br${bi}" style="--bc:${b.color}" ${poor ? 'disabled' : ''}><span class="br-ic">${b.icon}</span> ${b.name} <b>¢${n.cost}</b><div class="br-bl">${b.blurb}</div><div class="delta">${deltaLine(t.t, bt, t.data)}</div></button>`; }).join('')}</div>`;
+  }
   /** t104: Fuse button (partner adjacent) / how-to hint (max tier, no partner) / fused badge. */
+  /** t105: hidden cross-type recipe button ("???" until discovered on this browser). */
+  private recipeBtn(t: Tower, rp: { o: Tower; r: Recipe } | null, fee: number): string {
+    if (!rp || !this.mine(t)) return '';
+    const known = isDiscovered(rp.r.id), d = towerById(rp.r.id);
+    return `<button class="btn up recipe" id="sp-recipe" style="--bc:${known ? d.mark?.color : '#c9a6ff'}" title="${known ? d.desc : 'These two towers resonate… try fusing them?'}" ${this.g.res.credits < fee ? 'disabled' : ''}>⚛ Fuse with ${rp.o.data.name} → <b>${known ? d.name : '???'}</b> <b>¢${fee}</b>${known ? `<div class="delta">${d.tiers[0].blurb}</div>` : '<div class="delta">An unknown reaction…</div>'}</button>`;
+  }
   private fusePanel(t: Tower, fp: Tower | null): string {
+    if (t.data.hidden) return `<div class="maxed recipe-tag" style="color:${t.data.mark?.color}">⚛ Hidden fusion · cannot be upgraded or fused</div>`;
     if (t.fused) return '<div class="maxed fused">★ FUSED super-tower · fully upgraded</div>';
     if (!canFuseType(t.data)) return '<div class="maxed">★ Max tier</div>';
     const ft = fusedTier(t.data, t.branch), fee = ft.cost;

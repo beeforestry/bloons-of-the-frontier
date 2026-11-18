@@ -2,6 +2,8 @@
 // RENDERER: draws the world onto a 2D canvas. Read-only view of Game.
 // Tier visuals: a distinct painted sprite per tier + scale + glow ring + tier pips.
 // =============================================================================
+import { branchMark } from '../data/specs';
+import { isDiscovered } from '../data/recipes';
 import type { Game, Effect, Strike, ParkedVeh } from '../game/Game';
 import { unitById } from '../data/units';
 import { PCOLORS } from '../core/players';
@@ -900,14 +902,16 @@ export class Renderer {
     }
     const big = (t.data.footprint ?? 1) > 1, top = big ? (t.data.airborne ? 230 : 140) : 38, pw = big ? 2.6 : 1;
     if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30 * pw, PCOLORS[t.owner] ?? '#fff');
-    if (t.fused) this.fusedAura(t, pw, big ? 6 : 18);
-    if (sel && !t.fused && !t.nextTier) { const fp = this.g.fusionPartner(t); if (fp) this.fusionLink(t, fp); }
+    const bm = branchMark(t);
+    if (t.fused) this.fusedAura(t, pw, big ? 6 : 18); else if (bm) this.specAura(t, pw, big ? 6 : 18, bm.color, !!t.data.hidden);
+    if (sel && !t.fused && !t.nextTier) { const fp = this.g.fusionPartner(t); if (fp) this.fusionLink(t, fp); const rp = this.g.recipePartner(t); if (rp) this.fusionLink(t, rp.o, isDiscovered(rp.r.id) ? towerById(rp.r.id).mark?.color ?? '#c9a6ff' : '#c9a6ff'); }
     if (t.disabled) c.globalAlpha = 0.55;
-    this.towerImg(t.data.sprite, t.tier, t.x, t.y, t.t.visual, t.aimVis, false, t.recoil, (t.uid % 7) * 0.9, { charge: t.charge, since: t.sinceFire, engaged: t.engaged });
+    this.towerImg(t.data.sprite, t.data.lookTier ?? t.tier, t.x, t.y, t.t.visual, t.aimVis, false, t.recoil, (t.uid % 7) * 0.9, { charge: t.charge, since: t.sinceFire, engaged: t.engaged });
     if (t.hypno) { const n = t.hypno.mine.filter((e) => e.alive).length; if (n) this.label(t.x, t.y - 44, '🌀'.repeat(n), '#ff7ae6', 11); }
     c.globalAlpha = 1;
-    this.pips(t.x, t.y + (big ? 74 : 26), t.tier, t.t.visual.glow);
+    this.pips(t.x, t.y + (big ? 74 : 26), t.data.lookTier ?? t.tier, t.t.visual.glow);
     if (t.fused) this.fusedBadge(t.x + 22 * pw, t.y - top + 6);
+    if (bm) this.specBadge(t.x - (t.fused ? 22 : -22) * pw, t.y - top + 6, bm.color, bm.glyph);
     if (t.possessedBy >= 0) this.possessBadge(t.x, t.y - top - 16, t.possessedBy);
     if (t.health.frac < 0.999 || (this.g.net !== 'solo' && this.g.mode === 'coop')) this.bar(t.x, t.y - top, big ? 84 : 40, t.health.frac, t.disabled ? '#888' : this.g.net !== 'solo' && this.g.mode === 'coop' ? PCOLORS[t.owner] ?? '#5fe06a' : '#5fe06a', t.uid);
     if (t.disabled) this.label(t.x, t.y - 46, 'OFFLINE', '#ff8a7a');
@@ -933,6 +937,27 @@ export class Renderer {
     for (let i = 0; i < 3; i++) { const a = T * 1.6 + (i * Math.PI * 2) / 3; this.additive(IMG.fx_spark, t.x + Math.cos(a) * R * 1.2, y + Math.sin(a) * R * 0.48 - 6, 14, a, 0.85); }
     c.restore();
   }
+  /** t105 specialized / recipe tower: a steady coloured ground ring (recipes: a slowly turning double ring with motes). */
+  private specAura(t: Tower, pw: number, dy: number, col: string, recipe: boolean) {
+    const c = this.ctx, T = this.g.time, R = 32 * pw, y = t.y + dy;
+    c.save();
+    const gr = c.createRadialGradient(t.x, y, 2, t.x, y, R * 1.35);
+    gr.addColorStop(0, hexA(col, recipe ? 0.42 : 0.28)); gr.addColorStop(1, hexA(col, 0));
+    c.fillStyle = gr; c.beginPath(); c.ellipse(t.x, y, R * 1.35, R * 0.56, 0, 0, 7); c.fill();
+    c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.ellipse(t.x, y, R * 1.05, R * 0.42, 0, 0, 7); c.stroke();
+    if (recipe) {
+      c.lineWidth = 1.5; c.setLineDash([3, 5]); c.lineDashOffset = T * 25; c.beginPath(); c.ellipse(t.x, y, R * 1.3, R * 0.52, 0, 0, 7); c.stroke(); c.setLineDash([]);
+      for (let i = 0; i < 4; i++) { const a = -T * 1.2 + (i * Math.PI) / 2; c.fillStyle = col; c.beginPath(); c.arc(t.x + Math.cos(a) * R * 1.18, y + Math.sin(a) * R * 0.47 - 4, 2.6, 0, 7); c.fill(); }
+    }
+    c.restore();
+  }
+  /** t105 branch emblem: coloured disc with the branch glyph (vector letter, no emoji font needed). */
+  private specBadge(x: number, y: number, col: string, glyph: string) {
+    const c = this.ctx;
+    c.save(); c.fillStyle = '#141a22'; c.strokeStyle = col; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(x, y - 10); c.lineTo(x + 9, y - 3); c.lineTo(x + 6, y + 9); c.lineTo(x - 6, y + 9); c.lineTo(x - 9, y - 3); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = col; c.font = 'bold 10px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(glyph, x, y + 1); c.restore();
+  }
   /** Gold ★ medallion over a fused tower. */
   private fusedBadge(x: number, y: number) {
     const c = this.ctx;
@@ -943,9 +968,9 @@ export class Renderer {
     c.closePath(); c.fill(); c.restore();
   }
   /** Selected max-tier tower: dashed gold link to the neighbour it can fuse with. */
-  private fusionLink(a: Tower, b: Tower) {
+  private fusionLink(a: Tower, b: Tower, col = 'rgba(255,216,74,0.9)') {
     const c = this.ctx, T = this.g.time;
-    c.save(); c.strokeStyle = 'rgba(255,216,74,0.9)'; c.lineWidth = 3; c.setLineDash([6, 6]); c.lineDashOffset = -T * 24;
+    c.save(); c.strokeStyle = col; c.lineWidth = 3; c.setLineDash([6, 6]); c.lineDashOffset = -T * 24;
     c.beginPath(); c.moveTo(a.x, a.y + 10); c.lineTo(b.x, b.y + 10); c.stroke(); c.setLineDash([]);
     c.beginPath(); c.ellipse(b.x, b.y + 18, 30, 12, 0, 0, 7); c.stroke();
     c.restore();
@@ -1362,4 +1387,8 @@ export function dmgTextPx(zoom: number, crit: boolean, hits = 1): number {
   const T = DMG_TEXT, grow = 1 + Math.min(0.35, Math.log2(Math.max(1, hits)) * 0.08);
   const raw = (crit ? T.critBase : T.base) * Math.sqrt(Math.max(0.05, zoom));
   return Math.max(crit ? T.critMin : T.min, Math.min(crit ? T.critMax : T.max, raw)) * grow;
+}
+
+function hexA(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }

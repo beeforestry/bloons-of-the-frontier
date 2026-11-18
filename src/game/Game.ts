@@ -9,6 +9,7 @@ import { dist, dist2, rand } from '../core/math';
 import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
 import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
+import { recipeFor, recipeFee, discover, type Recipe } from '../data/recipes';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
 import { buildWaves } from '../data/waves';
@@ -124,7 +125,7 @@ export class Game {
     /** t103 element combos triggered, by combo id, and element stamps applied. */
     elem: {} as Record<string, number>, elemApplied: 0, elemFirst: false,
     /** t104 fusions done; projectile shots fired / that hit something (predictive-aim metric). */
-    fusions: 0, projShots: 0, projHits: 0, projAimShots: 0, projAimHits: 0 };
+    fusions: 0, recipes: 0, proxStamps: 0, projShots: 0, projHits: 0, projAimShots: 0, projAimHits: 0 };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
@@ -694,7 +695,7 @@ export class Game {
     const crit = Math.random() < 0.08; if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
     // t103 element status + heavy-impact flag (Shatter); the tank's roof MG (secondary) carries neither
-    { const el = tw.elem; if (el && c.status && shotNo < 900) { hit.elem = el; hit.elemDur = c.status; } }
+    { const el = tw.data.element2 && shotNo % 2 === 1 ? tw.data.element2 : tw.elem; if (el && c.status && shotNo < 900) { hit.elem = el; hit.elemDur = c.status; } }
     if (type === 'explosive' || HEAVY_TOWERS.has(tw.data.id)) hit.heavy = shotNo < 900;
     const dmg0 = c.damage * (crit ? 2 : 1);
     if (c.chain) { this.teslaChain(tw, targets[0], dmg0, c, hit); return; }
@@ -744,9 +745,12 @@ export class Game {
     const special = c.specialRate && shotNo % Math.round(1 / c.specialRate) === 0;
     if (kind === 'glue') { this.fireAcid(tw, tgt, c, muzzle, dmg0, type, hit); return; }
     if (kind === 'melon') {
-      const lp = this.leadLob(tgt, 0.75, 0.5);
-      this.shoot({ kind, x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg0, type: 'fire', pierce: 1, splash: c.splash, hit,
-        lob: { tx: lp.x, ty: lp.y, dur: 0.75 } });
+      const lp = this.leadLob(tgt, 0.75, 0.5), n = c.shots ?? 1, ang = Math.atan2(lp.y - muzzle.y, lp.x - muzzle.x);
+      for (let i = 0; i < n; i++) { // t105 Inferno Battery: a volley of melons spread across the lane
+        const k = n > 1 ? (i - (n - 1) / 2) * 34 : 0, tx = lp.x - Math.sin(ang) * k, ty = lp.y + Math.cos(ang) * k;
+        this.shoot({ kind, x: muzzle.x, y: muzzle.y, angle: 0, speed: 0, damage: dmg0, type: 'fire', pierce: 1, splash: c.splash, hit: i ? { ...hit } : hit,
+          lob: { tx, ty, dur: 0.75 + i * 0.06 } }, i === (n >> 1));
+      }
       return;
     }
     const shots = c.shots ?? 1;
@@ -1261,6 +1265,42 @@ export class Game {
     this.stats.fusions++;
     this.sfx('upgrade'); this.shake(5);
     return true;
+  }
+  /** t105: an adjacent DIFFERENT max-tier tower that forms a hidden recipe with `t`, or null. */
+  recipePartner(t: Tower): { o: Tower; r: Recipe } | null {
+    if (!t.alive || t.fused || t.data.hidden || !t.isMaxTier) return null;
+    let best: { o: Tower; r: Recipe } | null = null, bd = Infinity;
+    for (const o of this.towers) {
+      if (o === t || !o.alive || o.fused || o.data.hidden || !o.isMaxTier || o.owner !== t.owner || o.data.id === t.data.id) continue;
+      const r = recipeFor(t.data.id, o.data.id); if (!r) continue;
+      const d = dist(o, t), reach = this.towerRadius(t.data.id) + this.towerRadius(o.data.id) + FUSION.reach;
+      if (d <= reach && d < bd) { bd = d; best = { o, r }; }
+    }
+    return best;
+  }
+  /** t105: fuse two different adjacent max-tier towers into their hidden recipe tower (takes the recipe's `a` tower spot). Networked (Sync G_METHODS). */
+  fuseRecipe(x: Tower, y?: Tower | null): Tower | null {
+    const rp = y ? (recipeFor(x.data.id, y.data.id) ? { o: y, r: recipeFor(x.data.id, y.data.id)! } : null) : this.recipePartner(x);
+    const o = rp?.o;
+    if (!rp || !o || !x.alive || !o.alive || x.fused || o.fused || x.data.hidden || o.data.hidden || !x.isMaxTier || !o.isMaxTier || x.owner !== o.owner
+      || dist(x, o) > this.towerRadius(x.data.id) + this.towerRadius(o.data.id) + FUSION.reach) { this.toast('Nothing happens… (needs two different matching max-tier towers side by side)', '#ff8a7a'); this.sfx('error'); return null; }
+    if (x.disabled || o.disabled) { this.toast('Repair the towers before fusing', '#ff8a7a'); this.sfx('error'); return null; }
+    const r = rp.r, base = x.data.id === r.a ? x : o, other = base === x ? o : x, fee = recipeFee(r, other.data.id);
+    if (!this.res.spend({ credits: fee })) { this.toast(`This fusion costs ¢${fee}`, '#ff8a7a'); this.sfx('error'); return null; }
+    const data = towerById(r.id);
+    this.fx({ kind: 'beam', x: other.x, y: other.y - 20, x2: base.x, y2: base.y - 20, color: data.mark?.color ?? '#fff', width: 7, dur: 0.5 });
+    this.fx({ kind: 'ring', x: base.x, y: base.y, r: 70, color: data.mark?.color ?? '#fff', dur: 0.7 });
+    const inv = base.invested + other.invested + fee, at = { c: base.cell.c, r: base.cell.r, x: base.x, y: base.y }, owner = base.owner, aim = base.aim;
+    for (const t of [base, other]) { this.grid.releaseOwner(t); t.remove(); }
+    this.towers = this.towers.filter((t) => t !== base && t !== other);
+    const nt = new Tower(data, at, this);
+    nt.owner = owner; nt.invested = inv; nt.aim = aim;
+    this.occupyTower(nt); this.towers.push(nt); this.losVer++;
+    this.stats.recipes++;
+    const fresh = discover(r.id);
+    this.toast(fresh ? `⚛ Hidden fusion discovered: ${data.name}!` : `⚛ ${data.name} fused`, data.mark?.color ?? '#fff');
+    this.sfx('upgrade'); this.shake(7);
+    return nt;
   }
   /** Relocate a movable vehicle (tank / gunship). Cancels auto-chase until it arrives. */
   moveTower(t: Tower, at: Vec): boolean {

@@ -10,7 +10,8 @@ import { Hud } from './ui/Hud';
 import { loadSprites, IMG } from './render/sprites';
 import { assetUrl } from './assetUrl';
 import { PLAYABLE_MAPS, DEFAULT_MAP, resolveMap, resolveMapId } from './data/maps';
-import { validateAll } from './data/validate';
+import { validateAll, towerPower } from './data/validate';
+import { SPECS, specsFor } from './data/specs';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
 import { Sfx } from './audio/Sfx';
@@ -399,7 +400,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     const sq = view.selSquads.filter((q) => q.alive);
     if (ev.key === 'Escape') { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; view.patrolMode = false; view.queueMode = false; view.patrolPts = []; hud.select(null, null); }
     else if (ev.key === ' ') { ev.preventDefault(); g.waves.start(g); }
-    else if (k === 'u' && view.selTower) { view.selTower.upgrade(g); hud.refresh(true); }
+    else if (k === 'u' && view.selTower) { if (!view.selTower.branchPick) view.selTower.upgrade(g); hud.refresh(true); }
     else if (k === 'u' && view.selBuilding) { view.selBuilding.upgrade(g); hud.refresh(true); }
     else if ((ev.key === 'Delete' || ev.key === 'Backspace') && view.selTower) { g.sellTower(view.selTower); hud.select(null, null); }
     else if (k === 't' && view.selTower) { g.cycleTargeting(view.selTower); hud.refresh(true); }
@@ -529,6 +530,11 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
         fee: fusedTier(t.data, t.branch).cost, branch: t.branch, dmg: t.t.combat?.damage ?? 0, rate: t.t.combat?.fireRate ?? 0, range: t.t.combat?.range ?? 0, pierce: t.t.combat?.pierce ?? 0, maxHp: t.health.max, scale: t.t.visual.scale ?? 1, x: t.x, y: t.y }; },
     fuse: (i: number, j?: number) => g.fuseTowers(g.towers[i], j == null ? null : g.towers[j]),
     setLead: (on: boolean) => { g.leadAim = on; },
+    // t105 hooks
+    specialize: (i: number, b: number) => { const t = g.towers[i]; return !!t && t.branchPick && t.upgrade(g, b); },
+    branchInfo: (i: number) => { const t = g.towers[i]; if (!t) return null; const sp = specsFor(t.data.id);
+      return { id: t.data.id, tier: t.tier, branch: t.branch, pick: t.branchPick, name: t.t.name, elem: t.elem ?? null, glow: t.t.visual.glow ?? null, power: towerPower(t.t), specs: sp ? sp.map((b) => b.name) : null }; },
+    specList: () => Object.keys(SPECS),
     predict: (uid: number, t: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? e.predict(g, t) : null; },
     // t103 element combos
     elemTune: ELEM_TUNE,

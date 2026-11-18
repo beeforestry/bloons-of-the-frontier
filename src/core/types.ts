@@ -209,6 +209,14 @@ export interface TowerData {
   moveSpeed?: number;
   /** Last-tier gunship: auto-chase the nearest enemy when idle. */
   autoChase?: boolean;
+  /** t105 hidden cross-type fusion recipe tower (never in the shop). */
+  hidden?: boolean;
+  /** t105 recipe looks: 2D/FP art tier to draw for `sprite`, plus the aura colour + emblem glyph. */
+  lookTier?: number;
+  lookId?: string;
+  mark?: { color: string; glyph: string };
+  /** t105: second element, stamped on alternate hits (Storm Core: shock / chill). */
+  element2?: Element;
   /** tiers[0] is the base tower; tiers[1..] are upgrades. */
   tiers: TowerTier[];
 }

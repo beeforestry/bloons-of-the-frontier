@@ -64,5 +64,5 @@ export function fusedTier(d: TowerData, branch: number | null = null): TowerTier
   cache.set(key, t); return t;
 }
 /** Towers that can fuse (path objects / single-use pods cannot). */
-export const canFuseType = (d: TowerData) => d.kind !== 'path' && !d.singleUse;
+export const canFuseType = (d: TowerData) => d.kind !== 'path' && !d.singleUse && !d.hidden;
 export const fusionFee = (d: TowerData, branch: number | null = null) => fusedTier(d, branch).cost;

@@ -120,3 +120,11 @@ export function branchTier(d: TowerData, b: number): TowerTier {
 }
 /** Element stamped by a tower given its branch (branch element wins over the tower's own). */
 export const branchElement = (d: TowerData, b: number | null): Element | undefined => (b != null && SPECS[d.id]?.[b]?.element) || d.element;
+
+/** t105: colour + glyph for a specialized (or hidden-recipe) tower, or null (2D badge + FP emblem). */
+export function branchMark(t: { data: TowerData; branch: number | null; tier: number }): { color: string; glyph: string } | null {
+  if (t.data.hidden && t.data.mark) return t.data.mark;
+  const sp = t.branch != null ? SPECS[t.data.id] : null;
+  if (!sp || t.tier < t.data.tiers.length - 1) return null;
+  const b = sp[t.branch!]; return { color: b.color, glyph: b.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() };
+}

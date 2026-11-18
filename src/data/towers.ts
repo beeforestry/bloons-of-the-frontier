@@ -415,8 +415,10 @@ export const TOWERS: TowerData[] = [
 ];
 
 
+/** t105: hidden cross-type fusion recipe towers (src/data/recipes.ts registers them; never shown in the shop). */
+export const HIDDEN_TOWERS: TowerData[] = [];
 export const towerById = (id: string) => {
-  const t = TOWERS.find((x) => x.id === id);
+  const t = TOWERS.find((x) => x.id === id) ?? HIDDEN_TOWERS.find((x) => x.id === id);
   if (!t) throw new Error('Unknown tower ' + id);
   return t;
 };

@@ -14,6 +14,7 @@ import { Enemy } from '../entities/Enemy';
 import { ovMonster, ovUnit } from '../overrun/data';
 import type { AbilityId, ManualCtl } from '../core/types';
 import { factionInfo } from '../data/factions';
+import { branchMark } from '../data/specs';
 import { ABILITIES } from '../data/abilities';
 import { PCOLORS } from '../core/players';
 import { assetUrl } from '../assetUrl';
@@ -95,8 +96,17 @@ const BADGES = new Map<Badge, THREE.CanvasTexture>();
 /** Vector-drawn badge (no emoji font needed): dark disc + coloured glyph. */
 let fusedBadgeTex: THREE.CanvasTexture | null = null;
 /** t104 fused-tower decoration (world units): two flat gold rings, an additive light column, a ★ badge sprite. */
-function fusedGroup(r: number): THREE.Group {
-  const gr = new THREE.Group(), gold = 0xffd84a;
+const markTex = new Map<string, THREE.CanvasTexture>();
+/** t105 branch / recipe emblem texture: dark pentagon shield + coloured rim + glyph letters. */
+function markTexture(color: string, glyph: string): THREE.CanvasTexture {
+  const k = color + glyph; let t = markTex.get(k); if (t) return t;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d')!;
+  c.fillStyle = '#141a22'; c.strokeStyle = color; c.lineWidth = 5; c.beginPath(); c.moveTo(32, 4); c.lineTo(59, 24); c.lineTo(50, 59); c.lineTo(14, 59); c.lineTo(5, 24); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = color; c.font = 'bold 24px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(glyph, 32, 36);
+  t = new THREE.CanvasTexture(cv); markTex.set(k, t); return t;
+}
+function fusedGroup(r: number, color = '#ffd84a', glyph?: string): THREE.Group {
+  const gr = new THREE.Group(), gold = new THREE.Color(color).getHex();
   const mat = (o: number) => new THREE.MeshBasicMaterial({ color: gold, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
   const r1 = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.05, 6, 48), mat(0.9)); r1.rotation.x = -Math.PI / 2;
   const r2 = new THREE.Mesh(new THREE.RingGeometry(r * 1.12, r * 1.2, 48, 1, 0, Math.PI * 1.6), mat(0.7)); r2.rotation.x = -Math.PI / 2;
@@ -107,7 +117,7 @@ function fusedGroup(r: number): THREE.Group {
     c.fillStyle = '#ffd84a'; c.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + (k * Math.PI) / 5, rr = k % 2 ? 8 : 19; c.lineTo(32 + Math.cos(a) * rr, 33 + Math.sin(a) * rr); } c.closePath(); c.fill();
     fusedBadgeTex = new THREE.CanvasTexture(cv);
   }
-  const badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: fusedBadgeTex, transparent: true, fog: false })); badge.scale.setScalar(Math.max(0.35, r * 0.32)); badge.renderOrder = 5;
+  const badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: glyph ? markTexture(color, glyph) : fusedBadgeTex, transparent: true, fog: false })); badge.scale.setScalar(Math.max(0.35, r * 0.32)); badge.renderOrder = 5;
   gr.add(r1, r2, col, badge); gr.name = 'fusedFx';
   return gr;
 }
@@ -694,16 +704,17 @@ export class Possess {
     let m = this.towerModels.get(t);
     if (m && m.tier !== t.tier) { this.scene.remove(m.root); this.towerModels.delete(t); m = undefined; }
     if (m) return m;
-    if (t.data.id === 'unsc_tank' || t.data.id === 'unsc_heli' || t.data.id === 'unsc_destroyer' || t.data.id === 'unsc_beacon') {
+    const mid = t.data.lookId ?? t.data.id, mt = t.data.lookTier ?? t.tier; // t105 recipe towers borrow a parent's max-tier model
+    if (mid === 'unsc_tank' || mid === 'unsc_heli' || mid === 'unsc_destroyer' || mid === 'unsc_beacon') {
       const root = new THREE.Group(), head = new THREE.Group(); root.add(head);
-      const veh = (t.data.id === 'unsc_tank' ? 'tank' : t.data.id === 'unsc_heli' ? 'heli' : t.data.id === 'unsc_destroyer' ? 'destroyer' : 'beacon') as 'tank' | 'heli' | 'destroyer' | 'beacon';
+      const veh = (mid === 'unsc_tank' ? 'tank' : mid === 'unsc_heli' ? 'heli' : mid === 'unsc_destroyer' ? 'destroyer' : 'beacon') as 'tank' | 'heli' | 'destroyer' | 'beacon';
       const mm: { root: THREE.Group; head: THREE.Group; veh: typeof veh; tier: number; model: THREE.Group | undefined; base?: number } = { root, head, veh, tier: t.tier, model: undefined };
-      const load = veh === 'tank' ? tank(t.tier) : veh === 'heli' ? heli(t.tier) : Promise.resolve(veh === 'destroyer' ? destroyer(t.tier) : beacon(t.tier));
+      const load = veh === 'tank' ? tank(mt) : veh === 'heli' ? heli(mt) : Promise.resolve(veh === 'destroyer' ? destroyer(mt) : beacon(mt));
       void load.then((model) => { if (!this.alive) return; model.traverse((x) => { x.castShadow = true; }); head.add(model); mm.model = model; this.vm.vehicles++; const z = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()); this.vm.size[veh] = [z.x, z.y, z.z].map((n) => +n.toFixed(2)); });
       root.userData.veh = veh; this.scene.add(root); this.towerModels.set(t, mm); return mm;
     }
     // t71: Blender hero GLB for key towers (sprite-projected); head group aims with turret
-    const glbName = TOWER_GLB[t.data.id];
+    const glbName = TOWER_GLB[mid];
     if (glbName) {
       const root = new THREE.Group(), head = new THREE.Group(); root.add(head);
       const mm: { root: THREE.Group; head: THREE.Group; veh?: undefined; tier: number; model?: THREE.Group; base?: number } = { root, head, tier: t.tier, base: 1, model: undefined };
@@ -717,7 +728,7 @@ export class Possess {
       });
       this.scene.add(root); this.towerModels.set(t, mm); return mm;
     }
-    const tm = towerMesh(t.data.id, t.tier); // t44: per-tower, per-tier procedural model (merged + cached geometry)
+    const tm = towerMesh(mid, mt); // t44: per-tower, per-tier procedural model (merged + cached geometry)
     if (tm) { this.vm.towers3d[tm.root.userData.tower3d] = (this.vm.towers3d[tm.root.userData.tower3d] ?? 0) + 1; this.scene.add(tm.root); m = { root: tm.root, head: tm.head, tier: t.tier, base: tm.root.scale.x }; this.towerModels.set(t, m); return m; }
     const root = new THREE.Group(), head = new THREE.Group(); root.add(at(new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.5, 10), lam(0x6d5a44)), 0, 0.25, 0));
     head.add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.9), lam(new THREE.Color(factionInfo(t.data.faction).color).getHex()))); head.position.y = 2.0; root.add(head);
@@ -1033,9 +1044,12 @@ export class Possess {
   private syncFused() {
     const g = this.g, live = new Set<Tower>(), now = performance.now() / 1000;
     for (const t of g.towers) {
-      if (!t.alive || !t.fused) continue; live.add(t);
+      const bm = t.alive && !t.fused ? branchMark(t) : null; // t105: specialized / recipe towers get a coloured ring + emblem
+      if (!t.alive || (!t.fused && !bm)) continue; live.add(t);
+      const fk = t.fused ? 'fused' : bm!.color + bm!.glyph;
       let fx = this.fusedFx.get(t);
-      if (!fx) { fx = fusedGroup(g.towerRadius(t.data.id) * S * 1.7); this.scene.add(fx); this.fusedFx.set(t, fx); }
+      if (fx && fx.userData.k !== fk) { this.scene.remove(fx); fx = undefined; }
+      if (!fx) { fx = t.fused ? fusedGroup(g.towerRadius(t.data.id) * S * 1.7) : fusedGroup(g.towerRadius(t.data.id) * S * (t.data.hidden ? 1.8 : 1.45), bm!.color, bm!.glyph); fx.userData.k = fk; fx.name = t.fused ? 'fusedFx' : t.data.hidden ? 'recipeFx' : 'branchFx'; this.scene.add(fx); this.fusedFx.set(t, fx); }
       const m = this.towerModels.get(t);
       if (m && (!fx.userData.h || now - (fx.userData.at as number) > 1)) { const bb = new THREE.Box3().setFromObject(m.root); fx.userData.h = Math.max(0.6, bb.max.y - bb.min.y); fx.userData.at = now; }
       const h = (fx.userData.h as number) || 1.2, mine = t === this.obj;
