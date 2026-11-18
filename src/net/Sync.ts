@@ -28,6 +28,7 @@ import { Versus } from './Versus';
 import type { DifficultyId } from '../data/difficulty';
 import { PCOLORS } from '../core/players';
 import type { Vec } from '../core/types';
+import { DEATH_CAUSES } from '../systems/Deaths';
 
 export type Mode = 'coop' | 'versus' | 'overrun';
 export interface MpSettings { mode: Mode; map: string; diff: DifficultyId; credits: number; waveTimer: number; speed: 1 | 2; matchMin: number; hostRole: 'defender' | 'invader'; /** t78 Overrun: AI squadmates */ ovBots?: number }
@@ -46,6 +47,7 @@ const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'moveTower',
 /** Proto methods (Tower / Building instances). */
 const P_METHODS: [typeof Tower | typeof Building, string, string][] = [[Tower, 'upgrade', 'tw.upgrade'], [Tower, 'useAbility', 'tw.useAbility'], [Building, 'upgrade', 'bd.upgrade'], [Building, 'enqueue', 'bd.enqueue'], [Building, 'cancel', 'bd.cancel']];
 let ACTIVE: Sync | null = null;
+const r2 = (v: number) => Math.round(v * 100) / 100;
 let patched = false;
 function patchProtos() {
   if (patched) return; patched = true;
@@ -75,6 +77,8 @@ export class Sync {
   versus: Versus | null = null;
   /** Co-op auto wave timer (host). */
   waveCountdown = 0;
+  /** t107: last death-event seq already shipped in a snapshot. */
+  private deSent = 0;
   private snapT = 0;
   private gOrig: Record<string, (...a: unknown[]) => unknown> = {};
   /** Client: host uid -> local object, and back. */
@@ -422,6 +426,8 @@ export class Sync {
       hq: [r1(g.hq.health.hp), Math.round(g.hq.health.max)],
       all: this.players.map((p) => [p.pid, Math.floor(this.creditsOf(p.pid))]),
       E: [...g.enemies.filter((e) => e.alive).map(en), ...g.allies.filter((e) => e.alive).map(en)],
+      // t107: death events since the last snapshot (cosmetic: clients replay the break-apart locally)
+      DE: g.deaths.filter((d) => d.seq > this.deSent).slice(-30).map((d) => [d.uid, d.id, DEATH_CAUSES.indexOf(d.cause), r2(d.dx), r2(d.dy), (d.layer ? 1 : 0) | (d.shatter ? 2 : 0) | (d.boss ? 4 : 0), Math.round(d.x), Math.round(d.y), r2(d.ang)]),
       T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0, t.possessedBy, r1(t.aim), Math.round(t.x), Math.round(t.y), t.fused ? 1 : 0, t.branch ?? -1]),
       S: g.squads.filter((s) => s.alive).map((s) => [s.uid, s.data.id, s.owner, s.stance, s.targeting, Math.round(s.rally.x), Math.round(s.rally.y), s.units.filter((u) => u.alive).map((u) => [u.uid, u.index, Math.round(u.x), Math.round(u.y), r1(u.health.hp), u.stars, garCode(u), u.dropT > 0 ? 1 : 0, u.possessedBy]), (s.auto ? 1 : 0) | (s.manual ? 2 : 0), s.autoTask]),
       B: g.buildings.filter((b) => b.alive).map((b) => [b.isHQ ? -1 : b.pad!.index, b.data.id, b.tier, r1(b.health.hp), b.build ? [r1(b.build.t), b.build.dur, b.build.to] : 0, b.queue.map((q) => [q.unitId, r1(q.t), q.dur, q.held]), Math.round(b.rally.x), Math.round(b.rally.y), b.owner]),
@@ -437,6 +443,7 @@ export class Sync {
       AL: [...this.allowAlly].filter(([, v]) => v).map(([k]) => k),
       PV: g.parked.map((p) => [p.id, p.kind, Math.round(p.x), Math.round(p.y), r1(p.ang), r1(p.hp)]),
     };
+    this.deSent = g.deathSeq;
     for (const pid of this.net.conns.keys()) {
       const w = pid === this.resPid ? this.walletOf(0) : this.wallets.get(pid);
       if (!w) continue;
@@ -468,6 +475,7 @@ export class Sync {
       if (Array.isArray(s.CO)) { const co = s.CO as number[]; g.overload = co[0] | 0; g.rageT = +co[1] || 0; g.rageCd = +co[2] || 0; } // t106
       this.allowAlly.clear(); for (const p of s.AL as number[]) this.allowAlly.set(p, true);
       if (s.V) this.vs = s.V as Versus['s'];
+      if (Array.isArray(s.DE)) this.replayDeaths(s.DE as unknown[][]); // t107 (before the vanished enemies are dropped)
       this.syncEnemies(s.E as unknown[][]);
       this.syncTowers(s.T as unknown[][]);
       this.syncSquads(s.S as unknown[][]);
@@ -483,6 +491,15 @@ export class Sync {
   }
   /** Client copy of the versus state (TE, timer, cooldowns). */
   vs: Versus['s'] | null = null;
+  /** t107: host death events -> local death effects (positions from the local mirror when it still exists). */
+  private replayDeaths(DE: unknown[][]) {
+    const g = this.g;
+    for (const row of DE) {
+      const [uid, id, ci, dx, dy, fl, x, y, ang] = row as [number, string, number, number, number, number, number, number, number];
+      const e = this.h2l.get(uid) as Enemy | undefined;
+      g.emitDeath({ uid: e ? e.uid : -uid, id, x: e ? e.x : x, y: e ? e.y : y, dx, dy, ang, cause: DEATH_CAUSES[ci] ?? 'normal', layer: !!(fl & 1), shatter: !!(fl & 2), boss: !!(fl & 4) });
+    }
+  }
   private syncEnemies(E: unknown[][]) {
     const g = this.g, seen = new Set<number>();
     for (const row of E) {

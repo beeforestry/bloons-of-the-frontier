@@ -345,7 +345,7 @@ export class Enemy {
   private emitDeath(g: Game, layer: boolean) {
     let dx = this.x - this.lastFx, dy = this.y - this.lastFy, L = Math.hypot(dx, dy);
     if (!(L > 0.5)) { dx = -Math.cos(this.ang); dy = -Math.sin(this.ang); L = 1; } // no source: knocked back against its walk
-    g.emitDeath({ uid: this.uid, id: this.data.id, x: this.x, y: this.y, dx: dx / L, dy: dy / L, cause: this.deathCause(), boss: !!this.data.boss, layer, shatter: this.shatterT > 0 });
+    g.emitDeath({ uid: this.uid, id: this.data.id, x: this.x, y: this.y, dx: dx / L, dy: dy / L, ang: this.ang, cause: this.deathCause(), boss: !!this.data.boss, layer, shatter: this.shatterT > 0 });
   }
 
   // ---------------------------------------------------------------- boss phases

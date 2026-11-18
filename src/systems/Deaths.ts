@@ -10,6 +10,8 @@ export interface DeathEvent {
   seq: number; uid: number; id: string; x: number; y: number;
   /** Unit vector of the killing hit (from the shooter / projectile towards the enemy). */
   dx: number; dy: number;
+  /** Enemy facing (rad) at death. */
+  ang: number;
   cause: DeathCause; boss: boolean;
   /** Balloon layer popped (outer skin shreds) — the enemy itself lives on as the next layer. */
   layer: boolean;

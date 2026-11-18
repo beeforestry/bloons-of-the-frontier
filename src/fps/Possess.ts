@@ -27,6 +27,9 @@ import { loadCabras, cabrasH, cabrasSet, distantMorro, CABRAS, type CabrasGrid, 
 import { BOARD_M } from '../game/Game';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
 import { enemySpriteTex, ENEMY_GLB, CENTRED_GLB } from './enemies3d';
+import { FpDeaths, type PartSrc } from './deathParts';
+import { DEATH_TUNE, type DeathEvent } from '../systems/Deaths';
+import { ENEMIES } from '../data/enemies';
 import { loadGlbClone, loadGlbParts, TOWER_GLB, GUN_GLB, unitGlb, unitVmGlb, UNIT_VM } from './glbModels';
 import { setMatQuality, matOf } from './mats';
 import { towerMesh } from './towers3d';
@@ -201,6 +204,8 @@ export class Possess {
   private parkedObjs = new Map<number, { g: THREE.Group; glb?: string }>(); private vehId = '';
   private war: WarFx | null = null;
   private ctxLost = false;
+  /** t107: pooled GLB death parts + cursor into g.deaths. */
+  deathParts!: FpDeaths; private deathCur = -1; private bossParts = new Map<string, PartSrc[]>(); private dyingUids = new Set<number>();
   private bits: { floor: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; c: THREE.Color }[] = [];
   private seen = new Map<Enemy, { x: number; y: number; z: number; c: number }>();
   private gun = new THREE.Group(); private flash!: THREE.Mesh; private flashT = 0; private kick = 0;
@@ -635,6 +640,7 @@ export class Possess {
     for (const m of [this.bloonMesh, this.bugMesh, this.unitMesh, this.shotMesh, this.bitMesh]) { m.count = 0; m.frustumCulled = false; this.scene.add(m); }
     // t71: swap procedural bloon/bug geos for Blender GLBs when ready (keep pools usable immediately)
     void this.upgradeEnemyGlbs();
+    this.deathParts = new FpDeaths(this.scene, this.touch || this.vm.quality === 'low' ? DEATH_TUNE.caps3d[1] : DEATH_TUNE.caps3d[0]);
     // t67: more tracers for rail/laser/beacon + other towers firing nearby
     const tm = new THREE.LineBasicMaterial({ color: 0xfff0a0, transparent: true, depthWrite: false });
     for (let i = 0; i < 48; i++) {
@@ -1078,9 +1084,54 @@ export class Possess {
     }
     for (let i = N; i < this.elemIcons.length; i++) this.elemIcons[i].visible = false;
   }
+  /** t107: break freshly killed enemies into GLB parts (+ cause particles). */
+  private syncDeaths() {
+    const g = this.g; if (this.deathCur < 0 || this.deathCur > g.deathSeq) this.deathCur = g.deathSeq; // only kills after entering
+    this.dyingUids.clear();
+    const cam = this.camera.position;
+    for (const d of g.deaths) {
+      if (d.seq <= this.deathCur) continue; this.deathCur = d.seq;
+      const x = d.x * S, z = d.y * S; if ((x - cam.x) ** 2 + (z - cam.z) ** 2 > 140 * 140) continue; // too far to matter
+      this.dyingUids.add(d.uid); this.deathFx3d(d, x, z);
+    }
+  }
+  private deathFx3d(d: DeathEvent, x: number, z: number) {
+    const data = ENEMIES[d.id]; if (!data) return;
+    const fake = { data } as unknown as Enemy, gh = standH(this.g.map, d.x, d.y), D = this.dummy, bloon = data.family === 'bloon';
+    const y = enemyY(fake) + gh, col = enemyCol(fake);
+    let parts: PartSrc[] = [];
+    if (!d.layer) {
+      if (data.boss || d.id === 'moab' || data.air) {
+        const tpl = this.bossTpl.get(d.id), k = Math.max(1, data.radius * SZ * 0.9), glb = ENEMY_GLB[d.id];
+        if (tpl) {
+          let ps = this.bossParts.get(d.id);
+          if (!ps) { ps = []; tpl.updateMatrixWorld(true); tpl.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry) ps!.push({ geometry: m.geometry, material: Array.isArray(m.material) ? m.material[0] : m.material, local: m.matrixWorld.clone() }); }); this.bossParts.set(d.id, ps); }
+          parts = ps;
+        }
+        D.position.set(x, glb && CENTRED_GLB.has(glb) ? Math.max(y, gh + 1.25 * k) : glb ? gh : y, z); D.rotation.set(0, -d.ang, 0); D.scale.setScalar(k);
+      } else {
+        const set = this.enemySets.get(d.id);
+        if (set) parts = set.parts.map((im) => ({ geometry: im.geometry, material: im.material as THREE.Material }));
+        else { const im = bloon ? (this.bloonMeshes.get(d.id) ?? this.bloonMesh) : this.bugMesh; parts = [{ geometry: im.geometry, material: im.material as THREE.Material }]; }
+        if (bloon) { D.position.set(x, y, z); D.rotation.set(0, d.uid * 1.7, 0); D.scale.setScalar((enemyR(fake) / 0.62) * 0.95); }
+        else { D.position.set(x, gh, z); D.rotation.set(0, -d.ang, 0); D.scale.setScalar(Math.max(0.6, data.radius * SZ * 1.6)); }
+      }
+      D.updateMatrix();
+      this.deathParts.spawn(parts, D.matrix, d.dx, d.dy, d.cause, d.boss, gh + 0.05);
+    }
+    const n = d.layer ? 5 : d.boss ? 30 : 8, py = bloon ? y : gh + 0.6;
+    switch (d.cause) {
+      case 'burn': this.burst(x, py, z, 0xff7a2a, n); this.burst(x, py, z, 0x3a3430, Math.ceil(n / 2)); break;
+      case 'ice': this.burst(x, py, z, 0xdff8ff, n + (d.shatter ? 8 : 4)); this.burst(x, py, z, 0x8fd4ff, 4); break;
+      case 'shock': this.burst(x, py, z, 0xfff27a, n + 4); this.burst(x, py, z, 0xbff4ff, 4); break;
+      case 'boom': this.burst(x, py, z, 0xffa040, n + 6); this.burst(x, py, z, 0x555048, 6); break;
+      default: this.burst(x, py, z, col, n);
+    }
+  }
   /** Mirror the live sim into the instanced meshes. */
   private syncEntities(dt: number) {
     const g = this.g, D = this.dummy, me = this.obj;
+    this.syncDeaths();
     let nb = 0, ng = 0; const live = new Set<Enemy>();
     for (const m of this.bloonMeshes.values()) m.userData._n = 0; this.bloonMesh.userData._n = 0;
     const eg: Record<string, string> = {};
@@ -1130,7 +1181,7 @@ export class Possess {
       }
     }
     // popped / killed since last frame -> burst of bits
-    for (const [e, p] of this.seen) if (!live.has(e)) { this.seen.delete(e); this.burst(p.x, p.y, p.z, p.c, e.data.boss ? 30 : 8); }
+    for (const [e, p] of this.seen) if (!live.has(e)) { this.seen.delete(e); if (!this.dyingUids.has(e.uid)) this.burst(p.x, p.y, p.z, p.c, e.data.boss ? 30 : 8); } // t107: kills already broke apart
     for (const [e, m] of this.bossModels) if (!live.has(e)) { this.scene.remove(m); this.bossModels.delete(e); }
     for (const m of this.bloonMeshes.values()) { m.count = (m.userData._n as number) || 0; m.userData._n = 0; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     this.bloonMesh.count = (this.bloonMesh.userData._n as number) || 0; this.bloonMesh.userData._n = 0;
@@ -1207,6 +1258,7 @@ export class Possess {
       this.bitMesh.setMatrixAt(nbits, D.matrix); this.bitMesh.setColorAt(nbits++, b.c);
     }
     if (this.bits.length > 400) this.bits = this.bits.filter((b) => b.life > 0);
+    this.deathParts.update(dt);
     this.bitMesh.count = nbits; this.bitMesh.instanceMatrix.needsUpdate = true; if (this.bitMesh.instanceColor) this.bitMesh.instanceColor.needsUpdate = true;
     for (const tr of this.tracers) if (tr.life > 0) { tr.life -= dt; if (tr.life <= 0) tr.line.visible = false; }
     // range ring
