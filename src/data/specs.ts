@@ -53,7 +53,7 @@ export const SPECS: Record<string, [Branch, Branch]> = {
   ],
   flame_melon_mortar: [
     { key: 'napalm', name: 'Napalm Melons', icon: '🔥', color: '#ff5a2a', blurb: 'Burn lasts 60% longer, ×1.15 splash.', mul: { status: 1.6, splash: 1.15 } },
-    { key: 'siege', name: 'Siege Melons', icon: '💥', color: '#ffd84a', blurb: '×1.3 damage, +10% range.', mul: { damage: 1.3, range: 1.1 } },
+    { key: 'siege', name: 'Siege Melons', icon: '💥', color: '#ffd84a', blurb: '×1.25 damage, +8% range.', mul: { damage: 1.25, range: 1.08 } },
   ],
   tesla_coil: [
     { key: 'web', name: 'Arc Web', icon: '🕸', color: '#9fd8ff', blurb: '+2 chain jumps.', add: { chain: 2 } },

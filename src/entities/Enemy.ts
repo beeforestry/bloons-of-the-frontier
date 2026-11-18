@@ -313,7 +313,7 @@ export class Enemy {
 
   // ---------------------------------------------------------------- boss phases
   private updateBoss(g: Game, dt: number) {
-    const k = this.data.bossKit!;
+    const k = this.data.bossKit; if (!k || !this.alive) return; // t105: data can change mid-update (layer pop from a burn tick)
     if (this.bossPhase === 1 && this.hp <= this.maxHp * 0.5) {
       this.bossPhase = 2;
       this.armor = Math.min(this.armor, k.armor2);

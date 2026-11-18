@@ -28,14 +28,17 @@ const ADD: Record<string, number> = { pierce: 1, chain: 1, garrisonSlots: 1, max
 const CAP: Record<string, number> = { slow: 0.75, armorShred: 1, garrisonProtect: 0.8 };
 const round = (n: number) => Math.round(n * 100) / 100;
 
-function boost(o: Record<string, unknown>): Record<string, unknown> {
+/** t105: a specialised pair starts from its (stronger) branch tier, so its multipliers are softened to keep the fused
+ *  result ≈ the plain fused tower's power (≈2× one max tower), not branch × full fusion. */
+export const BRANCH_SOFT = 0.5;
+function boost(o: Record<string, unknown>, soft = 1): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(o)) {
     if (typeof v === 'number') {
-      let n = v * (MUL[k] ?? 1.15) + (ADD[k] ?? 0);
+      let n = v * (1 + ((MUL[k] ?? 1.15) - 1) * soft) + (ADD[k] ?? 0);
       if (CAP[k] != null) n = Math.max(v, Math.min(CAP[k], n));
       out[k] = Math.max(v, round(n));
-    } else if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = boost(v as Record<string, unknown>); // e.g. tank roof MG
+    } else if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = boost(v as Record<string, unknown>, soft); // e.g. tank roof MG
     else out[k] = v;
   }
   return out;
@@ -46,20 +49,20 @@ const cache = new Map<string, TowerTier>();
 export function fusedTier(d: TowerData, branch: number | null = null): TowerTier {
   const b = branch != null && SPECS[d.id] ? branch : null, key = d.id + ':' + b;
   let t = cache.get(key); if (t) return t;
-  const last = b != null ? branchTier(d, b) : d.tiers[d.tiers.length - 1]; // t105: a specialised pair fuses its branch
+  const last = b != null ? branchTier(d, b) : d.tiers[d.tiers.length - 1], sf = b != null ? BRANCH_SOFT : 1; // t105: a specialised pair fuses its branch
   t = {
     ...last,
     name: `${last.name} ★ Fused`,
     cost: Math.round(d.tiers.reduce((a, x) => a + x.cost, 0) * FUSION.feeK / 5) * 5,
-    blurb: 'Two max-tier towers forged into one: ×1.4 damage, +10% fire rate, +8% range, +1 pierce, ×1.8 armour.',
-    maxHp: Math.round(last.maxHp * 1.8),
+    blurb: sf < 1 ? 'Two same-branch towers forged into one: ×1.2 damage, +5% fire rate, +4% range, +1 pierce, ×1.4 armour (on top of the branch).' : 'Two max-tier towers forged into one: ×1.4 damage, +10% fire rate, +8% range, +1 pierce, ×1.8 armour.',
+    maxHp: Math.round(last.maxHp * (1 + 0.8 * sf)),
     visual: { ...last.visual, level: last.visual.level + 1, scale: round((last.visual.scale ?? 1) * 1.15), glow: FUSION.glow },
-    combat: last.combat && (boost(last.combat as unknown as Record<string, unknown>) as unknown as TowerTier['combat']),
-    cover: last.cover && (boost(last.cover as unknown as Record<string, unknown>) as unknown as TowerTier['cover']),
-    farm: last.farm && (boost(last.farm as unknown as Record<string, unknown>) as unknown as TowerTier['farm']),
-    aura: last.aura && (boost(last.aura as unknown as Record<string, unknown>) as unknown as TowerTier['aura']),
-    orbs: last.orbs && (boost(last.orbs as unknown as Record<string, unknown>) as unknown as TowerTier['orbs']),
-    hypno: last.hypno && (boost(last.hypno as unknown as Record<string, unknown>) as unknown as TowerTier['hypno']),
+    combat: last.combat && (boost(last.combat as unknown as Record<string, unknown>, sf) as unknown as TowerTier['combat']),
+    cover: last.cover && (boost(last.cover as unknown as Record<string, unknown>, sf) as unknown as TowerTier['cover']),
+    farm: last.farm && (boost(last.farm as unknown as Record<string, unknown>, sf) as unknown as TowerTier['farm']),
+    aura: last.aura && (boost(last.aura as unknown as Record<string, unknown>, sf) as unknown as TowerTier['aura']),
+    orbs: last.orbs && (boost(last.orbs as unknown as Record<string, unknown>, sf) as unknown as TowerTier['orbs']),
+    hypno: last.hypno && (boost(last.hypno as unknown as Record<string, unknown>, sf) as unknown as TowerTier['hypno']),
   };
   cache.set(key, t); return t;
 }
