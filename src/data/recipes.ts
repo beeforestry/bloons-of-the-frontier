@@ -40,14 +40,14 @@ function build(): TowerData[] {
   const [rs, ri, re] = RECIPES;
   const tc = tesla.combat!, fc = frost.combat!, mc = melon.combat!;
   const storm: CombatStats = { ...tc, damage: r2(tc.damage * 1.35), fireRate: r2(tc.fireRate * 1.1), range: Math.round(Math.max(tc.range, fc.range) * 1.05),
-    chain: (tc.chain ?? 0) + 2, slow: Math.min(0.75, Math.max(tc.slow ?? 0, fc.slow ?? 0) + 0.1), status: Math.max(tc.status ?? 0, fc.status ?? 0) };
+    chain: (tc.chain ?? 0) + 3, slow: Math.min(0.75, Math.max(tc.slow ?? 0, fc.slow ?? 0) + 0.1), status: Math.max(tc.status ?? 0, fc.status ?? 0) };
   const inferno: CombatStats = { ...mc, damage: r2(mc.damage * 1.15), fireRate: r2(mc.fireRate * 1.35), shots: 3, splash: Math.round((mc.splash ?? 0) * 1.1),
     range: Math.max(mc.range, dart.combat!.range), status: r2((mc.status ?? 0) * 1.15) };
   return [
     { id: 'storm_core', name: 'Storm Core', faction: byId('tesla_coil').faction, kind: 'combat', sprite: byId('tesla_coil').sprite, hidden: true, lookId: 'tesla_coil', lookTier: 2,
       mark: { color: '#8fe8ff', glyph: 'SC' }, damageType: 'energy', element: 'shock', element2: 'chill', projectile: 'tesla', hitscan: true, hitsAir: true, antiAir: true,
       desc: 'HIDDEN FUSION (Tesla Coil + Frost Oakshield). A frozen thunderhead: chain lightning that alternates ⚡ Shock and ❄ Chill, slows everything it touches, and keeps the Bastion\'s cover aura.',
-      tiers: [tier('Storm Core', rs, 'Chain lightning ×1.35 dmg, +2 jumps, alternating Shock / Chill, slow, cover aura.', '#8fe8ff', { combat: storm, cover: { ...frost.cover! } }, tesla.maxHp + frost.maxHp)] },
+      tiers: [tier('Storm Core', rs, 'Chain lightning ×1.35 dmg, +3 jumps, alternating Shock / Chill, slow, cover aura.', '#8fe8ff', { combat: storm, cover: { ...frost.cover! } }, tesla.maxHp + frost.maxHp)] },
     { id: 'inferno_battery', name: 'Inferno Battery', faction: byId('flame_melon_mortar').faction, kind: 'combat', sprite: byId('flame_melon_mortar').sprite, hidden: true, lookId: 'flame_melon_mortar', lookTier: 2,
       mark: { color: '#ff6a2a', glyph: 'IB' }, damageType: 'fire', element: 'burn', projectile: 'melon',
       desc: 'HIDDEN FUSION (Flame Melon Mortar + a quick shooter). Lobs a three-bomb volley of burning, exploding melons — Burning + explosion triggers Wildfire.',

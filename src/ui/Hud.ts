@@ -412,7 +412,7 @@ export class Hud {
   /** t105: the tier-3 pick: two permanent specialization branches. */
   private branchPanel(t: Tower): string {
     const sp = specsFor(t.data.id)!, n = t.nextTier!, poor = this.g.res.credits < n.cost;
-    return `<div class="sp-sub br-h">⑂ Tier 3: choose a permanent specialization</div><div class="br-row">${[0, 1].map((bi) => {
+    return `<div class="sp-sub br-h">⬆ Tier 3: choose a permanent specialization</div><div class="br-row">${[0, 1].map((bi) => {
       const b = sp[bi], bt = branchTier(t.data, bi);
       return `<button class="btn up br" id="sp-br${bi}" style="--bc:${b.color}" ${poor ? 'disabled' : ''}><span class="br-ic">${b.icon}</span> ${b.name} <b>¢${n.cost}</b><div class="br-bl">${b.blurb}</div><div class="delta">${deltaLine(t.t, bt, t.data)}</div></button>`; }).join('')}</div>`;
   }
