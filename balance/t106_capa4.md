@@ -22,7 +22,7 @@ The bot (`tests/balance_bot.js`) now uses the new systems the way a decent playe
 - Formula: `hp × (1 + k · clamp((wave−10)/50, 0, 1) · (1 + max(0, wave−60)/20))`.
 - k values: easy 0, medium 0.25, hard 0.7, impoppable 0.7.
 - There is no ramp before wave 10, so the early economy is untouched.
-- Sample values on hard: ×1.24 at w30, ×1.7 at w60, ×2.05 at w70, ×2.4 at w80.
+- Sample values on hard: ×1.28 at w30, ×1.7 at w60, ×2.05 at w70, ×2.4 at w80.
 
 The middle round (k=0.6, /40 late slope) still let hard reach 94/67 without fusing and 94/94 with fusing.
 
