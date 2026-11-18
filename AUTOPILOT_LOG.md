@@ -122,3 +122,20 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 **Balance.** `balance/t105_specs.md`. Branches were trimmed ~30% after the fusing bot reached wave 92/94 on hard El Morro (now 75/83, same as t104).
 
 **Tests.** e2e_t105 PASS (local A–E, live A–D). t104/t103/t97/t53/t101/t74/t99 PASS. t80 PASS on rerun. Known pre-existing: t78, t101b, e2e_mp versus.
+
+## 2026-11-18 — t106: Capa 4 — targeting, Overload Core, Rage, scaling crit, knockback, sell 70% (shipped, ~02:28)
+
+**What shipped.** Details are in `PROGRESS_t106.md`.
+- **Targeting.** Six modes with icon buttons and tips. "Closest to HQ" is now "Closest to Exit". Recipe towers inherit the mode. Works with fused towers, recipes and first person.
+- **Overload Core.** +5% damage per level. Price 500 → 800 → 1280… (×1.6), max 12. Shown in the HUD, saved, synced in co-op (the buyer pays).
+- **Rage.** ×1.5 fire rate for 9 s, 30 s cooldown. Button or X, with a vignette and heat rings. Team-shared in co-op.
+- **Crit.** 10% rising 0.4% per wave to 33%, ×2.5 damage. ✦ popups and the % in the HUD.
+- **Knockback.** Melon Mortar and Battle Tank push back along the path. Bosses take ×0.3. Diminishing returns, so no stun-lock.
+- **Sell.** The button shows "70% of ¢invested". Checked for plain, branch, fused and recipe towers.
+
+**Balance.** `balance/t106_capa4.md`. A new enemy-HP ramp (`BOOST_HP`: medium 0.25, hard 0.7) offsets the ~2.4× late power. Results:
+- Medium El Morro 3/3 wins.
+- Isla de Cabras 3/4.
+- Hard El Morro: avg wave 70 without fusing (t105: 67), 79/75 with fusing (t105: 75/83).
+
+**Tests.** e2e_t106 PASS (local A–H, live A–G). t105/t104/t103/t97/t53/t101/t80 PASS. t99 is the known flaky one (El Canuelo door).
