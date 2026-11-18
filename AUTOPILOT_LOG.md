@@ -84,3 +84,28 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 **Balance.** See `balance/t103_elements.md`. El Morro: 6/6 wins before and after. On Isla de Cabras the wave-19 coin flip is unchanged within noise.
 
 **Ideas for next time.** Queued by Sebastian: same-type tower fusion + predictive aiming, then tier-3 specialization, hidden fusion recipes and proximity effects, then Overload/Rage, scaling crit, knockback, then physics-lite deaths.
+
+## 2026-11-18 — t104: same-type tower fusion + predictive aiming (shipped, early morning)
+
+**What shipped.** Details are in `PROGRESS_t104.md`.
+- **Fusion.** Two max-tier towers of the same type, side by side, fuse into one ★ Fused super-tower:
+  - Stats: ×1.4 damage, +10% rate, +8% range, +1 pierce, ×1.8 HP; about 2× one max tower.
+  - Fee: 40% of one tower's full price. Sell value stays 70% of everything invested.
+  - One spot is freed. Fusing is done from the ⚛ button in the tower panel.
+  - Looks: gold aura and ★ badge in 2D; gold halo, light column and ★ badge in first person.
+  - Save/Continue and co-op sync handle it. The validator checks each fused tier.
+- **Predictive aiming.** `Enemy.predict` plus an intercept lead for tower projectiles, lobs and troop rifles, and for first-person direct shots. Hitscan, beams, boomerangs and fixed-lane guns are unchanged. Aimed-shot hit rate: El Morro 90.9 → 94.4%, Isla de Cabras 83.1 → 90.5%.
+
+**Commits.** main `0d680d6`, gh-pages `57d71ef`. Live bundle `assets/index-CByxsJcm.js`.
+
+**Tests.**
+- Build + validator: OK.
+- e2e_t104: PASS locally; live sections A–C PASS (co-op section D is local only because of the http relay).
+- e2e_t97, t53, t101, t80, t103, t74: PASS. t99 PASS on rerun (flaky under load).
+- Same failures as before t104: t101b (2, Scorpion), t78 (9, matching the base build), e2e_mp versus crash at `cells[30]` (matching the base build).
+
+**Balance.** See `balance/t104_fusion_aim.md`.
+- Medium on both maps: wins unchanged.
+- Hard El Morro with an aggressive fusing bot: the v1 numbers went from wave 62 to 92/94, so fusion was cut to v2 (wave 75/84, still a loss).
+
+**Box note.** The box was reset mid-run. Lost edits were redone, and work is now committed at checkpoints.

@@ -45,5 +45,12 @@ See `balance/t104_fusion_aim.md`.
 - Existing suite: e2e_t97, t53, t101, t80, t103, t74 PASS. e2e_t99 passed on a rerun (one load-related flake, and the base build flaked on a different check).
 - Pre-existing failures:
   - e2e_t101b: Scorpion side-on/board, same as base.
-  - e2e_t78: Overrun timer checks, compared against the base build below.
-  - e2e_mp: crashes at `cells[30]` in versus on the default hidden "garden" map; checked with `--map morro`, see below.
+  - e2e_t78: 9 failures (Overrun timer/bite checks, headless). The pre-t104 build fails the same 9.
+  - e2e_mp: co-op part all OK; the versus part crashes at `cells[30]` (too few free cells). The pre-t104 build crashes the same way, also with `--map morro`.
+
+## Shipped
+- main `0d680d6`, gh-pages `57d71ef` (`.nojekyll` kept).
+- Live bundle `assets/index-D7mhyxVU.js` → **`assets/index-CByxsJcm.js`**.
+- e2e_t104 live: sections A–C PASS. Section D (co-op) can't run against the https site because its test relay is http://localhost and the browser blocks mixed content. It passes locally.
+- Live screenshots: `screenshots/t104/live_fuse_ready_panel.png`, `live_fused_tower_2d.png`, `live_fused_tower_fp.png`.
+- Box note: the box was reset mid-task (lost /tmp, node_modules and part of the uncommitted edits). The lost edits were redone, `npm ci` reinstalled dependencies, and work since then is committed at checkpoints.
