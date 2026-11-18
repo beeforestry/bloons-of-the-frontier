@@ -80,6 +80,52 @@ predicted point. Troop rifles lead too. Hitscan and beam weapons, boomerangs and
 person, a shot with the crosshair on an enemy leads it; a free crosshair shot goes exactly where you aim.
 Hit rate of the aimed (centre) shot in the `tests/aim_sim.py` sim: El Morro 90.9% → 94.4%, Isla de Cabras 83.1% → 90.5%.
 
+## Tier-3 specializations, hidden fusions, neighbour effects (t105)
+**Specializations.** 16 towers pick one of two permanent branches when they buy their last tier (the panel shows two
+buttons with the stat changes; the U hotkey won't pick for you). Every branch is strictly stronger than tier 2 and at
+least as strong as the old plain tier 3 (about +6% to +40% power; element branches trade raw power for a status).
+Branches get a coloured ground ring plus a shield emblem with their initials in 2D, and a coloured halo plus the same
+emblem over the model in first person.
+
+| Tower | Branch A | Branch B |
+|---|---|---|
+| Dart Scout | Longshot Marksman (×1.25 dmg, +8% range) | Rapid Volley (+33% rate) |
+| Shadow Scout | Frost Kunai (❄ Chilled, +25% slow) | Shadow Blade (×1.3 dmg) |
+| Arcane Scout | Stormcaller (⚡ Shocked) | Pyromancer (🔥 Burning, ×1.25 splash) |
+| Apex Laser Scout | Plasma Lance (×1.3 dmg) | Hyper Beam (+30% rate) |
+| Marksman Scout | Deadeye (×1.35 dmg) | Suppressor (+30% rate, slow) |
+| Glaive Scout | Razor Arc | Twin Glaives |
+| Solar Pea Fusion | Sunburst (stronger sun aura) | Gatling Pods |
+| Gatling Cherry Bomber | Firestorm (🔥) | Overclock |
+| Flame Melon Mortar | Napalm Melons (longer burn) | Siege Melons |
+| Tesla Coil | Arc Web (+2 chain) | Overcharge |
+| Autoturret / Flak / Tank / Destroyer | Hailstorm / Skyshredder / Siege Breaker / Tidal Barrage | AP Rounds / Flak Barrage / Hunter Killer / Broadside |
+| Corrosive Glue Slinger | Corrosive Vat | Tar Pit |
+| Frost Oakshield Bastion | Glacier Keep (cover) | Permafrost (ice shots) |
+
+Fusion rule: two specialised towers fuse only if they took the same branch. A specialised pair's fusion multipliers are
+halved, so the fused result is still about 2× one max tower. Data: `src/data/specs.ts`. The validator checks both branches
+against tier 2 (no stat down, power up, looks up) and checks every fused branch.
+
+**Hidden fusions.** Two different max-tier towers of the same owner, side by side, can react into a tower that is never sold
+in the shop. The panel shows **⚛ Fuse with … → ???** (and a violet link line) until you have made it once on this browser
+(`localStorage` `bof.recipes`); after that it shows the name. The ⚗ guide has an almanac with hints and discovered entries.
+
+| Recipe | Result |
+|---|---|
+| Tesla Coil + Frost Oakshield Bastion | **Storm Core**: chain lightning ×1.35 dmg, +3 jumps, alternating ⚡ Shock / ❄ Chill, slow, keeps the Bastion cover aura |
+| Flame Melon Mortar + Dart Scout or Solar Pea Fusion | **Inferno Battery**: 3-melon burning volleys, +35% rate (Burning + explosion → Wildfire) |
+| Firebase Bunker + Sunflower | **Elite Barracks**: +2 garrison slots, ×1.4 aura HP, troops take −80% damage, plus a sun aura |
+
+Cost: both towers + a fee of 30% of their average full price; sell value 70% of everything. Recipe towers can't upgrade or
+fuse again. Data: `src/data/recipes.ts`; the validator checks they stay hidden and beat every parent (incl. branches) by >10%.
+
+**Neighbour effects.** A combat tower right next to (bases within 70 px) an ❄ ice tower adds Chilled (1 s) on every 3rd hit,
+next to a 🔥 fire tower adds Burning, and next to a support tower gets +6% attack speed (its own stack). Only the nearest
+elemental neighbour counts, never its own element. This feeds the normal element system, so neighbours can set up combos
+(a Soaking Glue Slinger beside a Frost Bastion freezes enemies). Faint animated link lines show the links (brighter when
+selected), and the tower panel lists "Neighbour effects". Tuning: `PROX` in `src/systems/Proximity.ts`.
+
 ## Art (v3)
 All sprites are one painterly, realistic 3/4-view set (`public/assets/v3`, WebP, ~1.2 MB). Each tower and troop tier has its own sprite, and every tier is
 visibly more advanced. Turrets use a separate rotating head with barrel recoil, and units, bugs and bloons are animated with walk/scuttle/bob motion and painted pop/death/muzzle FX.

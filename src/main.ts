@@ -11,9 +11,9 @@ import { loadSprites, IMG } from './render/sprites';
 import { assetUrl } from './assetUrl';
 import { PLAYABLE_MAPS, DEFAULT_MAP, resolveMap, resolveMapId } from './data/maps';
 import { validateAll, towerPower } from './data/validate';
-import { SPECS, specsFor } from './data/specs';
+import { SPECS, SPEC_TUNE, specsFor } from './data/specs';
 import { discovered, isDiscovered } from './data/recipes';
-import { updateProximity } from './systems/Proximity';
+import { PROX, updateProximity } from './systems/Proximity';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
 import { Sfx } from './audio/Sfx';
@@ -542,6 +542,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     discovered: () => discovered(),
     prox: (i: number) => { const t = g.towers[i]; return t ? { elem: t.prox?.elem ?? null, from: t.prox?.elemFrom ? g.towers.indexOf(t.prox.elemFrom) : -1, support: t.prox?.support ? g.towers.indexOf(t.prox.support) : -1, rate: t.buffs.totals.ratePct } : null; },
     proxNow: () => updateProximity(g),
+    tune: { PROX, SPEC_TUNE },
     predict: (uid: number, t: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? e.predict(g, t) : null; },
     // t103 element combos
     elemTune: ELEM_TUNE,

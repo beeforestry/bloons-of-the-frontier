@@ -101,7 +101,9 @@ function mod(last: Record<string, unknown> | undefined, prev: Record<string, unk
   return out;
 }
 const cache = new Map<string, TowerTier>();
-export const specsFor = (id: string) => SPECS[id] ?? null;
+/** Sim/test switch: `off` hides every branch (balance A/B runs via window.__game.tune). */
+export const SPEC_TUNE = { off: false };
+export const specsFor = (id: string) => (SPEC_TUNE.off ? null : SPECS[id] ?? null);
 /** The last tier as re-tuned by branch `b` (0 / 1). */
 export function branchTier(d: TowerData, b: number): TowerTier {
   const key = d.id + ':' + b; let t = cache.get(key); if (t) return t;
@@ -119,7 +121,7 @@ export function branchTier(d: TowerData, b: number): TowerTier {
   cache.set(key, t); return t;
 }
 /** Element stamped by a tower given its branch (branch element wins over the tower's own). */
-export const branchElement = (d: TowerData, b: number | null): Element | undefined => (b != null && SPECS[d.id]?.[b]?.element) || d.element;
+export const branchElement = (d: TowerData, b: number | null): Element | undefined => (b != null && !SPEC_TUNE.off && SPECS[d.id]?.[b]?.element) || d.element;
 
 /** t105: colour + glyph for a specialized (or hidden-recipe) tower, or null (2D badge + FP emblem). */
 export function branchMark(t: { data: TowerData; branch: number | null; tier: number }): { color: string; glyph: string } | null {

@@ -7,7 +7,7 @@
 // 70% of everything invested (both towers + fee).
 // =============================================================================
 import type { TowerData, TowerTier } from '../core/types';
-import { SPECS, branchTier } from './specs';
+import { specsFor, branchTier } from './specs';
 
 export const FUSION = {
   /** Fee as a fraction of one tower's full price (all tiers). */
@@ -47,7 +47,7 @@ function boost(o: Record<string, unknown>, soft = 1): Record<string, unknown> {
 const cache = new Map<string, TowerTier>();
 /** The synthetic fused tier for a tower type (last tier, multiplied). */
 export function fusedTier(d: TowerData, branch: number | null = null): TowerTier {
-  const b = branch != null && SPECS[d.id] ? branch : null, key = d.id + ':' + b;
+  const b = branch != null && specsFor(d.id) ? branch : null, key = d.id + ':' + b;
   let t = cache.get(key); if (t) return t;
   const last = b != null ? branchTier(d, b) : d.tiers[d.tiers.length - 1], sf = b != null ? BRANCH_SOFT : 1; // t105: a specialised pair fuses its branch
   t = {
