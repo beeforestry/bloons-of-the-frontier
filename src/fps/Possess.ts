@@ -981,6 +981,8 @@ export class Possess {
     if (sn !== this.stepN) { this.stepN = sn; if (moving && !inVeh && !g.paused) { this.steps++; g.fpAudio?.shot('step', this.isBug ? 0.7 : 1); } }
     if (inVeh) { this.engOn = true; g.fpAudio?.engine(!g.paused, moving ? 1 : 0, (o instanceof Unit && o.data.id === 'scorpion') || o instanceof Tower); }
     else if (this.engOn) { this.engOn = false; g.fpAudio?.engine(false, 0, false); }
+    // ambience (2026-11-18): sea / wind / gull ambience bed for the coastal maps (stronger wind up on the walls)
+    g.fpAudio?.ambient?.(g.paused ? null : g.map.id === 'morro' ? 'morro' : this.isCabras ? 'cabras' : null, this.camera.position.y);
     this.kick = Math.max(0, this.kick - dt * 9); const big = this.vm.kind === 'tank_cannon' ? 2.5 : 1;
     this.gun.position.set(this.gunBase.x + Math.cos(this.bob) * bobA, this.gunBase.y + Math.abs(Math.sin(this.bob)) * bobA - this.kick * 0.01, this.gunBase.z + this.kick * 0.06 * big);
     this.gun.rotation.set(this.kick * 0.09, 0, this.gunRoll * this.kick);
@@ -1336,6 +1338,7 @@ export class Possess {
   exit(msg?: string) {
     if (!this.alive) return; this.ads = false; this.alive = false; setFineHeights(null);
     if (this.engOn) { this.engOn = false; this.g.fpAudio?.engine(false, 0, false); }
+    this.g.fpAudio?.ambient?.(null, 0);
     cancelAnimationFrame(this.raf);
     removeEventListener('resize', this.resize); removeEventListener('keydown', this.onKey, true); removeEventListener('keyup', this.onKeyUp, true);
     removeEventListener('mousemove', this.onMouse); removeEventListener('mouseup', this.onUp); document.removeEventListener('pointerlockchange', this.onLock);

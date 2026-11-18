@@ -45,7 +45,10 @@ import { ABILITIES, EMP, HIJACK, RALLY, STIM, VET_AURA } from '../data/abilities
 export type Damageable = (Tower | Unit | Building | Barrier) & { takeDamage(g: Game, n: number): void };
 /** t101: first-person (Possess) weapon + foley cues, played only for the local player's possessed tower/troop/monster. */
 export type FpSfxName = 'rifle' | 'marksman' | 'smg' | 'chaingun' | 'cannon' | 'beam' | 'rail' | 'dart' | 'arrow' | 'melee' | 'bite' | 'hit' | 'kill' | 'step' | 'scope';
-export interface FpAudio { shot(n: FpSfxName, k?: number): void; engine(on: boolean, speed: number, heavy: boolean): void }
+export interface FpAudio { shot(n: FpSfxName, k?: number): void; engine(on: boolean, speed: number, heavy: boolean): void;
+  /** ambience (2026-11-18): first-person ambience bed (sea, wind, gulls) for the current map; kind null = off. */
+  ambient?(kind: AmbientKind | null, height: number): void }
+export type AmbientKind = 'morro' | 'cabras';
 export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap' | 'wave' | 'victory' | 'defeat';
 export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number; owner?: number; /** MAC: the exact aimed point (clears terrain there even when the sweep snaps to a lane). */ aim?: Vec }
 export interface Decal { x: number; y: number; r: number; ang: number; t: number }

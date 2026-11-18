@@ -3,7 +3,7 @@
 // envelope. Throttled per name so a 40-tower wave doesn't turn into static.
 // Audio unlocks on the first pointer/key (browser autoplay policy).
 // =============================================================================
-import type { FpSfxName, SfxName } from '../game/Game';
+import type { AmbientKind, FpSfxName, SfxName } from '../game/Game';
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -126,5 +126,94 @@ export class Sfx {
     this.engineLevel = on && !this.muted ? (heavy ? 0.2 : 0.14) * (0.6 + 0.4 * s) : 0;
     e.g.gain.setTargetAtTime(Math.max(0.0001, this.engineLevel), t, on ? 0.15 : 0.08);
     if (!on) { const old = e; this.eng = null; setTimeout(() => { try { old.o1.stop(); old.o2.stop(); old.g.disconnect(); } catch { /* already stopped */ } }, 600); }
+  }
+  // ---------------------------------------------------------------------------
+  // ambience (2026-11-18): first-person ambience. A quiet looping bed under the guns so the
+  // fort and the island don't feel like a silent box:
+  //  - El Morro: deep surf booming against the cliffs below the walls, a strong
+  //    Atlantic wind that gusts harder the higher you stand (ramparts, garita),
+  //    the odd gull.
+  //  - Isla de Cabras: brighter, faster lapping surf on the riprap, a lighter
+  //    breeze, gulls calling often.
+  // All synthesized (looped filtered noise + LFO swells, glided sine gull
+  // calls), so no audio files and no licensing questions.
+  // ---------------------------------------------------------------------------
+  private amb: { kind: AmbientKind; src: AudioBufferSourceNode; surfF: BiquadFilterNode; surfG: GainNode; windF: BiquadFilterNode; windG: GainNode; lfos: OscillatorNode[]; out: GainNode } | null = null;
+  private ambBuf: AudioBuffer | null = null;
+  private ambNext = 0; private ambGullAt = 0; private ambCrashAt = 0;
+  ambKind: AmbientKind | null = null; ambLevel = 0; ambWind = 0; gulls = 0; crashes = 0;
+  private gullCall(pan: number, vol: number, delay = 0) {
+    // "kyow-kyow": 2-3 falling glides with a fast vibrato, slightly panned
+    const c = this.ctx!, n = 2 + (Math.random() < 0.5 ? 1 : 0), f0 = 1500 + Math.random() * 500;
+    const p = c.createStereoPanner(); p.pan.value = pan; p.connect(this.amb ? this.amb.out : this.master!);
+    for (let i = 0; i < n; i++) {
+      const t = c.currentTime + delay + i * (0.2 + Math.random() * 0.06), o = c.createOscillator(), v = c.createOscillator(), vg = c.createGain(), g = c.createGain(), bp = c.createBiquadFilter();
+      o.type = 'triangle'; o.frequency.setValueAtTime(f0 * 0.82, t); o.frequency.linearRampToValueAtTime(f0, t + 0.04); o.frequency.exponentialRampToValueAtTime(f0 * 0.6, t + 0.17);
+      v.frequency.value = 28 + Math.random() * 8; vg.gain.value = 45; v.connect(vg); vg.connect(o.frequency);
+      bp.type = 'bandpass'; bp.frequency.value = f0; bp.Q.value = 1.4;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.19);
+      o.connect(bp); bp.connect(g); g.connect(p); o.start(t); v.start(t); o.stop(t + 0.22); v.stop(t + 0.22);
+    }
+    this.gulls++;
+  }
+  private waveCrash(vol: number) {
+    // a single breaker hitting rock: rising hiss, low thud, foam tail
+    const c = this.ctx!, t = c.currentTime, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = this.ambBuf; f.type = 'lowpass'; f.frequency.setValueAtTime(300, t); f.frequency.linearRampToValueAtTime(1400, t + 0.5); f.frequency.exponentialRampToValueAtTime(260, t + 2.6);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.45); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
+    s.connect(f); f.connect(g); g.connect(this.amb!.out); s.start(t, Math.random() * 2); s.stop(t + 2.9);
+    const o = c.createOscillator(), og = c.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(70, t + 0.4); o.frequency.exponentialRampToValueAtTime(32, t + 1.2);
+    og.gain.setValueAtTime(0.0001, t + 0.4); og.gain.exponentialRampToValueAtTime(vol * 0.8, t + 0.46); og.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+    o.connect(og); og.connect(this.amb!.out); o.start(t + 0.4); o.stop(t + 1.4);
+    this.crashes++;
+  }
+  private ambStop() {
+    const a = this.amb; if (!a) return; this.amb = null; this.ambKind = null; this.ambLevel = 0; this.ambWind = 0;
+    const t = this.ctx!.currentTime; a.out.gain.setTargetAtTime(0.0001, t, 0.25);
+    setTimeout(() => { try { a.src.stop(); a.lfos.forEach((l) => l.stop()); a.out.disconnect(); } catch { /* already stopped */ } }, 1500);
+  }
+  /** Ambience bed for first person. height = eye height above sea level in metres (more wind up high). */
+  ambient(kind: AmbientKind | null, height = 0) {
+    const c = this.ctx;
+    if (!c || c.state !== 'running') return;
+    if (!kind || this.muted) { this.ambStop(); return; }
+    const now = performance.now();
+    if (this.amb && this.amb.kind === kind && now < this.ambNext) return;
+    this.ambNext = now + 250;
+    if (this.amb && this.amb.kind !== kind) this.ambStop();
+    if (!this.ambBuf) {
+      // 4 s of brown-ish noise (integrated white noise): a soft, rumbly sea that loops without a click
+      const len = Math.floor(c.sampleRate * 4), b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+      let last = 0; for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; }
+      const fade = Math.floor(c.sampleRate * 0.05); for (let i = 0; i < fade; i++) { const k = i / fade; d[len - fade + i] = d[len - fade + i] * (1 - k) + d[i] * k; }
+      this.ambBuf = b;
+    }
+    const morro = kind === 'morro';
+    if (!this.amb) {
+      const out = c.createGain(); out.gain.value = 0.0001; out.connect(this.master!);
+      const src = c.createBufferSource(); src.buffer = this.ambBuf; src.loop = true;
+      // surf: lowpassed bed whose loudness swells with two slow, detuned LFOs (sets of waves)
+      const surfF = c.createBiquadFilter(), surfG = c.createGain(); surfF.type = 'lowpass'; surfF.frequency.value = morro ? 420 : 760; surfF.Q.value = 0.6; surfG.gain.value = morro ? 0.5 : 0.42;
+      const l1 = c.createOscillator(), l1g = c.createGain(), l2 = c.createOscillator(), l2g = c.createGain();
+      l1.frequency.value = morro ? 0.09 : 0.16; l1g.gain.value = morro ? 0.28 : 0.22; l2.frequency.value = morro ? 0.053 : 0.11; l2g.gain.value = 0.14;
+      l1.connect(l1g); l1g.connect(surfG.gain); l2.connect(l2g); l2g.connect(surfG.gain);
+      // wind: bandpassed noise with a wandering centre frequency (gusts whistle up and down)
+      const windF = c.createBiquadFilter(), windG = c.createGain(); windF.type = 'bandpass'; windF.frequency.value = morro ? 620 : 900; windF.Q.value = 0.9; windG.gain.value = 0.0001;
+      const l3 = c.createOscillator(), l3g = c.createGain(); l3.frequency.value = 0.07; l3g.gain.value = morro ? 260 : 200; l3.connect(l3g); l3g.connect(windF.frequency);
+      src.connect(surfF); surfF.connect(surfG); surfG.connect(out); src.connect(windF); windF.connect(windG); windG.connect(out);
+      src.start(0, Math.random() * 3); [l1, l2, l3].forEach((l) => l.start());
+      this.amb = { kind, src, surfF, surfG, windF, windG, lfos: [l1, l2, l3], out };
+      this.ambGullAt = now + 1500 + Math.random() * 3000; this.ambCrashAt = now + 2500 + Math.random() * 3000;
+      this.ambKind = kind;
+    }
+    const a = this.amb, t = c.currentTime, h = Math.max(0, Math.min(1, height / 45));
+    // up on the walls the wind takes over and the surf below gets a bit farther away
+    this.ambWind = +((morro ? 0.16 : 0.09) + (morro ? 0.3 : 0.16) * h).toFixed(3);
+    a.windG.gain.setTargetAtTime(this.ambWind, t, 0.8);
+    this.ambLevel = 0.32;
+    a.out.gain.setTargetAtTime(this.ambLevel, t, 0.6);
+    a.surfF.frequency.setTargetAtTime((morro ? 420 : 760) * (1 - 0.25 * h), t, 0.8);
+    if (now >= this.ambGullAt) { this.gullCall(Math.random() * 1.6 - 0.8, (morro ? 0.05 : 0.08) * (0.6 + Math.random() * 0.4)); this.ambGullAt = now + (morro ? 9000 : 4500) + Math.random() * (morro ? 12000 : 7000); }
+    if (now >= this.ambCrashAt) { this.waveCrash((morro ? 0.4 : 0.2) * (1 - 0.4 * h)); this.ambCrashAt = now + (morro ? 6000 : 4500) + Math.random() * 5000; }
   }
 }
