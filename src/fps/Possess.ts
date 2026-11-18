@@ -73,6 +73,41 @@ type Target = Tower | Unit | Enemy;
 function enemyY(e: Enemy) { return e.data.air ? 6.5 : e.data.family === 'bloon' ? (e.data.boss || e.data.id === 'moab' ? 2.6 : 1.3) : Math.max(0.5, e.data.radius * SZ * 0.8); }
 function enemyR(e: Enemy) { return Math.max(0.45, e.data.radius * SZ * 1.15); }
 
+/** t103: first-person tint for an enemy's element status (null = none). Frozen > burning > soaked > shocked > chilled. */
+const TINT_C = new THREE.Color();
+function elemTint(e: Enemy): number | null {
+  const s = e.el;
+  if (s.frozenT > 0) return 0xaee4ff;
+  if (s.burn > 0) return 0xffbb88;
+  if (s.steamT > 0) return 0xe6e6e6;
+  if (s.wet > 0) return 0xb4d0ff;
+  if (s.shock > 0) return 0xfff4b0;
+  if (s.chill > 0) return 0xd8f2ff;
+  return null;
+}
+/** t103: which badge an enemy shows in first person (most important status first). */
+type Badge = 'ice' | 'burn' | 'steam' | 'wet' | 'shock' | 'chill';
+function elemBadge(e: Enemy): Badge | null {
+  const s = e.el;
+  return s.frozenT > 0 ? 'ice' : s.burn > 0 ? 'burn' : s.steamT > 0 ? 'steam' : s.wet > 0 ? 'wet' : s.shock > 0 ? 'shock' : s.chill > 0 ? 'chill' : null;
+}
+const BADGES = new Map<Badge, THREE.CanvasTexture>();
+/** Vector-drawn badge (no emoji font needed): dark disc + coloured glyph. */
+function badgeTex(k: Badge): THREE.CanvasTexture {
+  let t = BADGES.get(k); if (t) return t;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d')!;
+  c.fillStyle = 'rgba(10,16,24,0.72)'; c.beginPath(); c.arc(32, 32, 29, 0, 7); c.fill();
+  const col = { ice: '#bff0ff', burn: '#ff8a3a', steam: '#f2f2f2', wet: '#5fb4ff', shock: '#ffe95a', chill: '#d8f4ff' }[k];
+  c.strokeStyle = col; c.lineWidth = 3; c.beginPath(); c.arc(32, 32, 29, 0, 7); c.stroke(); c.fillStyle = col; c.lineCap = 'round';
+  if (k === 'wet') { c.beginPath(); c.moveTo(32, 12); c.bezierCurveTo(44, 28, 46, 34, 46, 39); c.arc(32, 39, 14, 0, Math.PI); c.bezierCurveTo(18, 34, 20, 28, 32, 12); c.fill(); }
+  else if (k === 'burn') { c.beginPath(); c.moveTo(32, 10); c.bezierCurveTo(48, 26, 48, 40, 44, 46); c.arc(32, 44, 12, 0, Math.PI); c.bezierCurveTo(16, 38, 22, 28, 32, 10); c.fill(); c.fillStyle = '#ffe27a'; c.beginPath(); c.arc(32, 44, 6, 0, 7); c.fill(); }
+  else if (k === 'shock') { c.beginPath(); c.moveTo(36, 10); c.lineTo(20, 36); c.lineTo(31, 36); c.lineTo(26, 54); c.lineTo(44, 27); c.lineTo(33, 27); c.closePath(); c.fill(); }
+  else if (k === 'chill' || k === 'ice') {
+    if (k === 'ice') { c.globalAlpha = 0.5; c.fillRect(17, 17, 30, 30); c.globalAlpha = 1; }
+    c.lineWidth = 4; for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; c.beginPath(); c.moveTo(32 - Math.cos(a) * 17, 32 - Math.sin(a) * 17); c.lineTo(32 + Math.cos(a) * 17, 32 + Math.sin(a) * 17); c.stroke(); }
+  } else { c.lineWidth = 4; for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(22 + i * 10, 48); c.bezierCurveTo(16 + i * 10, 38, 28 + i * 10, 30, 22 + i * 10, 16); c.stroke(); } }
+  t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; BADGES.set(k, t); return t;
+}
 export class Possess {
   readonly g: Game; readonly obj: Target; readonly isTower: boolean;
   /** t78: possessing a turned Overrun monster (bite + ability instead of a gun). */
@@ -591,7 +626,7 @@ export class Possess {
         } else {
           const parts = await loadGlbParts(glb); if (!this.alive || !parts.length) return;
           const cap = glb.startsWith('bloon_') ? 200 : 300;
-          const meshes = parts.map((p) => { const im = new THREE.InstancedMesh(p.geometry, p.material, cap); im.count = 0; im.frustumCulled = false; this.scene.add(im); return im; });
+          const meshes = parts.map((p) => { const im = new THREE.InstancedMesh(p.geometry, p.material, cap); im.count = 0; im.frustumCulled = false; im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3); this.scene.add(im); return im; });
           this.enemySets.set(id, { parts: meshes, n: 0, cap, glb });
         }
         this.vm.towers3d['glb_' + glb] = 1;
@@ -925,6 +960,7 @@ export class Possess {
     this.morro?.update(dt); this.cabras?.update(dt);
     this.syncParked();
     this.syncEntities(dt);
+    this.syncElemIcons();
     this.hud(dt);
     return true;
   }
@@ -967,8 +1003,26 @@ export class Possess {
       else if (c.includes('ffd2') || c.includes('ffe9') || c.includes('fff6')) col = 0xffe9a0; // beacon / sniper
       else if (c.includes('ff4') || c.includes('ff60') || c.includes('ff50')) col = 0xff6060; // apex laser
       else if (c.includes('9fe7')) col = 0x9fe7ff; // tesla
+      else if (c.includes('d6f6')) col = 0xd6f6ff; // t103 Conduct chain lightning
       this.tracer(a, b, col, Math.max(0.12, e.dur ?? 0.1));
     }
+  }
+  /** t103: floating status badges (drop / flame / snowflake / bolt / ice / steam) over the nearest enemies that carry one. */
+  private elemIcons: THREE.Sprite[] = [];
+  private syncElemIcons() {
+    const cam = this.camera.position, list: [number, Enemy, { x: number; y: number; z: number }][] = [];
+    for (const [e, p] of this.seen) { if (!e.alive || !elemBadge(e)) continue; list.push([(p.x - cam.x) ** 2 + (p.z - cam.z) ** 2, e, p]); }
+    list.sort((a, b) => a[0] - b[0]);
+    const N = Math.min(40, list.length);
+    for (let i = 0; i < N; i++) {
+      let sp = this.elemIcons[i];
+      if (!sp) { sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: badgeTex('wet'), depthTest: true, transparent: true, fog: false })); sp.renderOrder = 5; this.scene.add(sp); this.elemIcons.push(sp); }
+      const [, e, p] = list[i], k = elemBadge(e)!, tex = badgeTex(k);
+      if (sp.material.map !== tex) { sp.material.map = tex; sp.material.needsUpdate = true; }
+      const h = e.data.family === 'bloon' ? p.y + Math.max(0.9, e.data.radius * SZ * 1.6) : p.y + Math.max(1.4, e.data.radius * SZ * 2.4);
+      sp.position.set(p.x, h + Math.sin(performance.now() / 260 + e.uid) * 0.06, p.z); sp.scale.setScalar(0.55); sp.visible = true;
+    }
+    for (let i = N; i < this.elemIcons.length; i++) this.elemIcons[i].visible = false;
   }
   /** Mirror the live sim into the instanced meshes. */
   private syncEntities(dt: number) {
@@ -1000,7 +1054,7 @@ export class Possess {
           D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k);
           this.seen.set(e, { x, y: gh + 0.5, z, c: enemyCol(e) });
         }
-        D.updateMatrix(); for (const im of set.parts) im.setMatrixAt(set.n, D.matrix);
+        D.updateMatrix(); const tn = elemTint(e); this.tmpC.setHex(tn ?? 0xffffff); for (const im of set.parts) { im.setMatrixAt(set.n, D.matrix); im.setColorAt(set.n, this.tmpC); }
         set.n++; eg[id] = set.glb; continue;
       }
       if (e.data.family === 'bloon') {
@@ -1010,14 +1064,14 @@ export class Possess {
         const k = (enemyR(e) / 0.62) * 0.95, bob = Math.sin(performance.now() / 300 + e.uid) * 0.12;
         D.position.set(x, y + bob, z); D.rotation.set(0, 0, 0); D.scale.setScalar(k); D.updateMatrix();
         // Keep instance color near-white so the painted v3 sprite albedo reads true; slight tint for variety
-        mesh.setMatrixAt(slot, D.matrix); mesh.setColorAt(slot, this.tmpC.setHex(0xffffff));
+        mesh.setMatrixAt(slot, D.matrix); mesh.setColorAt(slot, this.tmpC.setHex(elemTint(e) ?? 0xffffff));
         mesh.userData._n = slot + 1; nb++;
         this.seen.set(e, { x, y, z, c: enemyCol(e) });
       } else {
         if (ng >= 300) continue;
         const k = Math.max(0.6, e.data.radius * SZ * 1.6);
         D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k); D.updateMatrix();
-        this.bugMesh.setMatrixAt(ng, D.matrix); this.bugMesh.setColorAt(ng++, this.tmpC.setHex(enemyCol(e)));
+        this.bugMesh.setMatrixAt(ng, D.matrix); { const tn = elemTint(e); this.tmpC.setHex(enemyCol(e)); if (tn != null) this.tmpC.lerp(TINT_C.setHex(tn), 0.6); } this.bugMesh.setColorAt(ng++, this.tmpC);
         this.seen.set(e, { x, y: gh + 0.5, z, c: enemyCol(e) });
       }
     }
@@ -1028,7 +1082,7 @@ export class Possess {
     this.bloonMesh.count = (this.bloonMesh.userData._n as number) || 0; this.bloonMesh.userData._n = 0;
     this.bloonMesh.instanceMatrix.needsUpdate = true; if (this.bloonMesh.instanceColor) this.bloonMesh.instanceColor.needsUpdate = true;
     this.bugMesh.count = ng;
-    for (const set of this.enemySets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; } set.n = 0; }
+    for (const set of this.enemySets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; } set.n = 0; }
     this.vm.enemyGlb = eg;
     this.bugMesh.instanceMatrix.needsUpdate = true;
     if (this.bugMesh.instanceColor) this.bugMesh.instanceColor.needsUpdate = true;

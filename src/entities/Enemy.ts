@@ -13,6 +13,7 @@ import type { DamageType, EnemyData, HitOpts, Vec } from '../core/types';
 import { nextId, rand, dist } from '../core/math';
 import { ENEMIES, totalLeak, totalStrength } from '../data/enemies';
 import type { Game } from '../game/Game';
+import { newElemState, onHit as elemOnHit, preHit as elemPreHit, tick as elemTick, type ElemState } from '../systems/Elements';
 /** Anything that can physically hold a ground enemy (troops, Wall-Nut barriers). */
 export interface Blocker { x: number; y: number; alive: boolean; garrison: unknown; takeDamage(g: Game, n: number): void }
 
@@ -31,8 +32,10 @@ export class Enemy {
   /** Ironback plating left (0..1 damage reduction). Corroded by glue / arcane. */
   armor: number;
   shield: number; readonly maxShield: number; shieldDown = false; private shieldIdle = 0;
-  /** EMP / Hijack stun. */
+  /** EMP / Hijack stun (also t103 Freeze). */
   stunT = 0;
+  /** t103 element statuses + combo cooldowns (host-side). */
+  el: ElemState = newElemState();
   /** EMP disable: while > 0 armor plating / front armor are offline. */
   empT = 0;
   /** Hypnotized by a Hypno-Shroom: fights for the player, walking back up the lane. */
@@ -111,6 +114,7 @@ export class Enemy {
     const d = this.data;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.slowAmt = 0; }
+    if (!g.isClient) { elemTick(g, this, dt); if (!this.alive) return; }
     if (this.maxShield > 0 && !this.shieldDown && this.shield < this.maxShield) { this.shieldIdle += dt; if (this.shieldIdle > 4) this.shield = Math.min(this.maxShield, this.shield + 10 * dt); }
     const path = this.route ?? g.paths[this.lane] ?? g.path; this.pathLen = path.length;
     if (this.empT > 0) this.empT -= dt;
@@ -210,6 +214,8 @@ export class Enemy {
     }
     if (d.air && !hit?.antiAir) return 0;
     if (hit?.src) this.lastSrc = hit.src;
+    amount *= elemPreHit(g, this, type, hit);
+    const raw = amount;
     // energy shield soaks everything first (arcane shieldBreak multiplies)
     if (this.shield > 0) {
       this.shieldIdle = 0;
@@ -217,9 +223,9 @@ export class Enemy {
       this.shield -= take; amount -= take / sb; this.hitFlash = 0.08;
       g.dmgNumber(this.x, this.y - d.size * 0.4, take, '#7fe8ff', false, this.uid);
       if (this.shield <= 0) { this.shieldDown = true; g.fx({ kind: 'pop', x: this.x, y: this.y, r: d.size * 0.6, color: '#7fe8ff', dur: 0.35 }); g.sfx('pop'); }
-      if (amount <= 0.001) return take;
+      if (amount <= 0.001) { elemOnHit(g, this, raw, type, hit); return take; }
     }
-    if (this.armor > 0 && this.empT <= 0) {
+    if (this.armor > 0 && this.empT <= 0 && this.el.steamT <= 0) {
       if (hit?.shred) this.armor = Math.max(0, this.armor - hit.shred * (d.bossKit ? 0.25 : 1));
       const pierces = hit?.ap || type === 'explosive';
       if (pierces && d.bossKit && this.bossPhase === 1) amount *= 1 - this.armor * 0.5; // boss plating resists even AP
@@ -236,6 +242,7 @@ export class Enemy {
     g.dmgNumber(this.x, this.y - d.size * 0.4, amount, hit?.crit ? '#ffe14d' : '#ffffff', hit?.crit, this.uid);
     this.hp -= amount;
     if (this.hp <= 0) this.popLayers(g, -this.hp);
+    elemOnHit(g, this, raw, type, hit);
     return dealt;
   }
 

@@ -214,3 +214,9 @@ Shipped textures (all downscaled to 512 px WebP, `public/assets/tex/`), all **Po
   Landmark positions sanity-checked against Wikipedia coordinates (facts only): Cuartel de Ballajá, Santa María Magdalena de Pazzis Cemetery, La Perla.
 - **Riprap / breakwater boulders** (Isla de Cabras, first person): procedural three.js geometry (`src/fps/flora.ts` `boulderGeo`), textured with the
   existing Poly Haven **Rock 06** (`tex/lh_rock.webp`, `lh_rock_n.webp`, **CC0**). Replaces the faceted Kenney rocks. No new textures downloaded.
+
+
+## Design inspiration (t103), no assets used
+| Project | Author | License | What we took |
+|---|---|---|---|
+| Lightkeepers — https://github.com/vega-star/lightkeepers | vega-star | Apache-2.0 | The *idea* of towers applying elements that combine into stronger effects. Our element combos (`src/systems/Elements.ts`) are written from scratch: no code, art or data copied. |

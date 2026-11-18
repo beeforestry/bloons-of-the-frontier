@@ -367,3 +367,18 @@ body.role-invader #tower-cards, body.role-invader #faction-tabs, body.role-invad
 /* Overrun / invader already hide those bars; don't leave a Build/Troops strip on those HUDs. */
 body.ov-mode #mode-toggle,
 body.role-invader #mode-toggle { display: none !important; }
+
+/* t103 element combos guide */
+.combo-guide { z-index: 60; }
+.combo-guide .cg-panel { max-width: 640px; max-height: 88vh; overflow: auto; text-align: left; }
+.combo-guide h2 small { font-weight: 400; opacity: .7; font-size: .7em; }
+.combo-guide .cg-els { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin: 8px 0; }
+.combo-guide .cg-el i, .combo-guide .cg-combo i { opacity: .65; font-size: .85em; }
+.combo-guide .cg-src { font-size: .78em; opacity: .8; }
+.combo-guide .cg-combo { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.08); font-size: .9em; }
+.combo-guide .cg-r { font-size: 1.3em; min-width: 64px; text-align: center; }
+.combo-guide .cg-es { opacity: .7; font-size: .85em; }
+.combo-guide .cg-credit { font-size: .75em; opacity: .6; }
+.combo-guide .cg-credit a { color: inherit; }
+.sp-elem .btn.mini { padding: 0 6px; font-size: 11px; min-height: 0; margin-left: 4px; }
+@media (max-width: 820px) { .combo-guide .cg-els { grid-template-columns: 1fr; } }

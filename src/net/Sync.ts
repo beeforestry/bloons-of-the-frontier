@@ -61,6 +61,8 @@ function patchProtos() {
 }
 const ORIG: Record<string, (...a: unknown[]) => unknown> = {};
 
+/** t103: element statuses packed into the enemy flag field (bits 3..8) so co-op / versus clients see icons + tints. */
+const elemBits = (e: Enemy) => { const s = e.el; return (s.wet > 0 ? 8 : 0) | (s.burn > 0 ? 16 : 0) | (s.chill > 0 ? 32 : 0) | (s.shock > 0 ? 64 : 0) | (s.frozenT > 0 ? 128 : 0) | (s.steamT > 0 ? 256 : 0); };
 export class Sync {
   readonly isHost: boolean;
   inExec = false;
@@ -411,7 +413,7 @@ export class Sync {
   private r1 = (n: number) => Math.round(n * 10) / 10;
   private broadcastSnap() {
     const g = this.g, r1 = this.r1;
-    const en = (e: Enemy) => [e.uid, e.data.id, e.lane, r1(e.progress), r1(e.lateral), r1(e.hp), Math.round(e.maxHp), r1(e.shield), (e.ally ? 1 : 0) | (e.atBase ? 2 : 0) | (e.shieldDown ? 4 : 0), r1(e.stunT), r1(e.slowT), r1(e.smokeT), r1(e.surgeT), e.bossPhase, r1(e.allyPower), Math.round(e.x), Math.round(e.y), e.hunt ? e.turnedBy + 2 : 0, r1(e.ang), e.possessedBy];
+    const en = (e: Enemy) => [e.uid, e.data.id, e.lane, r1(e.progress), r1(e.lateral), r1(e.hp), Math.round(e.maxHp), r1(e.shield), (e.ally ? 1 : 0) | (e.atBase ? 2 : 0) | (e.shieldDown ? 4 : 0) | elemBits(e), r1(e.stunT), r1(e.slowT), r1(e.smokeT), r1(e.surgeT), e.bossPhase, r1(e.allyPower), Math.round(e.x), Math.round(e.y), e.hunt ? e.turnedBy + 2 : 0, r1(e.ang), e.possessedBy];
     const garCode = (u: Unit) => { const ga = u.garrison; if (!ga) return 0; if (ga instanceof Tower) return 't' + ga.uid; const i = g.envs.indexOf(ga as EnvStructure); return i >= 0 ? 'e' + i : 0; };
     const base = {
       t: 's', tm: r1(g.time), st: g.state, sp: g.speed, pa: g.paused ? 1 : 0,
@@ -499,6 +501,7 @@ export class Sync {
       const ally = !!(fl & 1);
       if (ally && !e.ally) { e.ally = true; g.allies.push(e); g.fx({ kind: 'ring', x: e.x, y: e.y, r: 34, color: '#d86bff', dur: 0.6 }); }
       e.maxHp = maxHp; e.hp = hp; e.shield = sh; e.atBase = !!(fl & 2); e.shieldDown = !!(fl & 4);
+      { const el = e.el; el.wet = fl & 8 ? 1 : 0; el.burn = fl & 16 ? 1 : 0; el.chill = fl & 32 ? 1 : 0; el.shock = fl & 64 ? 1 : 0; el.frozenT = fl & 128 ? 1 : 0; el.steamT = fl & 256 ? 1 : 0; }
       e.stunT = stun; if (slow > 0) e.slowT = Math.max(e.slowT, slow);
       e.smokeT = smoke; e.surgeT = surge; e.targetable = smoke <= 0; e.bossPhase = phase; e.allyPower = ap;
       const dp = prog - e.progress;

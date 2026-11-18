@@ -1,4 +1,6 @@
 // Entry point: boot assets, map select, input handling, main loop, test hooks.
+import { openComboGuide } from './ui/ComboGuide';
+import { ELEM_TUNE } from './systems/Elements';
 import { canSee, blockers as losBlockers } from './systems/LineOfSight';
 import './style.css';
 import { Game } from './game/Game';
@@ -64,6 +66,7 @@ async function boot() {
   }
   paint();
   document.getElementById('btn-menu-bug')!.onclick = () => openBugReport();
+  document.getElementById('btn-combos')!.onclick = () => openComboGuide();
   // t55: Continue the autosaved single-player match (co-op / versus are not saved)
   const sv = readSave();
   if (sv) {
@@ -519,6 +522,13 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     spawn: (id: string, lane?: number, frac?: number, hpMul = 1) => { if (lane === undefined) return g.spawnEnemy(id, 0).uid; const L = lane % g.paths.length; return g.spawnEnemy(id, g.paths[L].length * (frac ?? 0), 0, L, hpMul).uid; },
     damageBoss: (frac: number) => { for (const e of g.enemies) if (e.alive && e.data.bossKit) { e.shield = 0; e.hp = Math.max(1, e.maxHp * frac); } },
     stats: () => ({ ...g.stats }),
+    // t103 element combos
+    elemTune: ELEM_TUNE,
+    elemTowers: () => TOWERS.filter((t) => t.element).map((t) => ({ id: t.id, el: t.element, tiers: t.tiers.map((x) => x.combat?.status ?? 0) })),
+    elemState: (uid: number) => { const e = [...g.enemies, ...g.allies].find((x) => x.uid === uid); return e ? { ...e.el, alive: e.alive, hp: e.hp, maxHp: e.maxHp, stunT: e.stunT, x: e.x, y: e.y, armor: e.armor } : null; },
+    elemHit: (uid: number, elem: string | null, dur: number, dmg: number, type = 'magic', heavy = false) => { const e = g.enemies.find((x) => x.uid === uid); if (!e) return -1;
+      return e.takeDamage(g, dmg, type as import('./core/types').DamageType, undefined, { ap: true, antiAir: true, heavy, ...(elem ? { elem: elem as import('./core/types').Element, elemDur: dur } : {}) }); },
+    elemPlace: (uid: number, x: number, y: number) => { const e = g.enemies.find((q) => q.uid === uid); if (e) { e.x = x; e.y = y; } },
     killAll: () => { let n = 0; for (const e of [...g.enemies]) if (e.alive) { e.shield = 0; (e as unknown as { die(g: Game, o: number): void }).die(g, 0); n++; } return n; },
     powerMode: () => view.power,
     focus: (x: number, y: number, z?: number) => r.focus(x, y, z),

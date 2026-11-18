@@ -70,6 +70,8 @@ export interface Effect {
   val?: number; hits?: number;
 }
 /** Seconds during which repeated hits on one enemy merge into a single number. */
+/** t103: towers whose hits count as heavy impacts (shatter chilled enemies). */
+const HEAVY_TOWERS = new Set(['sniper_monkey', 'unsc_rail', 'unsc_tank', 'chomper', 'arcane_obelisk']);
 export const DMG_AGG_WINDOW = 0.35;
 const fmtDmg = (n: number) => (n >= 10 ? `${Math.round(n)}` : `${Math.round(n * 10) / 10}`);
 
@@ -117,7 +119,9 @@ export class Game {
   deployCd: Record<string, number> = {};
   stats = { kills: 0, leaked: 0, organizes: 0, pickups: {} as Record<string, number>, supplyIncome: 0, trained: 0, macHits: 0, built: 0,
     combos: 0, powers: 0, hover: 0, hypno: 0, allyKills: 0, bossPhase2: 0, bossAttacks: 0, bossKills: 0, chain: 0, devoured: 0, vetAura: 0, rally: 0,
-    orbs: 0, scrap: 0, promotions: 0, abilities: 0, possessions: 0, manualShots: 0, manualHits: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, freeCollectors: 0, scrapBy: {} as Record<string, number> };
+    orbs: 0, scrap: 0, promotions: 0, abilities: 0, possessions: 0, manualShots: 0, manualHits: 0, bananaBank: 0, cleared: 0, shieldsPopped: 0, crits: 0, layers: 0, shortcuts: 0, armory: 0, freeCollectors: 0, scrapBy: {} as Record<string, number>,
+    /** t103 element combos triggered, by combo id, and element stamps applied. */
+    elem: {} as Record<string, number>, elemApplied: 0, elemFirst: false };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
@@ -686,6 +690,9 @@ export class Game {
     const muzzle = { x: tw.x + Math.cos(tw.aim) * 18, y: tw.y - 14 + Math.sin(tw.aim) * 12 };
     const crit = Math.random() < 0.08; if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
+    // t103 element status + heavy-impact flag (Shatter); the tank's roof MG (secondary) carries neither
+    if (tw.data.element && c.status && shotNo < 900) { hit.elem = tw.data.element; hit.elemDur = c.status; }
+    if (type === 'explosive' || HEAVY_TOWERS.has(tw.data.id)) hit.heavy = shotNo < 900;
     const dmg0 = c.damage * (crit ? 2 : 1);
     if (c.chain) { this.teslaChain(tw, targets[0], dmg0, c, hit); return; }
     if (c.devour != null) {

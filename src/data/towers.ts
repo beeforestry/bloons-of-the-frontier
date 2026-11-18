@@ -97,14 +97,14 @@ export const TOWERS: TowerData[] = [
   },
   {
     id: 'flame_melon_mortar', name: 'Flame Melon Mortar', faction: Faction.Flora, kind: 'combat', sprite: 'flame_melon_mortar',
-    desc: 'Lobs flaming melons: huge splash, huge range. Fire pops Lead.', damageType: 'fire', projectile: 'melon',
+    desc: 'Lobs flaming melons: huge splash, huge range. Fire pops Lead.', damageType: 'fire', element: 'burn', projectile: 'melon',
     tiers: [
       { name: 'Flame Melon', cost: 550, blurb: 'Flaming melon lobs.', visual: { level: 0, scale: 1 }, maxHp: 140,
-        combat: { damage: 8, fireRate: 0.45, range: 250, pierce: 1, splash: 70 } },
+        combat: { damage: 8, fireRate: 0.45, range: 250, pierce: 1, splash: 70, status: 3 } },
       { name: 'Hotter Melons', cost: 485, blurb: 'Bigger blast.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 170,
-        combat: { damage: 12, fireRate: 0.55, range: 270, pierce: 1, splash: 85 } },
+        combat: { damage: 12, fireRate: 0.55, range: 270, pierce: 1, splash: 85, status: 3.5 } },
       { name: 'Inferno Melons', cost: 1140, blurb: 'Inferno-grade splash.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 200,
-        combat: { damage: 19, fireRate: 0.7, range: 290, pierce: 1, splash: 100 } },
+        combat: { damage: 19, fireRate: 0.7, range: 290, pierce: 1, splash: 100, status: 4 } },
     ],
   },
   {
@@ -123,17 +123,17 @@ export const TOWERS: TowerData[] = [
     // COVER TOWER (composition: cover + a weak combat module).
     id: 'frost_wallnut_bastion', name: 'Frost Oakshield Bastion', faction: Faction.Flora, kind: 'cover', sprite: 'frost_wallnut_bastion',
     desc: 'COVER. Aura gives friendly towers & troops +max HP and +range. Troops can garrison. Weak slowing ice shards.',
-    damageType: 'cold', projectile: 'ice',
+    damageType: 'cold', element: 'chill', projectile: 'ice',
     tiers: [
       { name: 'Frost Bastion', cost: 350, blurb: 'Aura +20 HP, +10% range.', visual: { level: 0, scale: 1 }, maxHp: 300,
         cover: { auraRadius: 130, bonusMaxHp: 20, bonusRangePct: 0.1, garrisonSlots: 1, regen: 2, garrisonProtect: 0.4, garrisonRangePct: 0.15 },
-        combat: { damage: 1.13, fireRate: 0.96, range: 130, pierce: 1, slow: 0.3, projectileSpeed: 480 } },
+        combat: { damage: 1.13, fireRate: 0.96, range: 130, pierce: 1, slow: 0.3, projectileSpeed: 480, status: 2 } },
       { name: 'Glacier Shell', cost: 325, blurb: 'Aura +35 HP, +15% range.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 420,
         cover: { auraRadius: 150, bonusMaxHp: 35, bonusRangePct: 0.15, garrisonSlots: 2, regen: 3, garrisonProtect: 0.45, garrisonRangePct: 0.18 },
-        combat: { damage: 1.13, fireRate: 1.79, range: 150, pierce: 1, slow: 0.4, projectileSpeed: 520 } },
+        combat: { damage: 1.13, fireRate: 1.79, range: 150, pierce: 1, slow: 0.4, projectileSpeed: 520, status: 2.5 } },
       { name: 'Permafrost Citadel', cost: 780, blurb: 'Aura +55 HP, +22% range.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 600,
         cover: { auraRadius: 175, bonusMaxHp: 55, bonusRangePct: 0.22, garrisonSlots: 3, regen: 5, garrisonProtect: 0.5, garrisonRangePct: 0.22 },
-        combat: { damage: 2.26, fireRate: 1.79, range: 175, pierce: 2, slow: 0.5, projectileSpeed: 560 } },
+        combat: { damage: 2.26, fireRate: 1.79, range: 175, pierce: 2, slow: 0.5, projectileSpeed: 560, status: 3 } },
     ],
   },
   // --------------------------------------------------------------------- UNSC
@@ -151,14 +151,14 @@ export const TOWERS: TowerData[] = [
   },
   {
     id: 'unsc_rail', name: 'Rail Lance Emplacement', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_rail',
-    desc: 'Long-range hitscan rail slugs that punch through lines. Great vs Chargers & Sky Colossi.', damageType: 'energy', projectile: 'rail', hitscan: true,
+    desc: 'Long-range hitscan rail slugs that punch through lines. Great vs Chargers & Sky Colossi.', damageType: 'energy', element: 'shock', projectile: 'rail', hitscan: true,
     tiers: [
       { name: 'Rail Lance', cost: 950, blurb: 'Heavy rail slug.', visual: { level: 0, scale: 1 }, maxHp: 200,
         combat: { damage: 8.57, fireRate: 0.55, range: 280, pierce: 4 } },
       { name: 'Capacitor Bank', cost: 865, blurb: 'Faster charge, pierce 6.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 250,
-        combat: { damage: 17.05, fireRate: 0.6, range: 300, pierce: 6 } },
+        combat: { damage: 17.05, fireRate: 0.6, range: 300, pierce: 6, status: 1.5 } },
       { name: 'Magnetic Accelerator', cost: 2040, blurb: 'Devastating slugs.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 300,
-        combat: { damage: 30.95, fireRate: 0.79, range: 330, pierce: 9 } },
+        combat: { damage: 30.95, fireRate: 0.79, range: 330, pierce: 9, status: 2 } },
     ],
   },
   {
@@ -201,14 +201,14 @@ export const TOWERS: TowerData[] = [
   },
   {
     id: 'glue_slinger', name: 'Corrosive Glue Slinger', faction: Faction.Primates, kind: 'combat', sprite: 'glue_slinger',
-    desc: 'Acid that slows by 40% and corrodes armor (Ironbacks lose plating). Slingshot vials → acid sprayer → hazmat canister cannon; every burst splashes and leaves a corrosive puddle.', damageType: 'sharp', projectile: 'glue',
+    desc: 'Acid that slows by 40% and corrodes armor (Ironbacks lose plating). Slingshot vials → acid sprayer → hazmat canister cannon; every burst splashes and leaves a corrosive puddle.', damageType: 'sharp', element: 'wet', projectile: 'glue',
     tiers: [
       { name: 'Glue Slinger', cost: 270, blurb: 'Slingshots acid vials: small splash + puddle, 40% slow.', visual: { level: 0, scale: 1 }, maxHp: 110,
         combat: { damage: 1.13, fireRate: 1.32, range: 150, pierce: 2, slow: 0.4, armorShred: 0.12, splash: 26, projectileSpeed: 460 } },
       { name: 'Corrosive Glue', cost: 300, blurb: 'Acid sprayer: 3-jet stream, wider splash, more range.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 140,
-        combat: { damage: 1.82, fireRate: 1.32, range: 175, pierce: 3, slow: 0.45, armorShred: 0.2, splash: 38, projectileSpeed: 620 } },
+        combat: { damage: 1.82, fireRate: 1.32, range: 175, pierce: 3, slow: 0.45, armorShred: 0.2, splash: 38, projectileSpeed: 620, status: 2.5 } },
       { name: 'Balloon Dissolver', cost: 745, blurb: 'Hazmat cannon: acid canisters, big splash + pool.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 170,
-        combat: { damage: 2.92, fireRate: 1.54, range: 205, pierce: 4, slow: 0.5, armorShred: 0.3, splash: 56, projectileSpeed: 660 } },
+        combat: { damage: 2.92, fireRate: 1.54, range: 205, pierce: 4, slow: 0.5, armorShred: 0.3, splash: 56, projectileSpeed: 660, status: 3 } },
     ],
   },
   {
@@ -283,7 +283,7 @@ export const TOWERS: TowerData[] = [
   {
     id: 'unsc_tank', name: 'Bulwark Battle Tank', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_tank', footprint: 3,
     placeOn: 'land', movable: true, moveSpeed: 55,
-    desc: 'Heavy armour you can relocate. Click ground while selected to drive there. Slow, crushing HE shells. Ground only. Last upgrade adds an independent roof gunner.', damageType: 'explosive', projectile: 'shell',
+    desc: 'Heavy armour you can relocate. Click ground while selected to drive there. Slow, crushing HE shells. Ground only. Last upgrade adds an independent roof gunner.', damageType: 'explosive', element: 'burn', projectile: 'shell',
     hitsAir: false, defaultTargeting: TargetingMode.Strong,
     tiers: [
       { name: 'Light Tank', cost: 1100, blurb: 'Desert-tan light tank, 90 mm gun. Relocatable.', visual: { level: 0, scale: 1 }, maxHp: 600,
@@ -292,7 +292,7 @@ export const TOWERS: TowerData[] = [
         combat: { damage: 11, fireRate: 0.6, range: 250, pierce: 4, splash: 55, projectileSpeed: 680 } },
       { name: 'Siege Gunner', cost: 2200, blurb: 'Siege gun + independent roof MG, reactive armour.', visual: { level: 2, scale: 1.12, glow: G2 }, maxHp: 1050,
         combat: { damage: 20, fireRate: 0.75, range: 275, pierce: 5, splash: 65, armorShred: 1, projectileSpeed: 740,
-          secondary: { damage: 1.5, fireRate: 6, range: 200, pierce: 1 } } },
+          secondary: { damage: 1.5, fireRate: 6, range: 200, pierce: 1 }, status: 3 } },
     ],
   },
   {
@@ -314,29 +314,29 @@ export const TOWERS: TowerData[] = [
   {
     id: 'unsc_destroyer', name: 'Tidebreaker Destroyer', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_destroyer', footprint: 3,
     placeOn: 'water',
-    desc: 'Water-only destroyer. Dual deck guns with splash; hits air and ground. Place on open water near the lanes.', damageType: 'explosive', projectile: 'shell',
+    desc: 'Water-only destroyer. Dual deck guns with splash; hits air and ground. Place on open water near the lanes.', damageType: 'explosive', element: 'wet', projectile: 'shell',
     antiAir: true, defaultTargeting: TargetingMode.First,
     tiers: [
       { name: 'Patrol Corvette', cost: 850, blurb: 'Single deck gun on a light hull.', visual: { level: 0, scale: 1 }, maxHp: 420,
-        combat: { damage: 4, fireRate: 1.1, range: 260, pierce: 2, splash: 36, projectileSpeed: 700 } },
+        combat: { damage: 4, fireRate: 1.1, range: 260, pierce: 2, splash: 36, projectileSpeed: 700, status: 3 } },
       { name: 'Coast Destroyer', cost: 780, blurb: 'Twin turrets, deeper magazine.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 540,
-        combat: { damage: 6, fireRate: 1.35, range: 285, pierce: 3, splash: 48, shots: 2, projectileSpeed: 760 } },
+        combat: { damage: 6, fireRate: 1.35, range: 285, pierce: 3, splash: 48, shots: 2, projectileSpeed: 760, status: 3.5 } },
       { name: 'Tidebreaker Flagship', cost: 1850, blurb: 'Heavy dual mounts + flak burst.', visual: { level: 2, scale: 1.14, glow: G2 }, maxHp: 720,
-        combat: { damage: 9, fireRate: 1.6, range: 315, pierce: 4, splash: 60, shots: 2, projectileSpeed: 820 } },
+        combat: { damage: 9, fireRate: 1.6, range: 315, pierce: 4, splash: 60, shots: 2, projectileSpeed: 820, status: 4 } },
     ],
   },
   {
     id: 'unsc_beacon', name: 'Harbor Beacon', faction: Faction.UNSC, kind: 'combat', sprite: 'proc:unsc_beacon', footprint: 2,
     placeOn: 'amphibious', hitscan: true,
-    desc: 'Shoreline or water lighthouse. Hitscan laser beam; damage ramps the longer it stays locked on the same target.', damageType: 'energy', projectile: 'laser',
+    desc: 'Shoreline or water lighthouse. Hitscan laser beam; damage ramps the longer it stays locked on the same target.', damageType: 'energy', element: 'shock', projectile: 'laser',
     antiAir: true, defaultTargeting: TargetingMode.Strong,
     tiers: [
       { name: 'Harbor Lantern', cost: 700, blurb: 'Steady shaft; burn cap ×2.5.', visual: { level: 0, scale: 1 }, maxHp: 280,
         combat: { damage: 2.5, fireRate: 4, range: 240, pierce: 3, lockRamp: 0.25, lockRampMax: 1.5 } },
       { name: 'Coastal Beacon', cost: 650, blurb: 'Faster burn; cap ×3.2.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 360,
-        combat: { damage: 3.5, fireRate: 5, range: 265, pierce: 4, lockRamp: 0.4, lockRampMax: 2.2 } },
+        combat: { damage: 3.5, fireRate: 5, range: 265, pierce: 4, lockRamp: 0.4, lockRampMax: 2.2, status: 1.5 } },
       { name: 'Lighthouse Laser', cost: 1550, blurb: 'Max burn cap ×4.0, long pierce.', visual: { level: 2, scale: 1.14, glow: G2 }, maxHp: 480,
-        combat: { damage: 5, fireRate: 6, range: 300, pierce: 6, lockRamp: 0.55, lockRampMax: 3.0 } },
+        combat: { damage: 5, fireRate: 6, range: 300, pierce: 6, lockRamp: 0.55, lockRampMax: 3.0, status: 2 } },
     ],
   },
   // ------------------------------------------------------------ FRONTIER (t24/25)
@@ -389,15 +389,15 @@ export const TOWERS: TowerData[] = [
     ],
   },
   {
-    id: 'tesla_coil', name: 'Tesla Coil', faction: Faction.Frontier, kind: 'combat', sprite: 'tesla_coil', damageType: 'energy', projectile: 'tesla', hitscan: true,
+    id: 'tesla_coil', name: 'Tesla Coil', faction: Faction.Frontier, kind: 'combat', sprite: 'tesla_coil', damageType: 'energy', element: 'shock', projectile: 'tesla', hitscan: true,
     desc: 'Frontier storm-tech: lightning arcs to the target then CHAINS between nearby enemies (80% per jump). Shocks shields. Hits aircraft.', hitsAir: true, antiAir: true,
     tiers: [
       { name: 'Tesla Coil', cost: 550, blurb: 'Chains to 3 enemies.', visual: { level: 0, scale: 1 }, maxHp: 150,
-        combat: { damage: 4, fireRate: 0.9, range: 160, pierce: 1, chain: 3, shieldBreak: 2 } },
+        combat: { damage: 4, fireRate: 0.9, range: 160, pierce: 1, chain: 3, shieldBreak: 2, status: 1.5 } },
       { name: 'Storm Spire', cost: 540, blurb: 'Chains to 5, more voltage.', visual: { level: 1, scale: 1.06, glow: G1 }, maxHp: 190,
-        combat: { damage: 6.53, fireRate: 0.95, range: 175, pierce: 1, chain: 5, shieldBreak: 2.5 } },
+        combat: { damage: 6.53, fireRate: 0.95, range: 175, pierce: 1, chain: 5, shieldBreak: 2.5, status: 2 } },
       { name: 'Thunder Citadel', cost: 1380, blurb: 'Chains to 8; stuns briefly.', visual: { level: 2, scale: 1.14, glow: G2 }, maxHp: 240,
-        combat: { damage: 10.55, fireRate: 1.13, range: 190, pierce: 1, chain: 8, shieldBreak: 3, slow: 0.5 } },
+        combat: { damage: 10.55, fireRate: 1.13, range: 190, pierce: 1, chain: 8, shieldBreak: 3, slow: 0.5, status: 2.5 } },
     ],
   },
   {

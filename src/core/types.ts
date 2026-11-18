@@ -40,7 +40,15 @@ export interface HitOpts {
   /** Veterancy receiver (Unit). */
   src?: { addXp?: (n: number) => void } | null;
   crit?: boolean;
+  /** t103 element status this hit applies (see src/systems/Elements.ts). */
+  elem?: Element;
+  /** Seconds the element status lasts. */
+  elemDur?: number;
+  /** Heavy impact (explosive, rail, Marksman, tank shell, Snapjaw bite): shatters chilled enemies. */
+  heavy?: boolean;
 }
+/** t103 element statuses: towers stamp them on enemies, two different ones meeting trigger a combo. */
+export type Element = 'wet' | 'burn' | 'chill' | 'shock';
 export type AbilityId = 'stim' | 'emp' | 'hijack' | 'laser_sweep' | 'rally';
 
 /** Damage types. Lead bloons ignore Sharp; Charger front armor ignores most non-explosive. */
@@ -86,6 +94,8 @@ export interface CombatStats {
   devour?: number;
   /** Harbor Beacon: damage multiplier gained per second of continuous lock on the same target. */
   lockRamp?: number;
+  /** t103: seconds of the tower's element status (TowerData.element) stamped per hit. Absent = this tier applies none. */
+  status?: number;
   /** Cap on lockRamp bonus multiplier (added to 1). */
   lockRampMax?: number;
   /** Independent secondary weapon (Bulwark Tank roof MG at last tier). */
@@ -165,6 +175,8 @@ export interface TowerData {
   desc: string;
   hotkey?: string;
   damageType?: DamageType;
+  /** t103: element status this tower applies from the first tier whose combat stats have `status`. */
+  element?: Element;
   projectile?: ProjectileKind;
   /** Hitscan beams instead of travelling projectiles. */
   hitscan?: boolean;

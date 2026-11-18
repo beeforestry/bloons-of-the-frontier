@@ -36,6 +36,29 @@ npx tsx scripts/validate-selftest.ts   # proves the validator catches a bad upgr
 
 See `docs/DESIGN.md` for the architecture.
 
+## Element combos (t103)
+Some towers stamp an element status on what they hit; a second, different status on the same enemy triggers a combo.
+Open **⚗ Element combos** on the main menu, or **⚗ ?** in a selected tower's panel, for the in-game guide (English + Spanish).
+
+| Status | Towers (tier that unlocks it) |
+|---|---|
+| 💧 Soaked | Tidebreaker Destroyer (all), Corrosive Glue Slinger (tier 2+) |
+| 🔥 Burning (damage over time) | Flame Melon Mortar (all), Bulwark Battle Tank (tier 3, incendiary shells) |
+| ❄ Chilled | Frost Oakshield Bastion (all) |
+| ⚡ Shocked | Tesla Coil (all), Harbor Beacon (tier 2+), Rail Lance Emplacement (tier 2+) |
+
+| Combo | Recipe | Effect |
+|---|---|---|
+| Conduct | 💧 + ⚡ | chain lightning to up to 4 enemies within 120 px (50% of the hit + 4 each) |
+| Freeze | 💧 + ❄ | frozen solid 1.4 s (heavies ×0.6, bosses ×0.3), then 5 s immunity |
+| Shatter | ❄ + heavy hit | +60% on that hit (+100% and the ice breaks if frozen). Heavy = explosive, rail, Marksman, tank, Snapjaw, obelisk |
+| Steam | 🔥 + 💧 | fire goes out; 3 s of armor plating offline and +20% damage taken (+10% on bosses) |
+| Wildfire | 🔥 + explosion | burn spreads to up to 5 enemies within 80 px |
+
+🔥 and ❄ cancel each other out. All the tuning is in `src/systems/Elements.ts` (`ELEM_TUNE`).
+The idea comes from **[Lightkeepers](https://github.com/vega-star/lightkeepers)** by vega-star (Apache-2.0), a tower-defense tech demo built around combining elements.
+No code or art was taken from it; this is our own implementation.
+
 ## Art (v3)
 All sprites are one painterly, realistic 3/4-view set (`public/assets/v3`, WebP, ~1.2 MB). Each tower and troop tier has its own sprite, and every tier is
 visibly more advanced. Turrets use a separate rotating head with barrel recoil, and units, bugs and bloons are animated with walk/scuttle/bob motion and painted pop/death/muzzle FX.

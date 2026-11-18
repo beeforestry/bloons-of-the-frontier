@@ -18,6 +18,9 @@ import { IMG, sprite } from '../render/sprites';
 import type { Building, BuildPad } from '../entities/Building';
 import { PAD_BUILDINGS, POWERS, MAX_ENERGY, TRAIN_DISCOUNT } from '../data/buildings';
 import { ARMORY, type ArmoryId } from '../data/armory';
+import { elemTag, openComboGuide, combosFor } from './ComboGuide';
+import { COMBOS, ELEMENTS } from '../systems/Elements';
+import type { TowerData } from '../core/types';
 import { SHORTCUT, type Shortcut } from '../systems/Shortcuts';
 import type { BuildingTier } from '../core/types';
 
@@ -32,8 +35,9 @@ function thumb(key: string, tier = 0, size = 44): string {
 const thumbCache = new Map<string, string>();
 const th = (key: string, tier = 0, size = 44) => { const k = `${key}|${tier}|${size}`; if (!thumbCache.has(k)) thumbCache.set(k, thumb(key, tier, size)); return thumbCache.get(k)!; };
 
-function statLine(t: TowerTier): string {
+function statLine(t: TowerTier, td?: TowerData): string {
   const s: string[] = [];
+  const et = td ? elemTag(td, t.combat?.status) : ''; if (et) s.push(et);
   if (t.combat) s.push(`⚔ ${t.combat.damage}${t.combat.shots && t.combat.shots > 1 ? '×' + t.combat.shots : ''}`, `⏱ ${t.combat.fireRate}/s`, `◎ ${t.combat.range}`, `➹ ${t.combat.pierce}`);
   if (t.cover) s.push(`🛡 +${t.cover.bonusMaxHp}HP`, `◎ +${Math.round(t.cover.bonusRangePct * 100)}%`, `👤 ${t.cover.garrisonSlots}`);
   if (t.farm) s.push(`¢ ${t.farm.income}×${t.farm.payoutsPerMin}/min`, `+${t.farm.waveBonus}/wave`);
@@ -46,8 +50,9 @@ function statLine(t: TowerTier): string {
   s.push(`❤ ${t.maxHp}`);
   return s.join(' · ');
 }
-function deltaLine(a: TowerTier, b: TowerTier): string {
+function deltaLine(a: TowerTier, b: TowerTier, td?: TowerData): string {
   const d: string[] = [];
+  if (td?.element && b.combat?.status && !a.combat?.status) { const e = ELEMENTS[td.element]; d.push(`<span class="dl"><b>NEW</b> ${e.icon} ${e.name} ${b.combat.status}s <i class="up">combo</i></span>`); }
   const cmp = (name: string, x?: number, y?: number, pct = false) => {
     if (x === undefined || y === undefined || x === y) return;
     const v = pct ? `${Math.round(x * 100)}→${Math.round(y * 100)}%` : `${+x.toFixed(2)}→${+y.toFixed(2)}`;
@@ -61,9 +66,17 @@ function deltaLine(a: TowerTier, b: TowerTier): string {
   cmp('Wave bonus', a.farm?.waveBonus, b.farm?.waveBonus); cmp('HP', a.maxHp, b.maxHp);
   cmp('Aura', a.aura?.radius, b.aura?.radius); cmp('Aura rate', a.aura?.ratePct, b.aura?.ratePct, true); cmp('Aura income', a.aura?.incomePct, b.aura?.incomePct, true);
   cmp('Orb ⚡', a.orbs?.energy, b.orbs?.energy); cmp('Orbs/min', a.orbs?.perMin, b.orbs?.perMin);
-  cmp('Shred', a.combat?.armorShred, b.combat?.armorShred, true); cmp('Slow', a.combat?.slow, b.combat?.slow, true);
+  cmp('Status s', a.combat?.status, b.combat?.status); cmp('Shred', a.combat?.armorShred, b.combat?.armorShred, true); cmp('Slow', a.combat?.slow, b.combat?.slow, true);
   cmp('Garrison armor', a.cover?.garrisonProtect, b.cover?.garrisonProtect, true); cmp('Garrison range', a.cover?.garrisonRangePct, b.cover?.garrisonRangePct, true);
   return d.join('');
+}
+/** t103: element + combo hint under a tower's stats (or a teaser when a later tier unlocks it). */
+function elemInfo(td: TowerData, t: TowerTier): string {
+  if (!td.element) return '';
+  const e = ELEMENTS[td.element], cs = combosFor(td.element).map((id) => COMBOS[id].name.charAt(0) + COMBOS[id].name.slice(1).toLowerCase()).join(', ');
+  const first = td.tiers.findIndex((x) => !!x.combat?.status);
+  const head = t.combat?.status ? `${e.icon} Hits leave <b style="color:${e.color}">${e.name}</b> (${t.combat.status}s)` : `${e.icon} Tier ${first + 1} unlocks <b style="color:${e.color}">${e.name}</b>`;
+  return `<div class="sp-sub sp-elem">${head} · combos: ${cs} <button class="btn mini" id="sp-combos" title="Element combos guide">⚗ ?</button></div>`;
 }
 function bldLine(t: BuildingTier) {
   const s = t.stats, o: string[] = [`❤ ${s.maxHp}`];
@@ -128,7 +141,7 @@ export class Hud {
     for (const d of TOWERS.filter((t) => t.faction === this.tab)) {
       const t0 = d.tiers[0];
       const card = h('button', 'card', `${th(d.sprite, 0)}<div class="ci"><div class="cn">${d.name}<span class="kind k-${d.kind}">${d.kind}</span></div>
-        <div class="cs">${statLine(t0)}</div></div><div class="cost">¢${t0.cost}</div>`);
+        <div class="cs">${statLine(t0, d)}</div></div><div class="cost">¢${t0.cost}</div>`);
       card.dataset.tower = d.id; card.title = d.desc;
       card.onclick = () => { this.view.placing = this.view.placing === d.id ? null : d.id; this.view.deploying = null; this.select(null, null); this.refresh(true); };
       list.appendChild(card);
@@ -281,14 +294,15 @@ export class Hud {
       const tags = [t.data.antiAir ? '✈ Anti-air' : '', t.data.armorPiercing ? 'Armor-piercing' : '', t.data.fixedLane ? 'Fixed lane' : '', t.data.hitsAir === false ? 'Air only' : ''].filter(Boolean).join(' · ');
       p.innerHTML = `<div class="sp-head">${th(t.t.visual.sprite ?? t.data.sprite, t.tier, 56)}<div><div class="sp-name">${t.t.name}</div>
         <div class="sp-sub">${t.data.name} · Tier ${t.tier + 1}/${t.data.tiers.length}${tags ? ' · ' + tags : ''}</div></div></div>
-        <div class="sp-stats">${statLine(t.t)}</div><div class="sp-live"></div>
-        ${n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
+        <div class="sp-stats">${statLine(t.t, t.data)}</div>${elemInfo(t.data, t.t)}<div class="sp-live"></div>
+        ${n ? `<button class="btn up" id="sp-up" title="${deltaLine(t.t, n, t.data).replace(/<\/span>/g, ' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}" ${g.res.credits < n.cost ? 'disabled' : ''}>⬆ ${n.name} <b>¢${n.cost}</b><div class="delta">${deltaLine(t.t, n, t.data)}</div></button>` : '<div class="maxed">★ Max tier</div>'}
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
         ${t.data.movable && this.mine(t) ? `<div class="sp-sub">Click the map to relocate${t.data.airborne ? ' (flies over water)' : ''}${t.data.autoChase && t.tier >= 2 ? ' · Hunter Patrol auto-chases' : ''}${t.t.combat?.secondary ? ' · Roof gunner active' : ''}</div>` : ''}
         <div class="row">${t.combat && this.mine(t) ? `<button class="btn possess" id="sp-possess" title="See and fight through this tower in first person (E)">👁 Possess <small>(E)</small></button>` : ''}<button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
         ${slots ? `<div class="sp-sub">Garrison: ${t.garrisoned.length}/${slots} · −${Math.round(t.gProtect() * 100)}% dmg taken · +${Math.round(t.gRange() * 100)}% range · select a squad and press Garrison</div>${t.garrisoned.length ? '<button class="btn" id="sp-eject">Eject troops</button>' : ''}` : ''}
         ${t.isFarm ? '<div class="sp-sub">Tip: your free Sprout Farmhand can pack farms — press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
+      const cg = $('#sp-combos', p); if (cg) cg.onclick = () => openComboGuide();
       const up = $('#sp-up', p); if (up) up.onclick = () => { t.upgrade(g); this.lastSel = ''; this.refresh(true); };
       for (const el of Array.from(p.querySelectorAll<HTMLElement>('[data-tgt]'))) el.onclick = () => { g.setTargeting(t, el.dataset.tgt as never); this.lastSel = ''; this.refresh(true); };
       const ab = $('#sp-abil', p); if (ab) ab.onclick = () => t.useAbility(g);

@@ -1076,6 +1076,7 @@ export class Renderer {
       footY = e.y;
     }
     if (e.slowAmt > 0) { c.fillStyle = 'rgba(150,220,255,0.3)'; c.beginPath(); c.ellipse(e.x, e.y, w * 0.5, h * 0.45, 0, 0, 7); c.fill(); }
+    this.elemFx(e, w, h, time);
     if (e.shield > 0) { // energy dome
       const k = e.shield / e.maxShield, R = Math.max(w, h) * 0.62, gr = c.createRadialGradient(e.x, e.y - 4, R * 0.5, e.x, e.y - 4, R);
       gr.addColorStop(0, 'rgba(120,230,255,0)'); gr.addColorStop(0.85, `rgba(120,230,255,${0.18 + 0.2 * k})`); gr.addColorStop(1, `rgba(200,250,255,${0.5 + 0.3 * k})`);
@@ -1096,6 +1097,38 @@ export class Renderer {
     if (e.maxShield > 0 && e.shield > 0) this.bar(e.x, e.y - h * 0.6 - 10, d.boss ? 70 : 28, e.shield / e.maxShield, '#7fe8ff');
     if (d.boss || (e.maxHp > 1 && e.hp < e.maxHp)) this.bar(e.x, e.y - h * 0.6 - 4, d.boss ? 70 : 28, e.hp / e.maxHp, d.boss ? '#ff5a5a' : '#ffb347', e.uid);
     void footY;
+  }
+
+  /** t103 element statuses: tint/overlay per status + a small icon row above the HP bar. */
+  private elemFx(e: Enemy, w: number, h: number, time: number) {
+    const s = e.el, c = this.ctx;
+    if (!(s.wet > 0 || s.burn > 0 || s.chill > 0 || s.shock > 0 || s.frozenT > 0 || s.steamT > 0)) return;
+    const rx = w * 0.5, ry = h * 0.45;
+    if (s.frozenT > 0) { // ice block
+      c.save(); c.globalAlpha = 0.55; c.fillStyle = '#bfefff'; c.strokeStyle = '#ffffff'; c.lineWidth = 2;
+      const bw = w * 0.95, bh = h * 0.95; c.beginPath(); c.roundRect(e.x - bw / 2, e.y - bh / 2, bw, bh, 6); c.fill(); c.globalAlpha = 0.9; c.stroke();
+      c.globalAlpha = 0.8; c.beginPath(); c.moveTo(e.x - bw * 0.3, e.y - bh * 0.35); c.lineTo(e.x - bw * 0.1, e.y - bh * 0.15); c.moveTo(e.x + bw * 0.15, e.y - bh * 0.4); c.lineTo(e.x + bw * 0.3, e.y - bh * 0.25); c.stroke(); c.restore();
+    } else if (s.chill > 0) { c.fillStyle = 'rgba(200,240,255,0.28)'; c.beginPath(); c.ellipse(e.x, e.y, rx, ry, 0, 0, 7); c.fill(); }
+    if (s.wet > 0) { // dripping water sheen
+      c.fillStyle = 'rgba(70,150,255,0.26)'; c.beginPath(); c.ellipse(e.x, e.y, rx, ry, 0, 0, 7); c.fill();
+      c.fillStyle = '#7cc4ff'; for (let i = 0; i < 2; i++) { const t = (time * 1.6 + i * 0.5) % 1; c.globalAlpha = 1 - t; c.beginPath(); c.arc(e.x + (i ? rx * 0.4 : -rx * 0.35), e.y + ry * 0.4 + t * 12, 2.2, 0, 7); c.fill(); } c.globalAlpha = 1;
+    }
+    if (s.burn > 0) { // flicker + rising embers
+      c.globalAlpha = 0.5 + 0.2 * Math.sin(time * 19); this.additive(IMG.fx_boom_fire, e.x, e.y - h * 0.15, Math.max(18, w * 0.7), time * 2, 0.5); c.globalAlpha = 1;
+      c.fillStyle = '#ffb347'; for (let i = 0; i < 3; i++) { const t = (time * 1.3 + i * 0.33) % 1; c.globalAlpha = 1 - t; c.beginPath(); c.arc(e.x + Math.sin(i * 2.4 + time * 3) * rx * 0.5, e.y - t * h * 0.7, 1.8, 0, 7); c.fill(); } c.globalAlpha = 1;
+    }
+    if (s.shock > 0) { // crackling sparks
+      c.strokeStyle = '#fff27a'; c.lineWidth = 1.5; c.globalAlpha = 0.85; c.beginPath();
+      for (let i = 0; i < 2; i++) { const a = time * 9 + i * 3.1 + e.uid; const x0 = e.x + Math.cos(a) * rx * 0.8, y0 = e.y + Math.sin(a) * ry * 0.8; c.moveTo(x0, y0); c.lineTo(x0 + 5, y0 - 4); c.lineTo(x0 + 2, y0 - 7); c.lineTo(x0 + 7, y0 - 11); }
+      c.stroke(); c.globalAlpha = 1;
+    }
+    if (s.steamT > 0) { c.fillStyle = 'rgba(245,245,245,0.35)'; for (let i = 0; i < 3; i++) { const t = (time * 0.9 + i * 0.33) % 1; c.beginPath(); c.arc(e.x + (i - 1) * rx * 0.45, e.y - h * 0.3 - t * 16, 4 + t * 5, 0, 7); c.fill(); } }
+    // icon row
+    const icons: string[] = [];
+    if (s.frozenT > 0) icons.push('🧊'); else if (s.chill > 0) icons.push('❄');
+    if (s.wet > 0) icons.push('💧'); if (s.burn > 0) icons.push('🔥'); if (s.shock > 0) icons.push('⚡'); if (s.steamT > 0) icons.push('♨');
+    const y = e.y - h * 0.6 - 17, x0 = e.x - (icons.length - 1) * 7;
+    icons.forEach((ic, i) => this.label(x0 + i * 14, y, ic, '#fff', 12));
   }
 
   // ---------------------------------------------------------------- projectiles & fx
