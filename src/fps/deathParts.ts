@@ -54,7 +54,7 @@ export class FpDeaths {
   readonly live: Live[] = [];
   private chunks = new Map<string, Chunk[]>();
   private mats = new Map<string, THREE.Material>();
-  stats = { events: 0, parts: 0, peak: 0, skipped: 0, byCause: {} as Record<string, number> };
+  stats = { events: 0, parts: 0, peak: 0, skipped: 0, landed: 0, bounces: 0, byCause: {} as Record<string, number> };
   private M = new THREE.Matrix4(); private P = new THREE.Vector3(); private Q = new THREE.Quaternion(); private S = new THREE.Vector3(); private O = new THREE.Vector3();
   constructor(private scene: THREE.Scene, public cap: number) {}
   private chunk(geo: THREE.BufferGeometry, k: number): Chunk[] {
@@ -124,9 +124,9 @@ export class FpDeaths {
         p.vy -= GRAV * dt; m.position.x += p.vx * dt; m.position.y += p.vy * dt; m.position.z += p.vz * dt;
         m.rotation.x += p.wx * dt; m.rotation.y += p.wy * dt; m.rotation.z += p.wz * dt;
         if (m.position.y <= p.floor) {
-          m.position.y = p.floor;
+          m.position.y = p.floor; this.stats.bounces++;
           if (p.vy < -1.6) { p.vy = -p.vy * 0.35; p.vx *= 0.55; p.vz *= 0.55; p.wx *= 0.5; p.wy *= 0.5; p.wz *= 0.5; }
-          else { p.rest = true; }
+          else { p.rest = true; this.stats.landed++; }
         }
       }
       const f = p.t / p.life, k = f < 0.7 ? 1 : Math.max(0.02, 1 - (f - 0.7) / 0.3);

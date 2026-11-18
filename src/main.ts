@@ -551,8 +551,9 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     tune: { PROX, SPEC_TUNE, RAGE, CRIT, OVERLOAD, KNOCK },
     // t107 hooks
     deathFx: () => ({ seq: g.deathSeq, last: g.deaths.slice(-6).map((d) => ({ id: d.id, cause: d.cause, layer: d.layer, boss: d.boss, shatter: d.shatter, dx: +d.dx.toFixed(2), dy: +d.dy.toFixed(2) })), debris: r.debris.live.length, ground: r.debris.ground.length, cap: r.debris.cap, stats: r.debris.stats, byCause: g.stats.deathFx, slowT: g.slowT, kinds: r.debris.live.reduce((m, f) => { m[f.k] = (m[f.k] ?? 0) + 1; return m; }, {} as Record<number, number>), maxZ: Math.max(0, ...r.debris.live.map((f) => f.z)) }),
+    debrisBias: () => { const fl = r.debris.live.filter((f) => f.k !== 3 && f.k !== 4 && Math.abs(f.vx) > 10); return fl.length ? fl.filter((f) => f.vx > 0).length / fl.length : null; },
     /** Kill an enemy with a given damage type from a point (x, y) -> death effect of that cause. */
-    killWith: (uid: number, type: string, fx?: number, fy?: number, elem?: string) => { const e = g.enemies.find((x) => x.uid === uid); if (!e) return false; e.takeDamage(g, 1e9, type as never, fx != null ? { x: fx, y: fy! } : undefined, elem ? { elem: elem as never, antiAir: true, ap: true } : { antiAir: true, ap: true }); return !e.alive; },
+    killWith: (uid: number, type: string, fx?: number, fy?: number, elem?: string) => { const e = g.enemies.find((x) => x.uid === uid); if (!e) return false; e.takeDamage(g, (e.hp + e.shield) * 4 + 60, type as never, fx != null ? { x: fx, y: fy! } : undefined, elem ? { elem: elem as never, antiAir: true, ap: true } : { antiAir: true, ap: true }); return !e.alive; },
     // t106 hooks
     boosts: () => ({ overload: g.overload, cost: overloadCost(g.overload), rageT: g.rageT, rageCd: g.rageCd, crit: g.critPct, rateMul: g.rateMul(), stats: { crits: g.stats.crits, kb: g.stats.knockbacks, rages: g.stats.rages } }),
     buyOverload: () => g.buyOverload(),
