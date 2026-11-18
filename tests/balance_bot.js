@@ -61,6 +61,8 @@ window.__bot = (() => {
     const front = g.enemies.filter((e) => e.alive).sort((a, b) => a.remaining - b.remaining)[0];
     if (front && g.energy >= 60) g.castPower('mac', { x: front.x, y: front.y });
     if (g.energy >= 35 && g.hq.health.hp < g.hq.health.max * 0.6) g.castPower('heal', { x: g.hq.x, y: g.hq.y });
+    // t106: Rage whenever a real push is on the field (window.__BOT_NOBOOST disables Rage + Overload for A/B runs)
+    if (!window.__BOT_NOBOOST && g.activateRage && g.rageCd <= 0 && g.enemies.filter((e) => e.alive).length >= 8) g.activateRage();
   };
   // t104 (window.__BOT_FUSE): an aggressive fuser — new towers of a type that already has an unfused max-tier copy
   // are built right next to it, and every eligible pair is fused as soon as the fee is affordable.
@@ -87,6 +89,8 @@ window.__bot = (() => {
       } else if (cheapUp) { if (!cheapUp.upgrade(g, cheapUp.uid % 2)) break; } else break;
     }
     fuseAll();
+    // t106: Overload Core once spare money piles up (more than 2× its price after this round of building)
+    if (!window.__BOT_NOBOOST && g.buyOverload) for (let k = 0; k < 3 && g.overload < 12 && g.res.credits > 2 * H.boosts().cost; k++) g.buyOverload();
     if (g.res.credits > 250 || g.waves.index % 4 === 3) macro();
   };
   const runWave = (maxSec = 400) => {

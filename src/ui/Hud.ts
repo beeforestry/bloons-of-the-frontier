@@ -14,7 +14,8 @@ import { canFuseType, fusedTier, fusionFee } from '../data/fusion';
 import { specsFor, branchTier } from '../data/specs';
 import { recipeFee, isDiscovered, type Recipe } from '../data/recipes';
 import { proxLines } from '../systems/Proximity';
-import { Faction, TARGETING_ORDER, TARGETING_LABEL, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
+import { OVERLOAD, RAGE, overloadCost } from '../systems/Boosts';
+import { Faction, TARGETING_ORDER, TARGETING_LABEL, TARGETING_INFO, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
 import { ABILITIES } from '../data/abilities';
 import { ENEMIES } from '../data/enemies';
 import { gEject } from '../entities/Garrison';
@@ -70,7 +71,7 @@ function deltaLine(a: TowerTier, b: TowerTier, td?: TowerData): string {
   cmp('Wave bonus', a.farm?.waveBonus, b.farm?.waveBonus); cmp('HP', a.maxHp, b.maxHp);
   cmp('Aura', a.aura?.radius, b.aura?.radius); cmp('Aura rate', a.aura?.ratePct, b.aura?.ratePct, true); cmp('Aura income', a.aura?.incomePct, b.aura?.incomePct, true);
   cmp('Orb ⚡', a.orbs?.energy, b.orbs?.energy); cmp('Orbs/min', a.orbs?.perMin, b.orbs?.perMin);
-  cmp('Status s', a.combat?.status, b.combat?.status); cmp('Shred', a.combat?.armorShred, b.combat?.armorShred, true); cmp('Slow', a.combat?.slow, b.combat?.slow, true);
+  cmp('Status s', a.combat?.status, b.combat?.status); cmp('Knockback', a.combat?.knockback, b.combat?.knockback); cmp('Shred', a.combat?.armorShred, b.combat?.armorShred, true); cmp('Slow', a.combat?.slow, b.combat?.slow, true);
   cmp('Garrison armor', a.cover?.garrisonProtect, b.cover?.garrisonProtect, true); cmp('Garrison range', a.cover?.garrisonRangePct, b.cover?.garrisonRangePct, true);
   return d.join('');
 }
@@ -97,8 +98,9 @@ function unitLine(t: UnitTier) {
   return `❤ ${t.stats.maxHp} · ⚔ ${t.stats.damage} · ⏱ ${t.stats.attackRate}/s · ◎ ${t.stats.range}${t.weapon.antiAir ? ' · ✈AA' : ''}${t.weapon.armorPiercing ? ' · AP' : ''}${t.special ? ' · ★ ' + t.special.name : ''}`;
 }
 const STANCES: [Stance, string][] = [['aggressive', '⚔ Aggressive'], ['hold', '✋ Hold'], ['retreat', '🏃 Retreat']];
-function tgtButtons(cur: string) {
-  return `<div class="seg tgt">${TARGETING_ORDER.map((m) => `<button class="${m === cur ? 'on' : ''}" data-tgt="${m}">${TARGETING_LABEL[m]}</button>`).join('')}</div>`;
+function tgtButtons(cur0: string) {
+  const cur = (TARGETING_ORDER.includes(cur0 as never) ? cur0 : 'first') as keyof typeof TARGETING_INFO;
+  return `<div class="seg tgt">${TARGETING_ORDER.map((m) => `<button class="${m === cur ? 'on' : ''}" data-tgt="${m}" title="${TARGETING_LABEL[m]}: ${TARGETING_INFO[m].tip}"><span class="ti">${TARGETING_INFO[m].icon}</span> ${TARGETING_LABEL[m]}</button>`).join('')}</div><div class="sp-sub tgt-tip">${TARGETING_INFO[cur].icon} <b>${TARGETING_LABEL[cur]}</b>: ${TARGETING_INFO[cur].tip}</div>`;
 }
 
 export class Hud {
@@ -161,6 +163,14 @@ export class Hud {
       b.onclick = () => { this.view.power = this.view.power === p.id ? null : p.id; this.view.placing = this.view.deploying = null; this.view.rallyFor = null; this.refresh(true); };
       bar.appendChild(b);
     }
+    // t106: Rage (team ability, X) + Overload Core purchase
+    const rg = h('button', 'power rage', `<span class="pi">🔥</span><span class="pn">Rage</span><span class="pc">X</span><i class="pcd"></i>`);
+    rg.id = 'btn-rage'; rg.title = `RAGE (X): every tower fires ${Math.round((RAGE.mul - 1) * 100)}% faster for ${RAGE.dur}s, then ${RAGE.cd}s cooldown. Shared by the whole team in co-op.`;
+    rg.onclick = () => { this.g.activateRage(); this.refresh(true); };
+    const ov = h('button', 'power overload', `<span class="pi">⚙</span><span class="pn">Overload</span><span class="pc" id="ovl-cost">¢${overloadCost(0)}</span>`);
+    ov.id = 'btn-overload'; ov.title = `Overload Core: permanent +${OVERLOAD.dmgPer * 100}% damage for every tower this match. Price ×${OVERLOAD.k} per level. Co-op: the buyer pays, the whole team benefits.`;
+    ov.onclick = () => { this.g.buyOverload(); this.refresh(true); };
+    bar.append(rg, ov);
   }
   // ---------------------------------------------------------------- troop bar
   private buildTroops() {
@@ -306,7 +316,7 @@ export class Hud {
         ${t.combat ? `<div class="sp-sub">🎯 Targeting</div>${tgtButtons(t.targeting)}` : ''}
         ${t.data.ability ? `<button class="btn ability" id="sp-abil">${ABILITIES[t.data.ability].icon} ${ABILITIES[t.data.ability].name} <small>(1)</small></button>` : ''}
         ${t.data.movable && this.mine(t) ? `<div class="sp-sub">Click the map to relocate${t.data.airborne ? ' (flies over water)' : ''}${t.data.autoChase && t.tier >= 2 ? ' · Hunter Patrol auto-chases' : ''}${t.t.combat?.secondary ? ' · Roof gunner active' : ''}</div>` : ''}
-        <div class="row">${t.combat && this.mine(t) ? `<button class="btn possess" id="sp-possess" title="See and fight through this tower in first person (E)">👁 Possess <small>(E)</small></button>` : ''}<button class="btn sell" id="sp-sell">Sell ¢${t.sellValue} (70%)</button></div>
+        <div class="row">${t.combat && this.mine(t) ? `<button class="btn possess" id="sp-possess" title="See and fight through this tower in first person (E)">👁 Possess <small>(E)</small></button>` : ''}<button class="btn sell" id="sp-sell" title="Refund ¢${t.sellValue} = 70% of the ¢${t.invested} invested in this tower${t.fused ? " (both towers + fusion fee)" : t.data.hidden ? " (both parent towers + recipe fee)" : t.branch != null ? " (all tiers incl. the branch)" : ""}">Sell ¢${t.sellValue} <small>(70% of ¢${t.invested})</small></button></div>
         ${slots ? `<div class="sp-sub">Garrison: ${t.garrisoned.length}/${slots} · −${Math.round(t.gProtect() * 100)}% dmg taken · +${Math.round(t.gRange() * 100)}% range · select a squad and press Garrison</div>${t.garrisoned.length ? '<button class="btn" id="sp-eject">Eject troops</button>' : ''}` : ''}
         ${t.isFarm ? '<div class="sp-sub">Tip: your free Sprout Farmhand can pack farms — press 🧹 Organize Farms to pack farms into a tight block.</div>' : ''}`;
       const cg = $('#sp-combos', p); if (cg) cg.onclick = () => openComboGuide();
@@ -460,6 +470,15 @@ export class Hud {
       pb.classList.toggle('on', this.view.power === id);
       pb.classList.toggle('poor', !g.canCast(id));
       $('.pcd', pb).style.height = `${(cd / pw.cooldown) * 100}%`;
+    }
+    { // t106 crit %, Overload level, Rage state
+      const ce = $('#crit'); if (ce) ce.textContent = `${Math.round(g.critPct * 100)}%`;
+      const oe = $('#ovl'); if (oe) { oe.textContent = `Lv ${g.overload}`; oe.parentElement!.title = `Overload Core Lv ${g.overload}: towers +${Math.round(OVERLOAD.dmgPer * g.overload * 100)}% damage`; }
+      const oc = $('#ovl-cost'), ob = $<HTMLButtonElement>('#btn-overload');
+      if (oc && ob) { const max = g.overload >= OVERLOAD.max, cost = overloadCost(g.overload); oc.textContent = max ? 'MAX' : `¢${cost}`; ob.classList.toggle('poor', max || g.res.credits < cost); $('.pn', ob).textContent = `Overload ${g.overload ? 'Lv ' + g.overload : ''}`.trim(); }
+      const rb = $('#btn-rage');
+      if (rb) { rb.classList.toggle('on', g.rageT > 0); rb.classList.toggle('poor', g.rageCd > 0 && g.rageT <= 0); $('.pcd', rb).style.height = g.rageT > 0 ? '0%' : `${(g.rageCd / (RAGE.dur + RAGE.cd)) * 100}%`; $('.pc', rb).textContent = g.rageT > 0 ? `${Math.ceil(g.rageT)}s` : g.rageCd > 0 ? `${Math.ceil(g.rageCd)}s` : 'X'; }
+      document.body.classList.toggle('raging', g.rageT > 0);
     }
     $('#wave').textContent = g.waves.freeplay ? `Freeplay ${g.waves.current}` : `${g.waves.current}/${g.waves.total}`;
     $('#wave').parentElement!.classList.toggle('freeplay', g.waves.freeplay);

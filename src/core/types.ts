@@ -25,7 +25,16 @@ export enum TargetingMode {
   HQ = 'hq',
 }
 export const TARGETING_ORDER: TargetingMode[] = [TargetingMode.First, TargetingMode.Last, TargetingMode.Strong, TargetingMode.Weak, TargetingMode.Close, TargetingMode.HQ];
-export const TARGETING_LABEL: Record<TargetingMode, string> = { first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest', close: 'Closest', hq: 'Closest to HQ' };
+export const TARGETING_LABEL: Record<TargetingMode, string> = { first: 'First', last: 'Last', strong: 'Strongest', weak: 'Weakest', close: 'Closest', hq: 'Closest to Exit' };
+/** t106: icon + one-line explanation for the panel / tooltips. */
+export const TARGETING_INFO: Record<TargetingMode, { icon: string; tip: string }> = {
+  first: { icon: '⏩', tip: 'Furthest along its road (least distance left to walk)' },
+  last: { icon: '⏪', tip: 'Newest arrival (most road left)' },
+  strong: { icon: '💪', tip: 'Toughest enemy (bosses, armour, most HP)' },
+  weak: { icon: '🎯', tip: 'Lowest HP + shield — finishes off stragglers' },
+  close: { icon: '📍', tip: 'Nearest to this tower' },
+  hq: { icon: '🏰', tip: 'Nearest to the HQ gate (the exit), as the crow flies' },
+};
 /** Squad stance (Halo Wars style). */
 export type Stance = 'aggressive' | 'hold' | 'retreat';
 export type Formation = 'line' | 'column';
@@ -46,6 +55,8 @@ export interface HitOpts {
   elemDur?: number;
   /** Heavy impact (explosive, rail, Marksman, tank shell, Snapjaw bite): shatters chilled enemies. */
   heavy?: boolean;
+  /** t106 knockback: px pushed back along the path (Enemy.shove). */
+  kb?: number;
 }
 /** t103 element statuses: towers stamp them on enemies, two different ones meeting trigger a combo. */
 export type Element = 'wet' | 'burn' | 'chill' | 'shock';
@@ -96,6 +107,8 @@ export interface CombatStats {
   lockRamp?: number;
   /** t103: seconds of the tower's element status (TowerData.element) stamped per hit. Absent = this tier applies none. */
   status?: number;
+  /** t106: px an impact pushes enemies back along their path (bosses resist, diminishing returns). */
+  knockback?: number;
   /** Cap on lockRamp bonus multiplier (added to 1). */
   lockRampMax?: number;
   /** Independent secondary weapon (Bulwark Tank roof MG at last tier). */

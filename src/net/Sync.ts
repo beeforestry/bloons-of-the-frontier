@@ -40,7 +40,7 @@ type Ref = { $: string; u?: number; i?: number; p?: number; x?: number; y?: numb
 
 /** Game methods that become network commands on a client (and permission-checked on the host). */
 const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'moveTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
-  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl', 'toggleVehicle', 'fuseTowers', 'fuseRecipe'] as const;
+  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl', 'toggleVehicle', 'fuseTowers', 'fuseRecipe', 'buyOverload', 'activateRage'] as const;
 /** Applied optimistically on the client too (instant response; the snapshot corrects). */
 const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'moveTower', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
 /** Proto methods (Tower / Building instances). */
@@ -431,6 +431,7 @@ export class Sync {
       U: (g as unknown as { unitTiers: Record<string, number> }).unitTiers,
       A: [...g.armory],
       AA: g.autoArmy,
+      CO: [g.overload, r1(g.rageT), r1(g.rageCd)],
       V: this.versus ? this.versus.s : null,
       OV: g.overrun ? (g.overrun as unknown as { snapshot(): unknown }).snapshot() : null,
       AL: [...this.allowAlly].filter(([, v]) => v).map(([k]) => k),
@@ -464,6 +465,7 @@ export class Sync {
       (g as unknown as { unitTiers: Record<string, number> }).unitTiers = s.U as Record<string, number>;
       g.armory.clear(); for (const a of s.A as string[]) g.armory.add(a as never);
       if (Array.isArray(s.AA)) g.autoArmy = (s.AA as boolean[]).map(Boolean);
+      if (Array.isArray(s.CO)) { const co = s.CO as number[]; g.overload = co[0] | 0; g.rageT = +co[1] || 0; g.rageCd = +co[2] || 0; } // t106
       this.allowAlly.clear(); for (const p of s.AL as number[]) this.allowAlly.set(p, true);
       if (s.V) this.vs = s.V as Versus['s'];
       this.syncEnemies(s.E as unknown[][]);

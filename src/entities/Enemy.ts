@@ -13,6 +13,7 @@ import type { DamageType, EnemyData, HitOpts, Vec } from '../core/types';
 import { nextId, rand, dist } from '../core/math';
 import { ENEMIES, totalLeak, totalStrength } from '../data/enemies';
 import type { Game } from '../game/Game';
+import { KNOCK } from '../systems/Boosts';
 import { newElemState, onHit as elemOnHit, preHit as elemPreHit, tick as elemTick, type ElemState } from '../systems/Elements';
 /** Anything that can physically hold a ground enemy (troops, Wall-Nut barriers). */
 export interface Blocker { x: number; y: number; alive: boolean; garrison: unknown; takeDamage(g: Game, n: number): void }
@@ -108,6 +109,18 @@ export class Enemy {
   /** Distance left to the HQ: comparable across lanes of different lengths (First/Last targeting). */
   get remaining() { return this.pathLen - this.progress; }
   /** MAC Blast knockback. */
+  /** t106 knockback resistance (0..KNOCK.resMax): each shove adds some, it fades over time -> no stun-lock. */
+  kbRes = 0;
+  /** t106: impact shove back ALONG THE PATH (path distance; never leaves the road). Bosses resist. */
+  shove(g: Game, px: number) {
+    if (!this.alive || this.ally || this.hunt || this.leapAnim || this.data.air) return 0;
+    const d = px * (this.data.boss ? KNOCK.bossK : 1) * (1 - this.kbRes) * (this.data.size > 60 ? 0.6 : 1);
+    this.kbRes = Math.min(KNOCK.resMax, this.kbRes + KNOCK.resAdd);
+    if (d < 0.5) return 0;
+    this.progress = Math.max(0, this.progress - d); this.atBase = false; this.blockedBy = null;
+    g.stats.knockbacks++;
+    return d;
+  }
   knockback(d: number) { if (!this.alive) return; this.progress = Math.max(0, this.progress - d); this.atBase = false; this.blockedBy = null; this.leapAnim = null; }
 
   update(g: Game, dt: number) {
@@ -119,6 +132,7 @@ export class Enemy {
     const path = this.route ?? g.paths[this.lane] ?? g.path; this.pathLen = path.length;
     if (this.empT > 0) this.empT -= dt;
     if (this.surgeT > 0) this.surgeT -= dt;
+    if (this.kbRes > 0) this.kbRes = Math.max(0, this.kbRes - KNOCK.resDecay * dt);
     if (this.smokeT > 0) { this.smokeT -= dt; this.targetable = this.smokeT <= 0; }
     if (this.stunT > 0) { this.stunT -= dt; return; }
     if (this.hunt) { g.overrun?.stepMonster(g, this, dt); return; }
@@ -243,6 +257,7 @@ export class Enemy {
     this.hp -= amount;
     if (this.hp <= 0) this.popLayers(g, -this.hp);
     elemOnHit(g, this, raw, type, hit);
+    if (hit?.kb && this.alive) this.shove(g, hit.kb);
     return dealt;
   }
 

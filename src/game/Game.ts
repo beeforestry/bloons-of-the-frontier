@@ -3,13 +3,14 @@
 // (firing, splash, deploying squads, garrisoning, organizing farms, leaks).
 // Rendering and DOM UI only READ from this object.
 // =============================================================================
-import { Faction, TargetingMode, TARGETING_ORDER, type AbilityId, type ManualCtl, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
+import { Faction, TargetingMode, TARGETING_ORDER, TARGETING_INFO, TARGETING_LABEL, type AbilityId, type ManualCtl, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
 import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
 import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
 import { PROX, updateProximity } from '../systems/Proximity';
+import { CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadMul } from '../systems/Boosts';
 import { recipeFor, recipeFee, discover, type Recipe } from '../data/recipes';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
@@ -126,7 +127,7 @@ export class Game {
     /** t103 element combos triggered, by combo id, and element stamps applied. */
     elem: {} as Record<string, number>, elemApplied: 0, elemFirst: false,
     /** t104 fusions done; projectile shots fired / that hit something (predictive-aim metric). */
-    fusions: 0, recipes: 0, proxStamps: 0, projShots: 0, projHits: 0, projAimShots: 0, projAimHits: 0 };
+    fusions: 0, recipes: 0, proxStamps: 0, overloads: 0, rages: 0, knockbacks: 0, projShots: 0, projHits: 0, projAimShots: 0, projAimHits: 0 };
   acids: { x: number; y: number; tx: number; ty: number; t: number; target: Damageable; dmg: number }[] = [];
   /** Map objects: neutral garrisonable structures, destructible terrain, path barriers. */
   envs: EnvStructure[] = [];
@@ -654,7 +655,7 @@ export class Game {
     if (prev && prev.t! < DMG_AGG_WINDOW && prev.t! < prev.dur) {
       prev.val = (prev.val ?? 0) + n; prev.hits = (prev.hits ?? 1) + 1;
       prev.crit = prev.crit || crit;
-      prev.text = fmtDmg(prev.val) + (prev.crit ? '!' : '');
+      prev.text = (prev.crit ? '✦' : '') + fmtDmg(prev.val) + (prev.crit ? '!' : '');
       prev.x = x; prev.y = y;
       prev.t = Math.min(prev.t!, 0.06); // stay fresh while the hits keep coming
       return;
@@ -662,7 +663,7 @@ export class Game {
     if (this.dmgLive > (crit ? 90 : 60)) return;
     if (!k && !crit && n < 1 && Math.random() > 0.35) return;
     this.dmgLive++;
-    const e: Effect = { kind: 'dmg', x: x + rand(-8, 8), y, text: fmtDmg(n) + (crit ? '!' : ''), color, crit, dur: crit ? 0.9 : 0.75, vx: rand(-20, 20), val: n, hits: 1 };
+    const e: Effect = { kind: 'dmg', x: x + rand(-8, 8), y, text: (crit ? '✦' : '') + fmtDmg(n) + (crit ? '!' : ''), color, crit, dur: crit ? 0.9 : 0.75, vx: rand(-20, 20), val: n, hits: 1 };
     this.fx(e);
     if (k) { this.dmgAgg.set(k, e); if (this.dmgAgg.size > 400) this.dmgAgg.clear(); }
   }
@@ -693,14 +694,17 @@ export class Game {
     const type = tw.data.damageType ?? 'sharp';
     const kind = tw.data.projectile ?? 'dart';
     const muzzle = { x: tw.x + Math.cos(tw.aim) * 18, y: tw.y - 14 + Math.sin(tw.aim) * 12 };
-    const crit = Math.random() < 0.08; if (crit) this.stats.crits++;
+    // t106: Overload Core (+5% damage per level) + wave-scaling crit (×CRIT.mul)
+    const om = overloadMul(this.overload); if (om !== 1) c = { ...c, damage: c.damage * om, specialDamage: c.specialDamage != null ? c.specialDamage * om : undefined };
+    const crit = Math.random() < critChance(this.waves.index); if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
     // t103 element status + heavy-impact flag (Shatter); the tank's roof MG (secondary) carries neither
     { const el = tw.data.element2 && shotNo % 2 === 1 ? tw.data.element2 : tw.elem; if (el && c.status && shotNo < 900) { hit.elem = el; hit.elemDur = c.status; }
       // t105 proximity: every 3rd shot carries the adjacent ice / fire tower's element instead (combo setups)
       const pe = tw.prox?.elem; if (pe && shotNo < 900 && shotNo % PROX.stampEvery === 0) { hit.elem = pe; hit.elemDur = PROX.dur; this.stats.proxStamps++; } }
     if (type === 'explosive' || HEAVY_TOWERS.has(tw.data.id)) hit.heavy = shotNo < 900;
-    const dmg0 = c.damage * (crit ? 2 : 1);
+    if (c.knockback && shotNo < 900) hit.kb = c.knockback; // t106 Melon Mortar / Battle Tank shove (path distance)
+    const dmg0 = c.damage * (crit ? CRIT.mul : 1);
     if (c.chain) { this.teslaChain(tw, targets[0], dmg0, c, hit); return; }
     if (c.devour != null) {
       const tgt = targets[0];
@@ -768,7 +772,7 @@ export class Game {
       const pk = special ? 'gpea' : heliRocket ? 'shell' : kind;
       (kind === 'boomerang' ? (o: ProjectileOpts) => { this.projectiles.push(new Projectile(o)); } : (o: ProjectileOpts) => this.shoot(o, Math.abs(i - (shots - 1) / 2) < 0.6))({
         kind: pk, x: muzzle.x, y: muzzle.y, angle: base + spread, speed: pSpeed,
-        damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? 2 : 1) * (heliRocket ? 1.6 : 1), type: special || heliRocket ? 'explosive' : type, pierce: heliRocket ? Math.max(2, c.pierce) : c.pierce,
+        damage: (special ? c.specialDamage ?? c.damage : c.damage) * (crit ? CRIT.mul : 1) * (heliRocket ? 1.6 : 1), type: special || heliRocket ? 'explosive' : type, pierce: heliRocket ? Math.max(2, c.pierce) : c.pierce,
         splash: special ? c.splash : heliRocket ? 36 + tw.tier * 10 : kind === 'magic' || kind === 'flak' ? c.splash : undefined, slow: c.slow,
         homing: kind === 'magic' ? tgt : null, scale: special ? 1.8 : heliRocket ? 1.5 : tw.data.id === 'arcane_obelisk' ? 2 : 1, hit,
         hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround,
@@ -1297,7 +1301,7 @@ export class Game {
     for (const t of [base, other]) { this.grid.releaseOwner(t); t.remove(); }
     this.towers = this.towers.filter((t) => t !== base && t !== other);
     const nt = new Tower(data, at, this);
-    nt.owner = owner; nt.invested = inv; nt.aim = aim;
+    nt.owner = owner; nt.invested = inv; nt.aim = aim; nt.targeting = base.targeting; // t106: keeps the base tower's priority
     this.occupyTower(nt); this.towers.push(nt); this.losVer++;
     this.stats.recipes++;
     const fresh = discover(r.id);
@@ -1317,6 +1321,7 @@ export class Game {
   cycleTargeting(t: Tower) {
     const order = TARGETING_ORDER;
     t.targeting = order[(order.indexOf(t.targeting) + 1) % order.length];
+    this.fx({ kind: 'text', x: t.x, y: t.y - 40, text: `${TARGETING_INFO[t.targeting].icon} ${TARGETING_LABEL[t.targeting]}`, color: '#bfe8ff', dur: 0.9 });
   }
   setTargeting(o: Tower | Squad, m: TargetingMode) { o.targeting = m; this.sfx('command'); }
   squadCount(id: string) { return this.ownedSquads().filter((s) => s.data.id === id).length; }
@@ -1568,6 +1573,31 @@ export class Game {
 
   // ------------------------------------------------------------------ main update
   private proxT = 0;
+  // ------------------------------------------------------------------ t106 Overload Core + Rage (team-wide, synced)
+  overload = 0;
+  rageT = 0;
+  rageCd = 0;
+  /** Global attack-speed multiplier (Rage). */
+  rateMul() { return this.rageT > 0 ? RAGE.mul : 1; }
+  get critPct() { return critChance(this.waves.index); }
+  /** Buy the next Overload Core level (+5% damage for every tower). Networked (G_METHODS). */
+  buyOverload(): boolean {
+    if (this.overload >= OVERLOAD.max) { this.toast('Overload Core is maxed', '#ff8a7a'); return false; }
+    const cost = overloadCost(this.overload);
+    if (!this.res.spend({ credits: cost })) { this.toast(`Overload Core costs ¢${cost}`, '#ff8a7a'); this.sfx('error'); return false; }
+    this.overload++; this.stats.overloads++;
+    this.toast(`⚙ Overload Core Lv ${this.overload}: towers +${Math.round(OVERLOAD.dmgPer * this.overload * 100)}% damage`, '#7fd3ff');
+    this.fx({ kind: 'ring', x: this.hq.x, y: this.hq.y, r: 120, color: '#7fd3ff', dur: 0.7 }); this.sfx('upgrade');
+    return true;
+  }
+  /** Rage: every tower fires RAGE.mul× faster for RAGE.dur s, then RAGE.cd s cooldown. Team-shared. Networked (G_METHODS). */
+  activateRage(): boolean {
+    if (this.rageT > 0 || this.rageCd > 0) { this.toast(this.rageT > 0 ? 'Rage already active' : `Rage recharging (${Math.ceil(this.rageCd)}s)`, '#ff8a7a'); return false; }
+    this.rageT = RAGE.dur; this.rageCd = RAGE.dur + RAGE.cd; this.stats.rages++;
+    for (const t of this.towers) if (t.alive && t.t.combat) { const cb = t.combat as unknown as { cooldown: number } | undefined; if (cb) cb.cooldown = Math.min(cb.cooldown, cb.cooldown / RAGE.mul); }
+    this.toast(`🔥 RAGE! Towers fire ${Math.round((RAGE.mul - 1) * 100)}% faster for ${RAGE.dur}s`, '#ff5a3a'); this.shake(6); this.sfx('upgrade');
+    return true;
+  }
   update(dtReal: number) {
     if (this.paused !== this.wasPaused) { this.wasPaused = this.paused; this.resetShake(); }
     if (this.paused || this.state !== 'playing') { this.updateEffects(dtReal); return; }
@@ -1587,6 +1617,8 @@ export class Game {
     if (!this.isClient && !this.overrun) this.waves.update(this, dt);
     this.versus?.update(this, dt);
     this.overrun?.update(this, dt);
+    if (this.rageT > 0) this.rageT = Math.max(0, this.rageT - dt);
+    if (this.rageCd > 0) this.rageCd = Math.max(0, this.rageCd - dt);
     this.proxT -= dt; if (this.proxT <= 0) { this.proxT = PROX.every; updateProximity(this); }
     for (const t of this.towers) { const n0 = this.projectiles.length; this.curOwner = t.owner; t.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = t.owner; }
     for (const u of this.units) { const n0 = this.projectiles.length; this.curOwner = u.squad.owner; u.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = u.squad.owner; }

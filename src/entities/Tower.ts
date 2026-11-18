@@ -303,7 +303,7 @@ export class CombatTower {
       const s = c.secondary, f = { hitsAir: tw.data.hitsAir ?? true, hitsGround: tw.data.hitsGround ?? true, antiAir: !!tw.data.antiAir, see: losFilter(g, tw) };
       const tg = pickTargets(g.enemies, tw, tw.range(s.range), tw.targeting, f, 1);
       if (tg.length) {
-        this.secCd = 1 / s.fireRate;
+        this.secCd = 1 / (s.fireRate * g.rateMul());
         const fake = { ...c, damage: s.damage, fireRate: s.fireRate, range: s.range, pierce: s.pierce, shots: 1, splash: 0, projectileSpeed: 1100 };
         g.towerFire(tw, tg, fake as CombatStats, this.shotCount + 900);
       }
@@ -313,7 +313,7 @@ export class CombatTower {
     if (tw.manual) {
       const m = tw.manual; tw.engaged = true; tw.aim = m.aim;
       if (this.cooldown > 0 || !m.fire || tw.sweep) return;
-      this.cooldown = 1 / (c.fireRate * (1 + tw.buffs.totals.ratePct)); this.period = this.cooldown; tw.sinceFire = 0;
+      this.cooldown = 1 / (c.fireRate * (1 + tw.buffs.totals.ratePct) * g.rateMul()); this.period = this.cooldown; tw.sinceFire = 0;
       this.shotCount++; tw.recoil = 1;
       g.manualTowerFire(tw, c, this.shotCount);
       return;
@@ -354,7 +354,7 @@ export class CombatTower {
       if (t0.uid === this.lockUid) this.lockT += this.period || (1 / c.fireRate);
       else { this.lockUid = t0.uid; this.lockT = 0; }
     } else { this.lockUid = -1; this.lockT = 0; }
-    this.cooldown = 1 / (c.fireRate * (1 + tw.buffs.totals.ratePct));
+    this.cooldown = 1 / (c.fireRate * (1 + tw.buffs.totals.ratePct) * g.rateMul());
     this.period = this.cooldown; tw.sinceFire = 0;
     this.shotCount++;
     tw.aim = tw.fixedAim ?? Math.atan2(t0.y - tw.y, t0.x - tw.x);

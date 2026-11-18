@@ -14,6 +14,8 @@ import { validateAll, towerPower } from './data/validate';
 import { SPECS, SPEC_TUNE, specsFor } from './data/specs';
 import { discovered, isDiscovered } from './data/recipes';
 import { PROX, updateProximity } from './systems/Proximity';
+import { RAGE, CRIT, OVERLOAD, KNOCK, overloadCost } from './systems/Boosts';
+import { pickTarget } from './systems/TargetingSystem';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
 import { Sfx } from './audio/Sfx';
@@ -402,6 +404,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     const sq = view.selSquads.filter((q) => q.alive);
     if (ev.key === 'Escape') { view.placing = view.deploying = null; view.power = null; view.rallyFor = null; view.patrolMode = false; view.queueMode = false; view.patrolPts = []; hud.select(null, null); }
     else if (ev.key === ' ') { ev.preventDefault(); g.waves.start(g); }
+    else if (k === 'x') { g.activateRage(); hud.refresh(true); } // t106 Rage
     else if (k === 'u' && view.selTower) { if (!view.selTower.branchPick) view.selTower.upgrade(g); hud.refresh(true); }
     else if (k === 'u' && view.selBuilding) { view.selBuilding.upgrade(g); hud.refresh(true); }
     else if ((ev.key === 'Delete' || ev.key === 'Backspace') && view.selTower) { g.sellTower(view.selTower); hud.select(null, null); }
@@ -542,7 +545,13 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     discovered: () => discovered(),
     prox: (i: number) => { const t = g.towers[i]; return t ? { elem: t.prox?.elem ?? null, from: t.prox?.elemFrom ? g.towers.indexOf(t.prox.elemFrom) : -1, support: t.prox?.support ? g.towers.indexOf(t.prox.support) : -1, rate: t.buffs.totals.ratePct } : null; },
     proxNow: () => updateProximity(g),
-    tune: { PROX, SPEC_TUNE },
+    tune: { PROX, SPEC_TUNE, RAGE, CRIT, OVERLOAD, KNOCK },
+    // t106 hooks
+    boosts: () => ({ overload: g.overload, cost: overloadCost(g.overload), rageT: g.rageT, rageCd: g.rageCd, crit: g.critPct, rateMul: g.rateMul(), stats: { crits: g.stats.crits, kb: g.stats.knockbacks, rages: g.stats.rages } }),
+    buyOverload: () => g.buyOverload(),
+    rage: () => g.activateRage(),
+    setTargeting: (i: number, m: string) => { const t = g.towers[i]; if (t) g.setTargeting(t, m as never); return t?.targeting; },
+    pick: (i: number) => { const t = g.towers[i]; if (!t || !t.t.combat) return null; const f = { hitsAir: t.data.hitsAir ?? true, hitsGround: t.data.hitsGround ?? true, antiAir: !!t.data.antiAir }; const e = pickTarget(g.enemies, t, t.range(t.t.combat.range), t.targeting, f); return e ? e.uid : null; },
     predict: (uid: number, t: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? e.predict(g, t) : null; },
     // t103 element combos
     elemTune: ELEM_TUNE,

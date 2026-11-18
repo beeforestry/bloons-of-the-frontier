@@ -903,6 +903,12 @@ export class Renderer {
     const big = (t.data.footprint ?? 1) > 1, top = big ? (t.data.airborne ? 230 : 140) : 38, pw = big ? 2.6 : 1;
     if (this.g.net !== 'solo' && this.g.mode === 'coop') this.ownerRing(t.x, t.y + 18, 30 * pw, PCOLORS[t.owner] ?? '#fff');
     const bm = branchMark(t);
+    if (this.g.rageT > 0 && t.t.combat) { // t106 Rage: flickering red-orange heat ring under every gun
+      const c = this.ctx, T = this.g.time, k = 0.55 + 0.45 * Math.sin(T * 14 + t.uid);
+      c.save(); c.strokeStyle = `rgba(255,${Math.round(70 + 60 * k)},40,${0.55 + 0.35 * k})`; c.lineWidth = 3;
+      c.beginPath(); c.ellipse(t.x, t.y + (big ? 6 : 18), 26 * pw + k * 4, 10 * pw + k * 2, 0, 0, 7); c.stroke(); c.restore();
+      if (t.engaged && (t.uid + Math.floor(T * 8)) % 5 === 0) this.additive(IMG.fx_spark, t.x, t.y - 20, 16, T * 5, 0.7);
+    }
     if (t.prox) this.proxLinks(t, sel || (!!selT && (selT === t.prox.elemFrom || selT === t.prox.support)));
     if (t.fused) this.fusedAura(t, pw, big ? 6 : 18); else if (bm) this.specAura(t, pw, big ? 6 : 18, bm.color, !!t.data.hidden);
     if (sel && !t.fused && !t.nextTier) { const fp = this.g.fusionPartner(t); if (fp) this.fusionLink(t, fp); const rp = this.g.recipePartner(t); if (rp) this.fusionLink(t, rp.o, isDiscovered(rp.r.id) ? towerById(rp.r.id).mark?.color ?? '#c9a6ff' : '#c9a6ff'); }
