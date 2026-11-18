@@ -20,68 +20,68 @@ export interface Branch {
 }
 export const SPECS: Record<string, [Branch, Branch]> = {
   dart_monkey: [
-    { key: 'longshot', name: 'Longshot Marksman', icon: '🎯', color: '#ff6b5a', blurb: 'Heavy darts: ×1.25 damage, +8% range.', mul: { damage: 1.25, range: 1.08 } },
-    { key: 'rapid', name: 'Rapid Volley', icon: '💨', color: '#5ad1ff', blurb: '+33% throw rate.', mul: { fireRate: 1.33 } },
+    { key: 'longshot', name: 'Longshot Marksman', icon: '🎯', color: '#ff6b5a', blurb: 'Heavy darts: ×1.18 damage, +6% range.', mul: { damage: 1.18, range: 1.06 } },
+    { key: 'rapid', name: 'Rapid Volley', icon: '💨', color: '#5ad1ff', blurb: '+23% throw rate.', mul: { fireRate: 1.23 } },
   ],
   ninja_monkey: [
-    { key: 'frost', name: 'Frost Kunai', icon: '❄', color: '#9fe8ff', blurb: 'Kunai stamp ❄ Chilled (2 s) and slow 25%.', add: { slow: 0.25 }, mul: { damage: 1.1 }, element: 'chill', status: 2 },
-    { key: 'shadow', name: 'Shadow Blade', icon: '🗡', color: '#b06bff', blurb: '×1.3 damage.', mul: { damage: 1.3 } },
+    { key: 'frost', name: 'Frost Kunai', icon: '❄', color: '#9fe8ff', blurb: 'Kunai stamp ❄ Chilled (2 s) and slow 25%.', add: { slow: 0.25 }, mul: { damage: 1.07 }, element: 'chill', status: 2 },
+    { key: 'shadow', name: 'Shadow Blade', icon: '🗡', color: '#b06bff', blurb: '×1.21 damage.', mul: { damage: 1.21 } },
   ],
   wizard_monkey: [
-    { key: 'storm', name: 'Stormcaller', icon: '⚡', color: '#d6f6ff', blurb: 'Bolts stamp ⚡ Shocked (2 s), ×1.15 damage.', mul: { damage: 1.15 }, element: 'shock', status: 2 },
-    { key: 'pyro', name: 'Pyromancer', icon: '🔥', color: '#ff8a3a', blurb: 'Bolts stamp 🔥 Burning (2.5 s), ×1.25 splash.', mul: { splash: 1.25 }, element: 'burn', status: 2.5 },
+    { key: 'storm', name: 'Stormcaller', icon: '⚡', color: '#d6f6ff', blurb: 'Bolts stamp ⚡ Shocked (2 s), ×1.1 damage.', mul: { damage: 1.1 }, element: 'shock', status: 2 },
+    { key: 'pyro', name: 'Pyromancer', icon: '🔥', color: '#ff8a3a', blurb: 'Bolts stamp 🔥 Burning (2.5 s), ×1.18 splash.', mul: { splash: 1.18 }, element: 'burn', status: 2.5 },
   ],
   super_monkey: [
-    { key: 'plasma', name: 'Plasma Lance', icon: '🔆', color: '#ff5ad1', blurb: '×1.3 damage.', mul: { damage: 1.3 } },
-    { key: 'hyper', name: 'Hyper Beam', icon: '⚡', color: '#7affc8', blurb: '+30% fire rate.', mul: { fireRate: 1.3 } },
+    { key: 'plasma', name: 'Plasma Lance', icon: '🔆', color: '#ff5ad1', blurb: '×1.21 damage.', mul: { damage: 1.21 } },
+    { key: 'hyper', name: 'Hyper Beam', icon: '⚡', color: '#7affc8', blurb: '+21% fire rate.', mul: { fireRate: 1.21 } },
   ],
   sniper_monkey: [
-    { key: 'deadeye', name: 'Deadeye', icon: '🎯', color: '#ff6b5a', blurb: '×1.35 damage.', mul: { damage: 1.35 } },
-    { key: 'suppress', name: 'Suppressor', icon: '🔁', color: '#9fe8ff', blurb: '+30% fire rate, hits slow 20%.', mul: { fireRate: 1.3 }, add: { slow: 0.2 } },
+    { key: 'deadeye', name: 'Deadeye', icon: '🎯', color: '#ff6b5a', blurb: '×1.25 damage.', mul: { damage: 1.25 } },
+    { key: 'suppress', name: 'Suppressor', icon: '🔁', color: '#9fe8ff', blurb: '+21% fire rate, hits slow 20%.', mul: { fireRate: 1.21 }, add: { slow: 0.2 } },
   ],
   boomerang_monkey: [
-    { key: 'razor', name: 'Razor Arc', icon: '🪃', color: '#ffb35a', blurb: '×1.3 damage.', mul: { damage: 1.3 } },
-    { key: 'twin', name: 'Twin Glaives', icon: '✳', color: '#5ad1ff', blurb: '+30% throw rate.', mul: { fireRate: 1.3 } },
+    { key: 'razor', name: 'Razor Arc', icon: '🪃', color: '#ffb35a', blurb: '×1.21 damage.', mul: { damage: 1.21 } },
+    { key: 'twin', name: 'Twin Glaives', icon: '✳', color: '#5ad1ff', blurb: '+21% throw rate.', mul: { fireRate: 1.21 } },
   ],
   solar_pea_fusion: [
-    { key: 'sunburst', name: 'Sunburst', icon: '☀', color: '#ffd84a', blurb: 'Hotter peas ×1.2 damage, stronger + wider sun aura.', mul: { damage: 1.2, ratePct: 1.4, radius: 1.15 } },
-    { key: 'pods', name: 'Gatling Pods', icon: '💨', color: '#7aff7a', blurb: '+30% fire rate.', mul: { fireRate: 1.3 } },
+    { key: 'sunburst', name: 'Sunburst', icon: '☀', color: '#ffd84a', blurb: 'Hotter peas ×1.14 damage, stronger + wider sun aura.', mul: { damage: 1.14, ratePct: 1.28, radius: 1.1 } },
+    { key: 'pods', name: 'Gatling Pods', icon: '💨', color: '#7aff7a', blurb: '+21% fire rate.', mul: { fireRate: 1.21 } },
   ],
   gatling_cherry_bomber: [
-    { key: 'firestorm', name: 'Firestorm', icon: '🔥', color: '#ff7a3a', blurb: 'Berries stamp 🔥 Burning (2 s), ×1.2 splash.', mul: { splash: 1.2 }, element: 'burn', status: 2 },
-    { key: 'overclock', name: 'Overclock', icon: '⚙', color: '#c8c8ff', blurb: '+30% fire rate, ×1.2 cherry bombs.', mul: { fireRate: 1.3, specialDamage: 1.2 } },
+    { key: 'firestorm', name: 'Firestorm', icon: '🔥', color: '#ff7a3a', blurb: 'Berries stamp 🔥 Burning (2 s), ×1.14 splash.', mul: { splash: 1.14 }, element: 'burn', status: 2 },
+    { key: 'overclock', name: 'Overclock', icon: '⚙', color: '#c8c8ff', blurb: '+21% fire rate, ×1.14 cherry bombs.', mul: { fireRate: 1.21, specialDamage: 1.14 } },
   ],
   flame_melon_mortar: [
-    { key: 'napalm', name: 'Napalm Melons', icon: '🔥', color: '#ff5a2a', blurb: 'Burn lasts 60% longer, ×1.15 splash.', mul: { status: 1.6, splash: 1.15 } },
-    { key: 'siege', name: 'Siege Melons', icon: '💥', color: '#ffd84a', blurb: '×1.25 damage, +8% range.', mul: { damage: 1.25, range: 1.08 } },
+    { key: 'napalm', name: 'Napalm Melons', icon: '🔥', color: '#ff5a2a', blurb: 'Burn lasts 60% longer, ×1.1 splash.', mul: { status: 1.6, splash: 1.1 } },
+    { key: 'siege', name: 'Siege Melons', icon: '💥', color: '#ffd84a', blurb: '×1.18 damage, +6% range.', mul: { damage: 1.18, range: 1.06 } },
   ],
   tesla_coil: [
     { key: 'web', name: 'Arc Web', icon: '🕸', color: '#9fd8ff', blurb: '+2 chain jumps.', add: { chain: 2 } },
-    { key: 'overcharge', name: 'Overcharge', icon: '⚡', color: '#fff36a', blurb: '×1.25 damage, Shocked lasts 50% longer.', mul: { damage: 1.25, status: 1.5 } },
+    { key: 'overcharge', name: 'Overcharge', icon: '⚡', color: '#fff36a', blurb: '×1.18 damage, Shocked lasts 50% longer.', mul: { damage: 1.18, status: 1.5 } },
   ],
   unsc_autoturret: [
-    { key: 'hail', name: 'Hailstorm', icon: '🌧', color: '#5ad1ff', blurb: '+30% fire rate.', mul: { fireRate: 1.3 } },
-    { key: 'ap', name: 'AP Rounds', icon: '🛡', color: '#ff6b5a', blurb: '×1.25 damage, armor shred.', mul: { damage: 1.25 }, add: { armorShred: 0.08 } },
+    { key: 'hail', name: 'Hailstorm', icon: '🌧', color: '#5ad1ff', blurb: '+21% fire rate.', mul: { fireRate: 1.21 } },
+    { key: 'ap', name: 'AP Rounds', icon: '🛡', color: '#ff6b5a', blurb: '×1.18 damage, armor shred.', mul: { damage: 1.18 }, add: { armorShred: 0.08 } },
   ],
   unsc_flak: [
-    { key: 'shred', name: 'Skyshredder', icon: '✈', color: '#ff6b5a', blurb: '×1.3 damage.', mul: { damage: 1.3 } },
-    { key: 'barrage', name: 'Flak Barrage', icon: '💥', color: '#ffd84a', blurb: '+20% fire rate, ×1.1 splash.', mul: { fireRate: 1.2, splash: 1.1 } },
+    { key: 'shred', name: 'Skyshredder', icon: '✈', color: '#ff6b5a', blurb: '×1.21 damage.', mul: { damage: 1.21 } },
+    { key: 'barrage', name: 'Flak Barrage', icon: '💥', color: '#ffd84a', blurb: '+14% fire rate, ×1.07 splash.', mul: { fireRate: 1.14, splash: 1.07 } },
   ],
   unsc_tank: [
-    { key: 'siege', name: 'Siege Breaker', icon: '💥', color: '#ffb35a', blurb: '×1.2 damage, ×1.2 splash.', mul: { damage: 1.2, splash: 1.2 } },
-    { key: 'hunter', name: 'Hunter Killer', icon: '🎯', color: '#7affc8', blurb: '+30% fire rate, +5% range.', mul: { fireRate: 1.3, range: 1.05 } },
+    { key: 'siege', name: 'Siege Breaker', icon: '💥', color: '#ffb35a', blurb: '×1.14 damage, ×1.14 splash.', mul: { damage: 1.14, splash: 1.14 } },
+    { key: 'hunter', name: 'Hunter Killer', icon: '🎯', color: '#7affc8', blurb: '+21% fire rate, +4% range.', mul: { fireRate: 1.21, range: 1.04 } },
   ],
   unsc_destroyer: [
-    { key: 'tidal', name: 'Tidal Barrage', icon: '🌊', color: '#4ab8ff', blurb: 'Soaked lasts 60% longer, ×1.2 splash.', mul: { status: 1.6, splash: 1.2 } },
-    { key: 'broadside', name: 'Broadside', icon: '💣', color: '#ff8a5a', blurb: '×1.3 damage per shell.', mul: { damage: 1.3 } },
+    { key: 'tidal', name: 'Tidal Barrage', icon: '🌊', color: '#4ab8ff', blurb: 'Soaked lasts 60% longer, ×1.14 splash.', mul: { status: 1.6, splash: 1.14 } },
+    { key: 'broadside', name: 'Broadside', icon: '💣', color: '#ff8a5a', blurb: '×1.21 damage per shell.', mul: { damage: 1.21 } },
   ],
   glue_slinger: [
-    { key: 'corrode', name: 'Corrosive Vat', icon: '☣', color: '#a6ff4a', blurb: '×1.2 damage, ×1.5 armor shred.', mul: { damage: 1.2, armorShred: 1.5 } },
-    { key: 'tar', name: 'Tar Pit', icon: '🫧', color: '#c8a26a', blurb: 'Slow +15%, ×1.2 splash.', mul: { splash: 1.2 }, add: { slow: 0.15 } },
+    { key: 'corrode', name: 'Corrosive Vat', icon: '☣', color: '#a6ff4a', blurb: '×1.14 damage, ×1.35 armor shred.', mul: { damage: 1.14, armorShred: 1.35 } },
+    { key: 'tar', name: 'Tar Pit', icon: '🫧', color: '#c8a26a', blurb: 'Slow +15%, ×1.14 splash.', mul: { splash: 1.14 }, add: { slow: 0.15 } },
   ],
   frost_wallnut_bastion: [
-    { key: 'keep', name: 'Glacier Keep', icon: '🏰', color: '#bfe8ff', blurb: 'Aura ×1.5 HP, +1 garrison slot, +10% protection.', mul: { bonusMaxHp: 1.5, auraRadius: 1.1 }, add: { garrisonSlots: 1, garrisonProtect: 0.1 } },
-    { key: 'permafrost', name: 'Permafrost', icon: '❄', color: '#7ad8ff', blurb: 'Ice shots: ×1.4 damage, Chilled 50% longer, slow +10%.', mul: { damage: 1.4, status: 1.5 }, add: { slow: 0.1 } },
+    { key: 'keep', name: 'Glacier Keep', icon: '🏰', color: '#bfe8ff', blurb: 'Aura ×1.35 HP, +1 garrison slot, +10% protection.', mul: { bonusMaxHp: 1.35, auraRadius: 1.07 }, add: { garrisonSlots: 1, garrisonProtect: 0.1 } },
+    { key: 'permafrost', name: 'Permafrost', icon: '❄', color: '#7ad8ff', blurb: 'Ice shots: ×1.28 damage, Chilled 50% longer, slow +10%.', mul: { damage: 1.28, status: 1.5 }, add: { slow: 0.1 } },
   ],
 };
 const CAP: Record<string, number> = { slow: 0.75, armorShred: 1, garrisonProtect: 0.85 };

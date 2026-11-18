@@ -83,17 +83,17 @@ Hit rate of the aimed (centre) shot in the `tests/aim_sim.py` sim: El Morro 90.9
 ## Tier-3 specializations, hidden fusions, neighbour effects (t105)
 **Specializations.** 16 towers pick one of two permanent branches when they buy their last tier (the panel shows two
 buttons with the stat changes; the U hotkey won't pick for you). Every branch is strictly stronger than tier 2 and at
-least as strong as the old plain tier 3 (about +6% to +40% power; element branches trade raw power for a status).
+least as strong as the old plain tier 3 (about +5% to +30% power; element branches trade raw power for a status).
 Branches get a coloured ground ring plus a shield emblem with their initials in 2D, and a coloured halo plus the same
 emblem over the model in first person.
 
 | Tower | Branch A | Branch B |
 |---|---|---|
-| Dart Scout | Longshot Marksman (×1.25 dmg, +8% range) | Rapid Volley (+33% rate) |
-| Shadow Scout | Frost Kunai (❄ Chilled, +25% slow) | Shadow Blade (×1.3 dmg) |
-| Arcane Scout | Stormcaller (⚡ Shocked) | Pyromancer (🔥 Burning, ×1.25 splash) |
-| Apex Laser Scout | Plasma Lance (×1.3 dmg) | Hyper Beam (+30% rate) |
-| Marksman Scout | Deadeye (×1.35 dmg) | Suppressor (+30% rate, slow) |
+| Dart Scout | Longshot Marksman (×1.18 dmg, +6% range) | Rapid Volley (+23% rate) |
+| Shadow Scout | Frost Kunai (❄ Chilled, +25% slow) | Shadow Blade (×1.21 dmg) |
+| Arcane Scout | Stormcaller (⚡ Shocked) | Pyromancer (🔥 Burning, ×1.18 splash) |
+| Apex Laser Scout | Plasma Lance (×1.21 dmg) | Hyper Beam (+21% rate) |
+| Marksman Scout | Deadeye (×1.25 dmg) | Suppressor (+21% rate, slow) |
 | Glaive Scout | Razor Arc | Twin Glaives |
 | Solar Pea Fusion | Sunburst (stronger sun aura) | Gatling Pods |
 | Gatling Cherry Bomber | Firestorm (🔥) | Overclock |

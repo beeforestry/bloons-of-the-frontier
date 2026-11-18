@@ -192,7 +192,7 @@ with sync_playwright() as p:
             G(f'H.selectTower({at})'); pg.wait_for_selector('#sp-possess', timeout=6000); pg.click('#sp-possess')
             ok = until('window.__possess && window.__possess.cur', 90000); check(ok, 'possessed the Autoturret')
             pg.wait_for_timeout(3500)
-            fx = G(f'(() => {{ const P = window.__possess.cur, g = H.g, f = g.towers.find(t => t.fused); if (P.aimAt) P.aimAt(f.x, f.y, 0.4); if (P.el && P.el.msg) P.el.msg.style.visibility = "hidden"; return P.fusedFx ? P.fusedFx.size : -1; }})()')
+            fx = G(f'(() => {{ const P = window.__possess.cur, g = H.g, f = g.towers.find(t => t.fused); if (P.aimAt) P.aimAt(f.x, f.y, 0.4); if (P.el && P.el.msg) P.el.msg.style.visibility = "hidden"; return P.fusedFx ? [...P.fusedFx.values()].filter(x => x.name === "fusedFx").length : -1; }})()')
             pg.wait_for_timeout(1200)
             check(fx == 1, f'FP: fused tower carries the gold halo / column / ★ badge decoration ({fx})')
             shot(pg, 'fused_tower_fp')
