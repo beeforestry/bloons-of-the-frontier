@@ -283,7 +283,7 @@ export class Hud {
     if (!t && !s && this.basePanel(p)) return;
     if (!t && grp.length > 1) return this.groupPanel(p, grp);
     const fp = t && !t.nextTier && !t.fused ? g.fusionPartner(t) : null;
-    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}:${t.fused}:${fp?.uid ?? 0}:${fp ? g.res.credits >= fusionFee(t.data) : 0}`
+    const key = t ? `t${t.uid}:${t.tier}:${t.targeting}:${t.garrisoned.length}:${g.res.credits >= (t.nextTier?.cost ?? 1e9)}:${t.disabled}:${t.fused}:${fp?.uid ?? 0}:${fp ? g.res.credits >= fusionFee(t.data, t.branch) : 0}:${t.branch}`
       : s ? `s${s.uid}:${s.units.length}:${g.unitTier(s.data.id)}:${s.units.filter((u) => u.garrison).length}:${s.stance}:${s.targeting}:${s.units.map((u) => u.stars).join('')}:${this.view.queueMode}:${this.view.patrolMode}:${s.auto}:${s.manual}:${s.autoTask}` : '';
     if (key === this.lastSel) { if (t) this.liveTower(t); return; }
     this.lastSel = key;
@@ -406,7 +406,7 @@ export class Hud {
   private fusePanel(t: Tower, fp: Tower | null): string {
     if (t.fused) return '<div class="maxed fused">★ FUSED super-tower · fully upgraded</div>';
     if (!canFuseType(t.data)) return '<div class="maxed">★ Max tier</div>';
-    const ft = fusedTier(t.data), fee = ft.cost;
+    const ft = fusedTier(t.data, t.branch), fee = ft.cost;
     if (fp && this.mine(t)) {
       const dl = deltaLine(t.t, ft, t.data);
       return `<button class="btn up fuse" id="sp-fuse" title="Merge the highlighted neighbour into this tower: frees one spot" ${this.g.res.credits < fee ? 'disabled' : ''}>⚛ Fuse with neighbour <b>¢${fee}</b><div class="delta">${dl}</div></button>`;

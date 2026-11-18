@@ -694,7 +694,7 @@ export class Game {
     const crit = Math.random() < 0.08; if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
     // t103 element status + heavy-impact flag (Shatter); the tank's roof MG (secondary) carries neither
-    if (tw.data.element && c.status && shotNo < 900) { hit.elem = tw.data.element; hit.elemDur = c.status; }
+    { const el = tw.elem; if (el && c.status && shotNo < 900) { hit.elem = el; hit.elemDur = c.status; } }
     if (type === 'explosive' || HEAVY_TOWERS.has(tw.data.id)) hit.heavy = shotNo < 900;
     const dmg0 = c.damage * (crit ? 2 : 1);
     if (c.chain) { this.teslaChain(tw, targets[0], dmg0, c, hit); return; }
@@ -1237,7 +1237,7 @@ export class Game {
     if (!t.alive || t.fused || !t.isMaxTier || !canFuseType(t.data)) return null;
     let best: Tower | null = null, bd = Infinity;
     for (const o of this.towers) {
-      if (o === t || !o.alive || o.fused || o.data.id !== t.data.id || !o.isMaxTier || o.owner !== t.owner) continue;
+      if (o === t || !o.alive || o.fused || o.data.id !== t.data.id || !o.isMaxTier || o.owner !== t.owner || o.branch !== t.branch) continue; // t105: same branch only
       const d = dist(o, t), reach = this.towerRadius(t.data.id) + this.towerRadius(o.data.id) + FUSION.reach;
       if (d <= reach && d < bd) { bd = d; best = o; }
     }
@@ -1247,9 +1247,9 @@ export class Game {
   fuseTowers(a: Tower, b?: Tower | null): boolean {
     const p = b ?? this.fusionPartner(a);
     if (!p || !a.alive || a.fused || !a.isMaxTier || !canFuseType(a.data) || p.data.id !== a.data.id || p === a || !p.alive || p.fused || !p.isMaxTier || p.owner !== a.owner
-      || dist(a, p) > this.towerRadius(a.data.id) * 2 + FUSION.reach) { this.toast('Fusion needs two max-tier towers of the same type side by side', '#ff8a7a'); this.sfx('error'); return false; }
+      || p.branch !== a.branch || dist(a, p) > this.towerRadius(a.data.id) * 2 + FUSION.reach) { this.toast('Fusion needs two max-tier towers of the same type side by side', '#ff8a7a'); this.sfx('error'); return false; }
     if (a.disabled || p.disabled) { this.toast('Repair the tower before fusing', '#ff8a7a'); this.sfx('error'); return false; }
-    const fee = fusionFee(a.data);
+    const fee = fusionFee(a.data, a.branch);
     if (!this.res.spend({ credits: fee })) { this.toast(`Fusion costs ¢${fee}`, '#ff8a7a'); this.sfx('error'); return false; }
     // the partner's troops hop over, then it dissolves into the survivor (beam of light toward it)
     this.fx({ kind: 'beam', x: p.x, y: p.y - 20, x2: a.x, y2: a.y - 20, color: '#ffd84a', width: 6, dur: 0.45 });

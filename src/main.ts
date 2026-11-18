@@ -526,7 +526,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     // t104 fusion + predictive aiming
     fusion: (i: number) => { const t = g.towers[i]; if (!t) return null; const fp = g.fusionPartner(t);
       return { id: t.data.id, uid: t.uid, tier: t.tier, fused: t.fused, max: t.isMaxTier, name: t.t.name, sell: t.sellValue, invested: t.invested, partner: fp ? g.towers.indexOf(fp) : -1,
-        fee: fusedTier(t.data).cost, dmg: t.t.combat?.damage ?? 0, rate: t.t.combat?.fireRate ?? 0, range: t.t.combat?.range ?? 0, pierce: t.t.combat?.pierce ?? 0, maxHp: t.health.max, scale: t.t.visual.scale ?? 1, x: t.x, y: t.y }; },
+        fee: fusedTier(t.data, t.branch).cost, branch: t.branch, dmg: t.t.combat?.damage ?? 0, rate: t.t.combat?.fireRate ?? 0, range: t.t.combat?.range ?? 0, pierce: t.t.combat?.pierce ?? 0, maxHp: t.health.max, scale: t.t.visual.scale ?? 1, x: t.x, y: t.y }; },
     fuse: (i: number, j?: number) => g.fuseTowers(g.towers[i], j == null ? null : g.towers[j]),
     setLead: (on: boolean) => { g.leadAim = on; },
     predict: (uid: number, t: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? e.predict(g, t) : null; },

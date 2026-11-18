@@ -18,6 +18,7 @@ import type { Enemy } from './Enemy';
 import { gEject, type Garrisonable } from './Garrison';
 import { ABILITIES, SWEEP } from '../data/abilities';
 import { fusedTier } from '../data/fusion';
+import { specsFor, branchTier, branchElement } from '../data/specs';
 
 export class Tower implements Buffable, Garrisonable {
   readonly uid = nextId();
@@ -68,6 +69,8 @@ export class Tower implements Buffable, Garrisonable {
   chaseHold = false;
   /** t104: fused super-tower (two max-tier towers of this type merged). Uses the synthetic fused tier. */
   fused = false;
+  /** t105: tier-3 specialization branch (0 / 1), chosen when reaching the last tier; null = none / not specialised. */
+  branch: number | null = null;
 
   constructor(readonly data: TowerData, public cell: Cell & { x?: number; y?: number }, g: Game) {
     const c = g.grid.cellCenter(cell.c, cell.r);
@@ -84,7 +87,15 @@ export class Tower implements Buffable, Garrisonable {
   gProtect() { return this.t.cover?.garrisonProtect ?? 0.5; }
   gRange() { return this.t.cover?.garrisonRangePct ?? 0.35; }
   gOpen() { return this.alive && !this.disabled; }
-  get t(): TowerTier { return this.fused ? fusedTier(this.data) : this.data.tiers[this.tier]; }
+  get t(): TowerTier {
+    if (this.fused) return fusedTier(this.data, this.branch);
+    if (this.branch != null && this.isMaxTier && specsFor(this.data.id)) return branchTier(this.data, this.branch);
+    return this.data.tiers[this.tier];
+  }
+  /** t105: element status this tower stamps (its branch may add one). */
+  get elem() { return branchElement(this.data, this.branch); }
+  /** t105: the next upgrade is the tier-3 branch pick. */
+  get branchPick() { return this.tier === this.data.tiers.length - 2 && !!specsFor(this.data.id); }
   get isMaxTier() { return this.tier >= this.data.tiers.length - 1; }
   get nextTier(): TowerTier | undefined { return this.data.tiers[this.tier + 1]; }
   get sellValue() { return Math.floor(this.invested * 0.7); }
@@ -102,9 +113,10 @@ export class Tower implements Buffable, Garrisonable {
   }
 
   orderMove(x: number, y: number) { this.moveTo = { x, y }; this.chaseHold = true; this.slide = null; }
-  upgrade(g: Game): boolean {
+  upgrade(g: Game, branch?: number): boolean {
     const n = this.nextTier;
     if (!n || this.disabled || !g.res.spend({ credits: n.cost })) return false;
+    if (this.branchPick) this.branch = branch === 1 ? 1 : 0; // t105: permanent tier-3 branch (default: first)
     this.tier++;
     this.invested += n.cost;
     this.health.setBase(n.maxHp, 0);
@@ -112,8 +124,8 @@ export class Tower implements Buffable, Garrisonable {
     this.cover?.aura.refresh();
     this.flora?.aura.refresh();
     g.sfx('upgrade');
-    g.fx({ kind: 'ring', x: this.x, y: this.y, r: 40, color: n.visual.glow ?? '#fff', dur: 0.6 });
-    g.fx({ kind: 'text', x: this.x, y: this.y - 40, text: n.name + '!', color: '#ffe27a', dur: 1 });
+    g.fx({ kind: 'ring', x: this.x, y: this.y, r: 40, color: this.t.visual.glow ?? '#fff', dur: 0.6 });
+    g.fx({ kind: 'text', x: this.x, y: this.y - 40, text: this.t.name + '!', color: '#ffe27a', dur: 1 });
     return true;
   }
 

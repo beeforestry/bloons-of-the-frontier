@@ -15,6 +15,7 @@ import MIL_SPRITES from './military.sprites.json';
 import type { TowerData, TowerTier, UnitData, UnitTier } from '../core/types';
 import { TOWERS } from './towers';
 import { canFuseType, fusedTier } from './fusion';
+import { specsFor, branchTier } from './specs';
 import { UNITS } from './units';
 import { ENEMIES } from './enemies';
 import { WAVES } from './waves';
@@ -88,9 +89,23 @@ export function validateTower(t: TowerData): Issue[] {
     if (!(towerPower(tier) > towerPower(a))) out.push({ owner: t.id, tier: i, msg: 'overall power did not increase' });
     checkVisual(t.id, i, a.visual, tier.visual, out);
   });
-  // t104: the synthetic FUSED tier must be strictly better than the last real tier (and look it)
-  if (canFuseType(t)) {
-    const a = t.tiers[t.tiers.length - 1], f = fusedTier(t), i = t.tiers.length, lbl = (m: string) => `fused: ${m}`;
+  // t105: each tier-3 specialization branch must be strictly better than tier 2 (and look at least as big)
+  const sp = specsFor(t.id);
+  if (sp) [0, 1].forEach((bi) => {
+    const a = t.tiers[t.tiers.length - 2], f = branchTier(t, bi), i = t.tiers.length - 1, sub: Issue[] = [];
+    if (f.maxHp < a.maxHp) sub.push({ owner: t.id, tier: i, msg: 'maxHp goes DOWN' });
+    compareNumbers(t.id, i, 'combat', a.combat, f.combat, sub);
+    compareNumbers(t.id, i, 'cover', a.cover, f.cover, sub);
+    compareNumbers(t.id, i, 'farm', a.farm, f.farm, sub);
+    compareNumbers(t.id, i, 'aura', a.aura, f.aura, sub);
+    if (!(towerPower(f) > towerPower(a))) sub.push({ owner: t.id, tier: i, msg: 'overall power did not increase over tier 2' });
+    if (!(towerPower(f) > towerPower(t.tiers[t.tiers.length - 1]) * 0.98)) sub.push({ owner: t.id, tier: i, msg: 'branch is weaker than the plain last tier' });
+    checkVisual(t.id, i, a.visual, f.visual, sub);
+    out.push(...sub.map((x) => ({ ...x, msg: `branch ${sp[bi].name}: ${x.msg}` })));
+  });
+  // t104: the synthetic FUSED tier must be strictly better than the last real tier (and look it); t105: per branch
+  if (canFuseType(t)) for (const br of sp ? [0, 1] : [null]) {
+    const a = br == null ? t.tiers[t.tiers.length - 1] : branchTier(t, br), f = fusedTier(t, br), i = t.tiers.length, lbl = (m: string) => `fused${br == null ? '' : ' ' + sp![br].name}: ${m}`;
     const sub: Issue[] = [];
     if (f.maxHp <= a.maxHp) sub.push({ owner: t.id, tier: i, msg: 'maxHp did not increase' });
     compareNumbers(t.id, i, 'combat', a.combat, f.combat, sub);

@@ -422,7 +422,7 @@ export class Sync {
       hq: [r1(g.hq.health.hp), Math.round(g.hq.health.max)],
       all: this.players.map((p) => [p.pid, Math.floor(this.creditsOf(p.pid))]),
       E: [...g.enemies.filter((e) => e.alive).map(en), ...g.allies.filter((e) => e.alive).map(en)],
-      T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0, t.possessedBy, r1(t.aim), Math.round(t.x), Math.round(t.y), t.fused ? 1 : 0]),
+      T: g.towers.filter((t) => t.alive).map((t) => [t.uid, t.data.id, t.cell.c, t.cell.r, t.tier, t.owner, t.targeting, r1(t.health.hp), r1(t.disabledT), r1(t.abilityCd), t.sweep ? 1 : 0, t.farm?.crates ?? 0, t.possessedBy, r1(t.aim), Math.round(t.x), Math.round(t.y), t.fused ? 1 : 0, t.branch ?? -1]),
       S: g.squads.filter((s) => s.alive).map((s) => [s.uid, s.data.id, s.owner, s.stance, s.targeting, Math.round(s.rally.x), Math.round(s.rally.y), s.units.filter((u) => u.alive).map((u) => [u.uid, u.index, Math.round(u.x), Math.round(u.y), r1(u.health.hp), u.stars, garCode(u), u.dropT > 0 ? 1 : 0, u.possessedBy]), (s.auto ? 1 : 0) | (s.manual ? 2 : 0), s.autoTask]),
       B: g.buildings.filter((b) => b.alive).map((b) => [b.isHQ ? -1 : b.pad!.index, b.data.id, b.tier, r1(b.health.hp), b.build ? [r1(b.build.t), b.build.dur, b.build.to] : 0, b.queue.map((q) => [q.unitId, r1(q.t), q.dur, q.held]), Math.round(b.rally.x), Math.round(b.rally.y), b.owner]),
       X: g.barriers.filter((b) => b.alive).map((b) => [b.uid, b.data.id, Math.round(b.x), Math.round(b.y), b.lane, r1(b.hp), b.owner]),
@@ -520,7 +520,7 @@ export class Sync {
   private syncTowers(T: unknown[][]) {
     const g = this.g, seen = new Set<number>();
     for (const row of T) {
-      const [uid, id, c, r, tier, owner, targeting, hp, dis, acd, sweep, crates, pby, aim, tx, ty, fu] = row as [number, string, number, number, number, number, Tower['targeting'], number, number, number, number, number, number, number, number?, number?, number?];
+      const [uid, id, c, r, tier, owner, targeting, hp, dis, acd, sweep, crates, pby, aim, tx, ty, fu, br] = row as [number, string, number, number, number, number, Tower['targeting'], number, number, number, number, number, number, number, number?, number?, number?, number?];
       seen.add(uid);
       let t = this.h2l.get(uid) as Tower | undefined;
       if (!t) {
@@ -543,13 +543,14 @@ export class Sync {
         t.tier = tier; t.invested = t.data.tiers.slice(0, tier + 1).reduce((a2, n) => a2 + n.cost, 0); t.health.setBase(t.data.tiers[tier].maxHp, 0);
         (t as unknown as { attachModules(): void }).attachModules(); t.cover?.aura.refresh(); t.flora?.aura.refresh();
       }
+      if (br != null && br >= 0 && t.branch !== br) { t.branch = br; (t as unknown as { attachModules(): void }).attachModules(); } // t105 branch
       while (t.tier < tier) { // replay the tier-up locally (no spend)
         const n = t.data.tiers[t.tier + 1]; t.tier++; t.invested += n.cost; t.health.setBase(n.maxHp, 0);
         (t as unknown as { attachModules(): void }).attachModules(); t.cover?.aura.refresh(); t.flora?.aura.refresh();
         g.fx({ kind: 'ring', x: t.x, y: t.y, r: 40, color: n.visual.glow ?? '#fff', dur: 0.6 });
         g.fx({ kind: 'text', x: t.x, y: t.y - 40, text: n.name + '!', color: '#ffe27a', dur: 1 }); g.sfx('upgrade');
       }
-      if (fu && !t.fused) { t.applyFusion(g, t.invested + fusionFee(t.data)); g.sfx('upgrade'); } // t104 fused super-tower
+      if (fu && !t.fused) { t.applyFusion(g, t.invested + fusionFee(t.data, t.branch)); g.sfx('upgrade'); } // t104 fused super-tower
       t.owner = owner; t.targeting = targeting; t.health.hp = hp; t.disabledT = dis;
       if (sweep && !t.sweep) { this.inExec = true; try { t.abilityCd = 0; ORIG['tw.useAbility'].call(t, g); } finally { this.inExec = false; } }
       t.abilityCd = acd;

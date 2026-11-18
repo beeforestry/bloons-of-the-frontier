@@ -7,6 +7,7 @@
 // 70% of everything invested (both towers + fee).
 // =============================================================================
 import type { TowerData, TowerTier } from '../core/types';
+import { SPECS, branchTier } from './specs';
 
 export const FUSION = {
   /** Fee as a fraction of one tower's full price (all tiers). */
@@ -42,9 +43,10 @@ function boost(o: Record<string, unknown>): Record<string, unknown> {
 
 const cache = new Map<string, TowerTier>();
 /** The synthetic fused tier for a tower type (last tier, multiplied). */
-export function fusedTier(d: TowerData): TowerTier {
-  let t = cache.get(d.id); if (t) return t;
-  const last = d.tiers[d.tiers.length - 1];
+export function fusedTier(d: TowerData, branch: number | null = null): TowerTier {
+  const b = branch != null && SPECS[d.id] ? branch : null, key = d.id + ':' + b;
+  let t = cache.get(key); if (t) return t;
+  const last = b != null ? branchTier(d, b) : d.tiers[d.tiers.length - 1]; // t105: a specialised pair fuses its branch
   t = {
     ...last,
     name: `${last.name} ★ Fused`,
@@ -59,8 +61,8 @@ export function fusedTier(d: TowerData): TowerTier {
     orbs: last.orbs && (boost(last.orbs as unknown as Record<string, unknown>) as unknown as TowerTier['orbs']),
     hypno: last.hypno && (boost(last.hypno as unknown as Record<string, unknown>) as unknown as TowerTier['hypno']),
   };
-  cache.set(d.id, t); return t;
+  cache.set(key, t); return t;
 }
 /** Towers that can fuse (path objects / single-use pods cannot). */
 export const canFuseType = (d: TowerData) => d.kind !== 'path' && !d.singleUse;
-export const fusionFee = (d: TowerData) => fusedTier(d).cost;
+export const fusionFee = (d: TowerData, branch: number | null = null) => fusedTier(d, branch).cost;
