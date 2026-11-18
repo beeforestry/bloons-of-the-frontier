@@ -135,6 +135,16 @@ selected), and the tower panel lists "Neighbour effects". Tuning: `PROX` in `src
 - **Knockback:** Flame Melon Mortar and Battle Tank push enemies back along their road. Bosses resist, and repeated pushes weaken (no stun-lock).
 - **Sell:** always 70% of everything invested (upgrades, branch, fusion and recipe fees). The button shows both numbers.
 
+## Death effects (t107)
+
+Enemies break apart when they die:
+- Bugs split into pieces of their art, and the body tips over in the direction of the hit.
+- Balloons pop into rubber shreds, and every layer pop throws a few.
+- Explosions throw more pieces and leave a scorch mark. Fire leaves charred pieces and embers, ice and SHATTER throw ice shards, and shock throws sparks.
+- Bosses get a bigger burst with a short slow motion.
+
+In first person, the enemy's 3D model breaks into 2–4 parts that bounce on the ground. Everything is pooled and capped (lower on phones), co-op clients see the same effects, and `tests/perf_t107.py` measures FPS before and after.
+
 ## Art (v3)
 All sprites are one painterly, realistic 3/4-view set (`public/assets/v3`, WebP, ~1.2 MB). Each tower and troop tier has its own sprite, and every tier is
 visibly more advanced. Turrets use a separate rotating head with barrel recoil, and units, bugs and bloons are animated with walk/scuttle/bob motion and painted pop/death/muzzle FX.

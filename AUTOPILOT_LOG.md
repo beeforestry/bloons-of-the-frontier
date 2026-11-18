@@ -165,3 +165,14 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 - Small 🌊/💨 ambience volume slider separate from SFX.
 - Rain/storm weather bed paired with a visual weather pass.
 - Harden e2e_t80 (poll flora; Scorpion drive).
+
+## 2026-11-18 — t107: physics-lite death effects (shipped, ~03:20)
+
+**What shipped.** Details are in `PROGRESS_t107.md`.
+- **Death events.** Each kill records its cause and the hit direction. The 2D debris and first-person parts read them; co-op clients replay them from the snapshot (`DE`).
+- **2D.** Sprite slices plus a body that tips over (bugs), rubber shreds plus the knot (balloons, and light shreds per layer pop).
+- **Variants.** Explosion (more pieces, scorch, shake), burning (charred pieces, embers, ash), ice and SHATTER (shards), shock (sparks), boss (bigger burst, slow motion).
+- **First person.** The GLB splits into 2–4 parts that bounce on the terrain. Pooled, cap 40 (18 on touch).
+- **Performance.** Global cap 240/150/80, 56 on mobile, plus a heavy-load mode. FPS change: mobile −0.5, desktop −2.0 (software GL, constant-kill stress test).
+
+**Tests.** e2e_t107 PASS (local A–H). t106/t105/t104/t103/t97/t53/t101/t80/ambience PASS.
