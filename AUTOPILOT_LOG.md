@@ -139,3 +139,29 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 - Hard El Morro: avg wave 70 without fusing (t105: 67), 79/75 with fusing (t105: 75/83).
 
 **Tests.** e2e_t106 PASS (local A–H, live A–G). t105/t104/t103/t97/t53/t101/t80 PASS. t99 is the known flaky one (El Canuelo door).
+
+## 2026-11-18 — First-person ambience: sea, wind and gulls (shipped, ~03:10)
+
+**What shipped.** First person on the two coastal maps now has a quiet ambient sound bed under the guns, so the fort and the island no longer feel silent between shots. Everything is synthesized in WebAudio (looped brown noise + LFO swells, glided gull calls), so there are no audio files and no licensing questions.
+- **El Morro:** deep surf against the cliffs with slow wave sets, an occasional breaker crash (rising hiss + low thud + foam tail), a strong Atlantic wind with whistling gusts that gets stronger and drowns the surf a bit the higher your eye is (walls/garitas), and a rare gull.
+- **Isla de Cabras:** brighter, faster lapping surf on the riprap, a lighter breeze, smaller breakers, and gulls calling often (panned left/right).
+- Fades out when paused, muted (🔇) or leaving first person; fades back when resumed. 2D view stays as before.
+- Code: `Sfx.ambient(kind, height)` (src/audio/Sfx.ts), optional `FpAudio.ambient` (Game.ts), called each frame from `Possess` (throttled to 4 Hz inside Sfx), stopped in `Possess.exit()`. Test hook `__game.ambSfx()` → kind, level, wind, gull/breaker counts, eye height.
+- Worked in a separate git worktree (`/workspace/ap_t107`) because another run was shipping t106 in `/workspace/bloons-frontier` at the same time; waited for t106 to push main + gh-pages, then rebased on top so the live build has both.
+
+**Commits.** main `24ce85f` (feature + `tests/e2e_ambience.py`, rebased on t106 `cf58772`). gh-pages `2882f6d` (BASE=/bloons-of-the-frontier/, .nojekyll kept). Live bundle `assets/index-CP6m2qqV.js`.
+
+**Tests.**
+- `npm run build` (typecheck + validator + vite): OK.
+- New `tests/e2e_ambience.py`: PASS locally and live (18 checks: no bed in 2D; morro/cabras bed per map; surf + wind levels; gull call + breaker synthesized; pause/unpause; mute/unmute via 🔉; stops on exit; no console errors).
+- Core e2e_t53, e2e_t80, e2e_t97 + e2e_t101 (FP audio): PASS on the rebased build.
+- e2e_t80 is flaky under load: before rebasing, two runs failed once each on "drove the scorpion" / "FP flora (0 plants, read before the async flora finished)". The untouched origin/main build failed the same scorpion check on 1 of 2 runs, so it isn't caused by this change. Possible fix next time: poll for `vm.flora` and give the Scorpion drive check a longer hold.
+
+**Live.** https://beeforestry.github.io/bloons-of-the-frontier/ → 200, serves `index-CP6m2qqV.js`. Screenshots (with a test-only label showing the live ambience readout): `autopilot_shots/2026-11-18_live_fp_ambience_morro.png`, `autopilot_shots/2026-11-18_live_fp_ambience_cabras.png`.
+
+**Ideas for next time.**
+- Positional sound for towers' and teammates' shots and nearby pops in first person (PannerNode by distance/bearing).
+- Make surf louder when you actually face/approach the water (distance to nearest water cell) instead of only by eye height.
+- Small 🌊/💨 ambience volume slider separate from SFX.
+- Rain/storm weather bed paired with a visual weather pass.
+- Harden e2e_t80 (poll flora; Scorpion drive).
