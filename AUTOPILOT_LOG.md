@@ -57,3 +57,30 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 - El Cañuelo interior rooms from the HABS PR-52 drawings.
 - Per-building roof heights from the 3DEP point cloud (first returns) instead of hashed storeys.
 - Look into e2e_t78's Overrun timer checks under headless swiftshader.
+
+## 2026-11-17 — t103: element status combos (shipped, evening)
+
+**What shipped.** Details are in `PROGRESS_t103.md`. The idea comes from vega-star/lightkeepers (Apache-2.0); no code or art was taken from it.
+- Statuses: 💧 Soaked (Destroyer; Glue tier 2+), 🔥 Burning (Melon; Tank tier 3), ❄ Chilled (Frost Bastion), ⚡ Shocked (Tesla; Beacon tier 2+; Rail tier 2+).
+- Combos:
+  - Conduct (💧+⚡): chain lightning
+  - Freeze (💧+❄): bosses resist
+  - Shatter (❄ + heavy hit)
+  - Steam (🔥+💧): armor offline, +20% damage taken
+  - Wildfire (🔥 + explosion)
+  - 🔥 and ❄ cancel each other out.
+- Visuals: 2D overlays, icons and popups. First person: tint, vector badges and arcs. Co-op clients get the statuses through sync bits.
+- UI: ⚗ guide (EN/ES) from the menu and the tower panel; the tower panel shows the element line.
+
+**Commits.** main `786f5c0`, gh-pages `dce5489`. Live bundle `assets/index-D7mhyxVU.js`.
+
+**Tests.**
+- Build + validator: OK.
+- e2e_t103: PASS locally and live.
+- e2e_t97, t53, t99, t101, t80 and t74 (live): PASS.
+- e2e_t101b: the Scorpion board check fails, and it also fails on the pre-t103 build.
+- e2e_t78: 7 failures live vs 8 on the pre-t103 build, the same Overrun timing checks.
+
+**Balance.** See `balance/t103_elements.md`. El Morro: 6/6 wins before and after. On Isla de Cabras the wave-19 coin flip is unchanged within noise.
+
+**Ideas for next time.** Queued by Sebastian: same-type tower fusion + predictive aiming, then tier-3 specialization, hidden fusion recipes and proximity effects, then Overload/Rage, scaling crit, knockback, then physics-lite deaths.

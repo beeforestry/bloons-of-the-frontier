@@ -49,6 +49,9 @@ See `balance/t103_elements.md`. El Morro: 6/6 wins before and after. Isla de Cab
   - the tower-panel line and the guide (EN + ES + credit), and the menu button
   - first person: statuses visible plus 40 badges
 - Regression: e2e_t97, t53, t99, t101, t80 PASS. e2e_t101b fails only on the Scorpion side-on/board check, and it fails the same way on the pre-t103 build
-  (timing under load), so this change didn't cause it. e2e_t74 / e2e_t78: see AUTOPILOT_LOG.
+  (timing under load), so this change didn't cause it. e2e_t74 PASS live. e2e_t78 (Overrun timer/bite checks): 7 failures on the t103 live build vs 8 on the pre-t103 build, same headless-timing checks (t103's are a subset), so this change didn't cause them.
+
+Shipped: main `786f5c0` (feature, tests, balance) + notes commit; gh-pages `dce5489` (BASE=/bloons-of-the-frontier/, .nojekyll kept), live bundle `assets/index-D7mhyxVU.js`, e2e_t103 PASS live.
+Screenshots: `screenshots/t103/live_2d_conduct_combo.png`, `live_2d_status_icons.png`, `live_fp_status_tint_conduct.png`, `live_2d_combo_guide.png`.
 
 Tooling: `tests/balance_sim.py --pre "<js>"` runs JS before the bot (e.g. `window.__game.elemTune.off.push('conduct')`).
