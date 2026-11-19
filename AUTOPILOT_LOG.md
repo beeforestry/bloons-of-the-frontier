@@ -176,3 +176,38 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 - **Performance.** Global cap 240/150/80, 56 on mobile, plus a heavy-load mode. FPS change: mobile −0.5, desktop −2.0 (software GL, constant-kill stress test).
 
 **Tests.** e2e_t107 PASS (local A–H). t106/t105/t104/t103/t97/t53/t101/t80/ambience PASS.
+
+## 2026-11-19 — Living ocean in first person (shipped, ~04:00)
+
+**What shipped.** The flat Phong sea plane on El Morro and Isla de Cabras is now a procedural ocean shader (`src/fps/ocean.ts`, no assets):
+- **Swell.** 5 summed Gerstner waves displaced in the vertex shader on a 260×260 grid. The grid is ~3 m over the play area and gets quadratically coarser out to the 3.2 km horizon. Each wave fades where the grid is too coarse for it (no aliasing) and in shallow water (from the shore texture), so beaches don't flood. Analytic normals plus two scrolling `water_n` detail samples.
+- **Fresnel.** Dark navy/teal body looking down; at grazing angles it reflects the same sky gradient as the dome. There's also a sharp sun glint plus a broad sun path toward `sunDir`.
+- **Shore foam / surf.** A depth + distance-to-land texture (1.5 m cells, chamfer distance) is built from the shared heightfield, then rebuilt from the 0.5 m fine fort / El Canuelo heights once they load. It drives:
+  - a swash line that runs up and back at the waterline
+  - foam at the visible edge of flat shallows
+  - breaking lines rolling toward the shore
+  - crest whitecaps
+  - (El Morro) surge on the cliffs and sea walls
+  - lacy noise breakup (procedural fbm texture)
+- **Per map.**
+  - **El Morro:** deep Atlantic navy, swell ~0.86 m total running west onto the cliffs (the map has the Atlantic on +x), and a wide surf zone.
+  - **Isla de Cabras:** turquoise, more transparent shallows (the sand shows through), calmer swell (~0.36 m), lighter foam.
+- **Quality tiers.** high → full (68k verts); medium/touch → 150×150 grid; low (`?fpq=low`, or the slow-frame `dropToLow`) → 24×24 grid, no vertex waves, one normal sample, no crest caps. Fresnel + foam are kept. `dropPost` → medium.
+- **Ambience.** `Sfx.ambient(kind, h, near)` now takes how close the eye is to open water (plus a bit when facing it). Surf is louder and brighter at the shore and softer inland, and breakers scale with it. `__game.ambSfx()` now also reports `surf` and `near`.
+- **Test hooks.** `__possess.cur.vm.ocean` → `{mode, kind, waves, amp, verts, grid, fine, shoreCells, foamCells, time, near}`; `__possess.cur.ocean.heightAt(x, z)` is a CPU mirror of the swell. The mesh is still named `sea`.
+
+**Commits.** main `e456014`. gh-pages `07c1a52` (BASE=/bloons-of-the-frontier/, .nojekyll kept). Live bundle `assets/index-CA_nbtez.js`.
+
+**Tests.**
+- `npm run build` (typecheck + validator + vite): OK.
+- New `tests/e2e_ocean.py`: PASS locally and live. It checks per map: full mode / 5 waves / grid; `sea` is the ocean shader; shore + surf cells from the fine heights; the swell animates (clock + CPU height); foam is visible on screen (pixel diff with foam on vs off); surf proximity is higher at the shore than inland; slow frames drop to the low ocean. It also checks El Morro's swell is stronger and its water darker than Cabras', the `?fpq=low` path (no vertex waves, cheap shader, foam on, ripples animate), and no console errors.
+- Core e2e_t53, e2e_t97, e2e_t80 (first try), e2e_ambience: PASS.
+
+**Live.** https://beeforestry.github.io/bloons-of-the-frontier/ → 200, serves `index-CA_nbtez.js`. Screenshots: `autopilot_shots/2026-11-19_live_fp_ocean_morro_cliffs.png`, `autopilot_shots/2026-11-19_live_fp_ocean_cabras_shore.png`.
+
+**Known / ideas for next time.**
+- On the low rocky flats at El Morro's south edge (around px 2300–2900, 2750) the contact foam reads as a fairly solid white patch from eye level. It could pass as surf over the reef, but needs a finer breakup.
+- Screen-space or planar reflections of the fort / cliffs on calm water (high quality only).
+- Underwater fog / caustics on the shallow sand at Cabras; wet-sand darkening band above the waterline on the terrain shader.
+- Spray particles where the swell hits the El Morro cliffs, synced with the ambience breaker crashes.
+- Boats / buoys bobbing on `heightAt()`.
