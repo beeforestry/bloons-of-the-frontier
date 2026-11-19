@@ -120,7 +120,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   // t101: first-person weapon/foley audio (counted like sfxCount so the e2e can verify it headless)
   const fpCount: Record<string, number> = {}; let engineOn = 0, ambCalls = 0, ambH = 0;
   g.fpAudio = { shot: (n, k) => { fpCount[n] = (fpCount[n] ?? 0) + 1; sfx.fp(n, k); }, engine: (on, speed, heavy) => { engineOn = on ? (heavy ? 2 : 1) : 0; sfx.engine(on, speed, heavy); },
-    ambient: (kind, h) => { ambCalls++; ambH = h; sfx.ambient(kind, h); } };
+    ambient: (kind, h, near) => { ambCalls++; ambH = h; sfx.ambient(kind, h, near); } };
   // Voice lines ("Orders received!", "Moving out!", "Under attack!") via speechSynthesis; toggle 🗣.
   let voiceOn = LS.get('bof.voice') !== '0', lastVoice = 0, lastLine = '';
   const voiceLog: string[] = [];
@@ -575,7 +575,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     waveLabel: () => document.getElementById('wave')!.textContent,
     enemyIds: () => Object.values(ENEMIES).map((d) => ({ id: d.id, hp: d.hp, flying: d.flying, boss: !!d.boss, kit: !!d.bossKit })),
     boxSelect, command, sfxCount: () => ({ ...sfxCount }), fpSfx: () => ({ ...fpCount, engine: engineOn, played: sfx.fpPlayed, level: +sfx.engineLevel.toFixed(3) }),
-    ambSfx: () => ({ kind: sfx.ambKind, level: sfx.ambLevel, wind: sfx.ambWind, gulls: sfx.gulls, crashes: sfx.crashes, calls: ambCalls, h: +ambH.toFixed(2) }),
+    ambSfx: () => ({ kind: sfx.ambKind, level: sfx.ambLevel, wind: sfx.ambWind, gulls: sfx.gulls, crashes: sfx.crashes, calls: ambCalls, h: +ambH.toFixed(2), surf: sfx.ambSurf, near: sfx.ambNear }),
     fpsStart: () => { fps.sample = []; },
     fpsStop: () => { const s = fps.sample ?? []; fps.sample = null; const f = s.map((x) => 1 / Math.max(1e-4, x)).sort((a, b) => a - b); return { frames: s.length, avg: s.length / Math.max(1e-6, s.reduce((a, b) => a + b, 0)), p5: f[Math.floor(f.length * 0.05)] ?? 0, min: f[0] ?? 0, quality: r.quality, parts: r.parts.n }; },
     fpsNow: () => ({ fps: fps.cur, quality: r.quality }),

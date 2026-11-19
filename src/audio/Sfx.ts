@@ -141,7 +141,7 @@ export class Sfx {
   private amb: { kind: AmbientKind; src: AudioBufferSourceNode; surfF: BiquadFilterNode; surfG: GainNode; windF: BiquadFilterNode; windG: GainNode; lfos: OscillatorNode[]; out: GainNode } | null = null;
   private ambBuf: AudioBuffer | null = null;
   private ambNext = 0; private ambGullAt = 0; private ambCrashAt = 0;
-  ambKind: AmbientKind | null = null; ambLevel = 0; ambWind = 0; gulls = 0; crashes = 0;
+  ambKind: AmbientKind | null = null; ambLevel = 0; ambWind = 0; ambSurf = 0; ambNear = 0.5; gulls = 0; crashes = 0;
   private gullCall(pan: number, vol: number, delay = 0) {
     // "kyow-kyow": 2-3 falling glides with a fast vibrato, slightly panned
     const c = this.ctx!, n = 2 + (Math.random() < 0.5 ? 1 : 0), f0 = 1500 + Math.random() * 500;
@@ -168,12 +168,13 @@ export class Sfx {
     this.crashes++;
   }
   private ambStop() {
-    const a = this.amb; if (!a) return; this.amb = null; this.ambKind = null; this.ambLevel = 0; this.ambWind = 0;
+    const a = this.amb; if (!a) return; this.amb = null; this.ambKind = null; this.ambLevel = 0; this.ambWind = 0; this.ambSurf = 0;
     const t = this.ctx!.currentTime; a.out.gain.setTargetAtTime(0.0001, t, 0.25);
     setTimeout(() => { try { a.src.stop(); a.lfos.forEach((l) => l.stop()); a.out.disconnect(); } catch { /* already stopped */ } }, 1500);
   }
-  /** Ambience bed for first person. height = eye height above sea level in metres (more wind up high). */
-  ambient(kind: AmbientKind | null, height = 0) {
+  /** Ambience bed for first person. height = eye height above sea level in metres (more wind up high);
+   *  near = 0..1 closeness to / facing open water (2026-11-19: surf louder at the shore, softer inland). */
+  ambient(kind: AmbientKind | null, height = 0, near = 0.5) {
     const c = this.ctx;
     if (!c || c.state !== 'running') return;
     if (!kind || this.muted) { this.ambStop(); return; }
@@ -212,8 +213,10 @@ export class Sfx {
     a.windG.gain.setTargetAtTime(this.ambWind, t, 0.8);
     this.ambLevel = 0.32;
     a.out.gain.setTargetAtTime(this.ambLevel, t, 0.6);
-    a.surfF.frequency.setTargetAtTime((morro ? 420 : 760) * (1 - 0.25 * h), t, 0.8);
+    a.surfF.frequency.setTargetAtTime((morro ? 420 : 760) * (1 - 0.25 * h) * (0.85 + 0.3 * near), t, 0.8);
+    this.ambNear = +near.toFixed(2); this.ambSurf = +((morro ? 0.5 : 0.42) * (0.55 + 0.75 * near)).toFixed(3);
+    a.surfG.gain.setTargetAtTime(this.ambSurf, t, 0.9);
     if (now >= this.ambGullAt) { this.gullCall(Math.random() * 1.6 - 0.8, (morro ? 0.05 : 0.08) * (0.6 + Math.random() * 0.4)); this.ambGullAt = now + (morro ? 9000 : 4500) + Math.random() * (morro ? 12000 : 7000); }
-    if (now >= this.ambCrashAt) { this.waveCrash((morro ? 0.4 : 0.2) * (1 - 0.4 * h)); this.ambCrashAt = now + (morro ? 6000 : 4500) + Math.random() * 5000; }
+    if (now >= this.ambCrashAt) { this.waveCrash((morro ? 0.4 : 0.2) * (1 - 0.4 * h) * (0.6 + 0.6 * near)); this.ambCrashAt = now + (morro ? 6000 : 4500) + Math.random() * 5000; }
   }
 }

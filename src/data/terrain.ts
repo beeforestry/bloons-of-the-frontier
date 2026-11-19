@@ -22,6 +22,10 @@ export function groundH(map: MapDef, x: number, y: number): number {
  *  the 2D sim / LOS keep using groundH so co-op peers stay deterministic. */
 let fine: { id: string; at: (x: number, y: number) => number | null } | null = null;
 export function setFineHeights(id: string | null, at?: (x: number, y: number) => number | null) { fine = id && at ? { id, at } : null; }
+/** Bare ground height (fine first-person surface if present, else the shared heightfield) — no water clamp. */
+export function rawH(map: MapDef, x: number, y: number): number {
+  const f = fine && fine.id === map.id ? fine.at(x, y) : null; return f ?? groundH(map, x, y);
+}
 /** Standing height: never below the water surface (docks / shallows). */
 export function standH(map: MapDef, x: number, y: number): number {
   const f = fine && fine.id === map.id ? fine.at(x, y) : null;
