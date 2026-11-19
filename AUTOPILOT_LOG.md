@@ -177,7 +177,7 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 
 **Tests.** e2e_t107 PASS (local A–H). t106/t105/t104/t103/t97/t53/t101/t80/ambience PASS.
 
-## 2026-11-19 — Living ocean in first person (shipped, ~04:00)
+## 2026-11-19 — Living ocean in first person (shipped, ~03:30)
 
 **What shipped.** The flat Phong sea plane on El Morro and Isla de Cabras is now a procedural ocean shader (`src/fps/ocean.ts`, no assets):
 - **Swell.** 5 summed Gerstner waves displaced in the vertex shader on a 260×260 grid. The grid is ~3 m over the play area and gets quadratically coarser out to the 3.2 km horizon. Each wave fades where the grid is too coarse for it (no aliasing) and in shallow water (from the shore texture), so beaches don't flood. Analytic normals plus two scrolling `water_n` detail samples.
