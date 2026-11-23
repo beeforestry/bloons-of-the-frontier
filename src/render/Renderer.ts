@@ -3,6 +3,7 @@
 // Tier visuals: a distinct painted sprite per tier + scale + glow ring + tier pips.
 // =============================================================================
 import { scaledRange, SCALE } from '../core/scale';
+import { walkFrame, clearWalkCache } from './walkCycle';
 import { branchMark } from '../data/specs';
 import { isDiscovered } from '../data/recipes';
 import type { Game, Effect, Strike, ParkedVeh } from '../game/Game';
@@ -87,6 +88,8 @@ export class Renderer {
   /** 0 = full, 1 = reduced, 2 = minimal (set by the FPS governor in main.ts). */
   quality = 0;
   /** White hit-flash silhouette (plain sprite when Reduce flashing is on). */
+  /** t108: per-enemy walked distance (2D gait phase). */
+  private ewalk = new Map<number, { x: number; y: number; d: number }>();
   private fl(im: Img): Img | HTMLCanvasElement { return this.g.reduceFlash ? im : flashOf(im); }
   /** t48: 2D canvas context loss (GPU reset under heavy load): skip drawing while lost, rebuild caches on restore. */
   lost = false;
@@ -103,7 +106,7 @@ export class Renderer {
   constructor(readonly canvas: HTMLCanvasElement, readonly g: Game) {
     this.ctx = canvas.getContext('2d')!;
     canvas.addEventListener('contextlost', (e) => { e.preventDefault(); this.lost = true; console.warn('[render] 2D canvas context lost'); });
-    canvas.addEventListener('contextrestored', () => { this.lost = false; clearSpriteCaches(); this.roadCol = ''; });
+    canvas.addEventListener('contextrestored', () => { this.lost = false; clearSpriteCaches(); clearWalkCache(); this.roadCol = ''; });
     this.resize();
     this.cam.zoom = this.minZoom; this.clamp();
   }
@@ -1173,14 +1176,18 @@ export class Renderer {
     if (bug) {
       [w, h] = this.fitWH(im, d.size * 1.15);
       footY = e.y + h * 0.42;
-      const stride = e.progress / Math.max(8, d.size * 0.22);
+      // t108: gait phase from the distance actually walked (lane progress, free-roam hunts and Overrun alike)
+      const ws = this.ewalk.get(e.uid) ?? { x: e.x, y: e.y, d: 0 }; ws.d += Math.min(40, Math.hypot(e.x - ws.x, e.y - ws.y)); ws.x = e.x; ws.y = e.y; this.ewalk.set(e.uid, ws);
+      if (this.ewalk.size > 3000) this.ewalk.clear();
+      const stride = ws.d / Math.max(8, d.size * 0.22);
       const fighting = !!e.blockedBy;
+      const legs = d.flying ? im : walkFrame(d.sprite + (e.ally ? ':ally' : ''), im, stride); // t108 GMMG-3: leg walk cycle
       const bob = Math.abs(Math.sin(stride)) * (d.boss ? 2 : 1.6) + (fighting ? Math.abs(Math.sin(time * 14)) * 2 : 0);
       const sx = 1 + Math.sin(stride * 2) * 0.035, sy = 1 - Math.sin(stride * 2) * 0.035;
       const rot = Math.sin(stride) * 0.04 + (fighting ? Math.sin(time * 14) * 0.06 : 0);
       this.shadowAt(e.x, footY - 2, w * 0.45, Math.max(4, h * 0.14), 0.38);
-      this.feet(im, e.x, footY - bob, w, h, flip, sx, sy, rot);
-      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; this.feet(this.fl(im), e.x, footY - bob, w, h, flip, sx, sy, rot); c.globalAlpha = 1; }
+      this.feet(legs, e.x, footY - bob, w, h, flip, sx, sy, rot);
+      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; this.feet(this.fl(legs), e.x, footY - bob, w, h, flip, sx, sy, rot); c.globalAlpha = 1; }
     } else {
       const moab = d.boss;
       [w, h] = this.fitWH(im, moab ? d.size : d.size * 1.1);

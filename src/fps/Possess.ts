@@ -3,6 +3,7 @@
 // co-op safe): this module only renders a lazy three.js view of the current entities and feeds
 // aim / fire / move input into the possessed entity's ManualCtl (Game.possessCtl).
 import * as THREE from 'three';
+import { walkBox, walkMaterial, WALK_GLB, strideM } from './walk3d';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import './possess.css';
 import type { FpSfxName, Game } from '../game/Game';
@@ -190,7 +191,15 @@ export class Possess {
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMeshes = new Map<string, THREE.InstancedMesh>(); private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
   /** t76: per-enemy-type instanced GLB sets (one InstancedMesh per GLB primitive, shared matrices) + boss/blimp templates. */
-  private enemySets = new Map<string, { parts: THREE.InstancedMesh[]; n: number; cap: number; glb: string }>(); private bossTpl = new Map<string, THREE.Group>();
+  private enemySets = new Map<string, { parts: THREE.InstancedMesh[]; n: number; cap: number; glb: string; walk?: THREE.InstancedBufferAttribute; biped?: boolean }>();
+  /** t108: per-enemy gait phase (radians) from the distance walked; vm.walk = test hook. */
+  private walkPh = new Map<Enemy, { x: number; y: number; ph: number }>();
+  private walkPhase(e: Enemy, k: number, biped: boolean) {
+    let w = this.walkPh.get(e); if (!w) { w = { x: e.x, y: e.y, ph: (e.uid * 1.37) % 6.283 }; this.walkPh.set(e, w); }
+    const d = Math.min(2, Math.hypot(e.x - w.x, e.y - w.y) * S); w.x = e.x; w.y = e.y; w.ph += (d / strideM(k, biped)) * Math.PI * 2;
+    if (this.walkPh.size > 1500) for (const q of this.walkPh.keys()) if (!q.alive) this.walkPh.delete(q);
+    return w.ph;
+  } private bossTpl = new Map<string, THREE.Group>();
   private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli' | 'destroyer' | 'beacon'; tier?: number; model?: THREE.Group; base?: number }>();
   private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number; glb?: string }>();
   /** t77: Vanguard troop GLBs — per (unit, tier) instanced sets for infantry, clone templates for Raider / Scorpion (lazy, on first sight). */
@@ -198,7 +207,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean };
+  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 } };
   /** 2026-11-19 living ocean (src/fps/ocean.ts): Gerstner swell + fresnel + shore foam; vm.ocean = test hook. */
   ocean: Ocean | null = null;
   /** 2026-11-23 cliff spray (src/fps/spray.ts): swell-timed white water on cliffs / sea walls / riprap; vm.spray = test hook. */
@@ -672,8 +681,14 @@ export class Possess {
         } else {
           const parts = await loadGlbParts(glb); if (!this.alive || !parts.length) return;
           const cap = glb.startsWith('bloon_') ? 200 : 300;
-          const meshes = parts.map((p) => { const im = new THREE.InstancedMesh(p.geometry, p.material, cap); im.count = 0; im.frustumCulled = false; im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3); this.scene.add(im); return im; });
-          this.enemySets.set(id, { parts: meshes, n: 0, cap, glb });
+          const gait = WALK_GLB[glb], box = gait ? walkBox(parts.map((p) => p.geometry)) : null; // t108: legged bugs walk
+          const walk = gait ? new THREE.InstancedBufferAttribute(new Float32Array(cap), 1) : undefined;
+          const meshes = parts.map((p) => {
+            if (walk) p.geometry.setAttribute('aWalk', walk);
+            const im = new THREE.InstancedMesh(p.geometry, gait ? walkMaterial(p.material as THREE.Material, box!, gait === 'biped') : p.material, cap); im.count = 0; im.frustumCulled = false; im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3); this.scene.add(im); return im;
+          });
+          this.enemySets.set(id, { parts: meshes, n: 0, cap, glb, walk, biped: gait === 'biped' });
+          if (gait) this.vm.walk.sets++;
         }
         this.vm.towers3d['glb_' + glb] = 1;
       } catch (err) { console.warn('glb enemy', glb, err); }
@@ -704,6 +719,13 @@ export class Possess {
     if (m) { this.scene.remove(m); this.bossModels.delete(e); } // procedural placeholder -> GLB now loaded
     if (tpl) {
       m = new THREE.Group(); const c = tpl.clone(true); m.add(c); m.userData.glb = ENEMY_GLB[e.data.id];
+      const gait = WALK_GLB[m.userData.glb as string];
+      if (gait) { // t108: own leg-warp materials per boss (phase uniform)
+        const ms: THREE.Mesh[] = []; c.updateMatrixWorld(true); c.traverse((o) => { if ((o as THREE.Mesh).isMesh) ms.push(o as THREE.Mesh); });
+        const box = walkBox(ms.map((x) => x.geometry.clone().applyMatrix4(x.matrixWorld))), us: { value: number }[] = [];
+        for (const x of ms) { const wm = walkMaterial(Array.isArray(x.material) ? x.material[0] : x.material, box, gait === 'biped'); x.material = wm; us.push(wm.userData.walkU); }
+        m.userData.walkU = us; m.userData.biped = gait === 'biped'; this.vm.walk.bosses++;
+      }
       this.scene.add(m); this.bossModels.set(e, m); return m;
     }
     m = new THREE.Group(); const col = enemyCol(e) || (BOSS_COL[e.data.id] ?? 0x8a3fd8);
@@ -1191,6 +1213,7 @@ export class Possess {
         // t76: walker GLBs stand on the ground; centred blimp/flyer GLBs float high enough not to clip terrain
         const yy = !glb ? y : CENTRED_GLB.has(glb) ? Math.max(y, gh + 1.25 * k) : gh;
         m.position.set(x, yy, z); m.rotation.set(0, -e.ang, 0); m.scale.setScalar(k);
+        if (m.userData.walkU) { const ph = this.walkPhase(e, k, !!m.userData.biped); for (const u of m.userData.walkU as { value: number }[]) u.value = ph; }
         if (glb) eg[id] = glb;
         this.seen.set(e, { x, y, z, c: BOSS_COL[id] ?? 0x8a3fd8 }); continue;
       }
@@ -1204,6 +1227,7 @@ export class Possess {
         } else {
           const k = Math.max(0.6, e.data.radius * SZ * 1.6);
           D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k);
+          if (set.walk) set.walk.setX(set.n, this.walkPhase(e, k, !!set.biped));
           this.seen.set(e, { x, y: gh + 0.5, z, c: enemyCol(e) });
         }
         D.updateMatrix(); const tn = elemTint(e); this.tmpC.setHex(tn ?? 0xffffff); for (const im of set.parts) { im.setMatrixAt(set.n, D.matrix); im.setColorAt(set.n, this.tmpC); }
@@ -1234,7 +1258,7 @@ export class Possess {
     this.bloonMesh.count = (this.bloonMesh.userData._n as number) || 0; this.bloonMesh.userData._n = 0;
     this.bloonMesh.instanceMatrix.needsUpdate = true; if (this.bloonMesh.instanceColor) this.bloonMesh.instanceColor.needsUpdate = true;
     this.bugMesh.count = ng;
-    for (const set of this.enemySets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; } set.n = 0; }
+    for (const set of this.enemySets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; } if (set.walk) set.walk.needsUpdate = true; set.n = 0; }
     this.vm.enemyGlb = eg;
     this.bugMesh.instanceMatrix.needsUpdate = true;
     if (this.bugMesh.instanceColor) this.bugMesh.instanceColor.needsUpdate = true;
