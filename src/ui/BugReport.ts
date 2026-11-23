@@ -66,17 +66,17 @@ export function buildReport(category: ReportCategory, description: string, withS
 }
 export function reportText(r: Report, maxList = RING) {
   const c = Object.entries(r.context).map(([k, v]) => `- ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n');
-  return `**${r.category.toUpperCase()}** · build ${r.build} · ${r.at}\n\n${r.description || '(no description)'}\n\n### Context\n${c}\n\n### Console (last ${Math.min(maxList, r.console.length)})\n${r.console.slice(-maxList).join('\n') || '(none)'}\n\n### Game events\n${r.events.slice(-maxList).join('\n') || '(none)'}\n`;
+  return `**${r.category.toUpperCase()}** · build ${r.build} · ${r.at}\n\n${r.description || '(no description)'}\n\n### Context\n${c}\n\nA save-state snapshot and the PNG are in the files downloaded by the game (drag the PNG into this issue).\n\n### Console (last ${Math.min(maxList, r.console.length)})\n${r.console.slice(-maxList).join('\n') || '(none)'}\n\n### Game events\n${r.events.slice(-maxList).join('\n') || '(none)'}\n`;
 }
 export const subjectOf = (r: Report) => `[BotF bug] ${r.category} - ${(r.description || '(no description)').replace(/\s+/g, ' ').slice(0, 60)}`;
 /** Prefilled GitHub new-issue link, body trimmed to keep the URL under ~7 KB. */
 export function issueUrl(r: Report) {
   const title = subjectOf(r).replace('[BotF bug] ', '');
   for (const n of [50, 20, 8, 3, 0]) {
-    const u = `${REPORT_REPO_ISSUES}?labels=bug&title=${encodeURIComponent(title)}&body=${encodeURIComponent(reportText(r, n))}`;
+    const u = `${REPORT_REPO_ISSUES}?labels=bug,beta&title=${encodeURIComponent(title)}&body=${encodeURIComponent(reportText(r, n))}`;
     if (u.length < 7000) return u;
   }
-  return `${REPORT_REPO_ISSUES}?labels=bug&title=${encodeURIComponent(title)}&body=${encodeURIComponent(r.description.slice(0, 2000))}`;
+  return `${REPORT_REPO_ISSUES}?labels=bug,beta&title=${encodeURIComponent(title)}&body=${encodeURIComponent(r.description.slice(0, 2000))}`;
 }
 
 /** Test seam: replace the network call. */
@@ -118,59 +118,115 @@ export async function flushQueue(): Promise<number> {
   return sent;
 }
 
+// ------------------------------------------------------------------ hooks (pause / save-state)
+export interface ReportHooks { pause?: () => (() => void) | void; save?: () => unknown }
+let hooks: ReportHooks = {};
+export function setReportHooks(h: ReportHooks) { hooks = h; }
+const ES = /^es/i.test(navigator.language || '');
+const T = (en: string, es: string) => (ES ? `${es} · ${en}` : `${en} · ${es}`);
+
+/** The canvas the player is looking at: the first-person WebGL canvas if open, else the 2D map. */
+function viewCanvas(fallback?: HTMLCanvasElement | null): HTMLCanvasElement | null {
+  return document.querySelector<HTMLCanvasElement>('#possess-root > canvas') ?? fallback ?? document.querySelector<HTMLCanvasElement>('canvas');
+}
+/** Full-quality PNG of what the player sees (≤1600 px wide). */
+export function capturePng(): string {
+  const src = viewCanvas(ctxFn().canvas);
+  if (!src || !src.width) return '';
+  try {
+    const s = Math.min(1, 1600 / src.width), c = document.createElement('canvas');
+    c.width = Math.round(src.width * s); c.height = Math.round(src.height * s);
+    c.getContext('2d')!.drawImage(src, 0, 0, c.width, c.height);
+    return c.toDataURL('image/png');
+  } catch { return ''; }
+}
+function compactSave(): unknown {
+  try { const v = hooks.save?.(); if (!v) return undefined; const j = JSON.stringify(v); return j.length > 20000 ? { truncated: true, size: j.length, head: j.slice(0, 2000) } : v; } catch (e) { return { error: String(e) }; }
+}
+const stampName = () => new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+function download(name: string, href: string) {
+  const a = document.createElement('a'); a.href = href; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+function downloadAll(r: Report, png: string, save: unknown) {
+  const base = `bof-bug-${stampName()}`;
+  if (png) download(`${base}.png`, png);
+  const json = JSON.stringify({ ...r, screenshot: undefined, save }, null, 1);
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  download(`${base}.json`, url); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return base;
+}
+async function copyPng(png: string): Promise<boolean> {
+  try {
+    const CI = (window as unknown as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+    if (!png || !CI || !navigator.clipboard?.write) return false;
+    const blob = await (await fetch(png)).blob();
+    await navigator.clipboard.write([new CI({ 'image/png': blob })]); return true;
+  } catch { return false; }
+}
+async function copyText(txt: string) {
+  try { await navigator.clipboard.writeText(txt); return true; } catch {
+    const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch { /* */ } ta.remove(); return ok;
+  }
+}
+
 // ------------------------------------------------------------------ UI
 function toast(text: string) {
   let t = document.getElementById('br-toast');
   if (!t) { t = document.createElement('div'); t.id = 'br-toast'; document.body.appendChild(t); }
   t.textContent = text; t.classList.remove('out'); t.classList.add('show');
   clearTimeout((t as unknown as { _h: number })._h);
-  (t as unknown as { _h: number })._h = window.setTimeout(() => t!.classList.remove('show'), 3200);
+  (t as unknown as { _h: number })._h = window.setTimeout(() => t!.classList.remove('show'), 4200);
 }
-let el: HTMLElement | null = null;
+let el: HTMLElement | null = null, resume: (() => void) | void = undefined;
+/** Last opened report state (test seam). */
+export const last: { png: string; issue: string; downloads: string[]; report?: Report } = { png: '', issue: '', downloads: [] };
 export function openBugReport() {
-  closeBugReport();
+  if (el) return;
+  const png = capturePng(); // before the modal covers anything
+  resume = hooks.pause?.();
+  try { if (document.pointerLockElement) document.exitPointerLock(); } catch { /* */ }
+  last.png = png; last.issue = ''; last.downloads = [];
   el = document.createElement('div'); el.id = 'bug-report'; el.className = 'overlay show br-overlay';
   el.innerHTML = `<div class="panel br-panel" role="dialog" aria-label="Report a bug">
-    <h2>🐞 Report a problem</h2>
+    <h2>🐞 ${T('Report a bug', 'Reportar un error')}</h2>
+    ${png ? `<img id="br-preview" alt="screenshot" src="${png}">` : `<p class="hint">${T('No screenshot available', 'Sin captura')}</p>`}
     <div class="br-cats">${(['bug', 'balance', 'idea'] as const).map((c, i) => `<label><input type="radio" name="br-cat" value="${c}"${i ? '' : ' checked'}> ${c === 'bug' ? '🐞 Bug' : c === 'balance' ? '⚖ Balance' : '💡 Idea'}</label>`).join('')}</div>
-    <textarea id="br-desc" rows="5" maxlength="4000" placeholder="What happened? What did you expect? (map, tower, wave…)"></textarea>
-    <label class="br-shot"><input type="checkbox" id="br-shotbox" checked> Attach a screenshot of the game</label>
-    <p class="hint">Also attached automatically: build ${BUILD}, map, difficulty, wave, mode, FPS, browser, screen size, recent errors and game events.</p>
-    <div class="row br-btns"><button class="btn" id="br-cancel">Cancel</button><button class="btn go" id="br-send">Send report</button></div>
-    <div id="br-fallback" hidden></div>
+    <textarea id="br-desc" rows="3" maxlength="4000" placeholder="${T('What happened?', '¿Qué pasó?')}"></textarea>
+    <input id="br-name" maxlength="60" placeholder="${T('Your name (optional)', 'Tu nombre (opcional)')}">
+    <p class="hint br-auto">${T('Auto-attached: version, map, difficulty, wave, mode, browser, screen, FPS, recent errors, save snapshot.', 'Se adjunta solo: versión, mapa, dificultad, ola, modo, navegador, pantalla, FPS, errores recientes y partida.')} · ${BUILD}</p>
+    <div class="row br-btns"><button class="btn" id="br-cancel">✕ ${ES ? 'Cerrar' : 'Close'}</button><button class="btn" id="br-copy">📋 ${ES ? 'Copiar' : 'Copy report'}</button><button class="btn" id="br-dl">⬇ ${ES ? 'Descargar' : 'Download'}</button><button class="btn go" id="br-send">🚀 ${ES ? 'Enviar' : 'Send'} (GitHub)</button></div>
+    <div id="br-steps" hidden></div>
   </div>`;
   document.body.appendChild(el);
   const $ = <T extends HTMLElement>(q: string) => el!.querySelector<T>(q)!;
-  el.addEventListener('pointerdown', (e) => e.stopPropagation()); el.addEventListener('keydown', (e) => e.stopPropagation());
-  $('#br-cancel').onclick = closeBugReport;
-  $('#br-desc').focus();
-  $('#br-send').onclick = async () => {
-    const send = $<HTMLButtonElement>('#br-send');
-    const cd = cooldownLeft();
-    if (cd > 0) { toast(`Please wait ${Math.ceil(cd)}s before sending another report`); return; }
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') closeBugReport(); });
+  el.addEventListener('keyup', (e) => e.stopPropagation());
+  const make = () => {
     const cat = (el!.querySelector<HTMLInputElement>('input[name=br-cat]:checked')?.value ?? 'bug') as ReportCategory;
-    const r = buildReport(cat, $<HTMLTextAreaElement>('#br-desc').value, $<HTMLInputElement>('#br-shotbox').checked);
-    send.disabled = true; send.textContent = 'Sending…';
-    const res = await submit(r);
-    if (res === 'sent') { toast('🙏 Thanks! Your report was sent.'); closeBugReport(); return; }
-    send.textContent = 'Saved';
-    showFallback(r);
+    const nm = $<HTMLInputElement>('#br-name').value.trim();
+    const r = buildReport(cat, $<HTMLTextAreaElement>('#br-desc').value, false);
+    if (nm) r.context = { reporter: nm, ...r.context };
+    last.report = r; return r;
   };
-}
-function showFallback(r: Report) {
-  if (!el) return;
-  const f = el.querySelector<HTMLElement>('#br-fallback')!; f.hidden = false;
-  f.innerHTML = `<p>🙏 Thanks! We couldn't send it right now, so it's saved on this device and will retry next time you open the game.
-    You can also copy it or open a GitHub issue:</p>
-    <div class="row br-btns"><button class="btn" id="br-copy">📋 Copy report</button><a class="btn" id="br-issue" target="_blank" rel="noopener" href="${issueUrl(r)}">Open GitHub issue</a><button class="btn" id="br-done">Done</button></div>`;
-  f.querySelector<HTMLElement>('#br-copy')!.onclick = async () => {
-    const txt = reportText(r);
-    try { await navigator.clipboard.writeText(txt); toast('Report copied'); } catch {
-      const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast('Report copied'); } catch { /* */ } ta.remove();
-    }
+  $('#br-cancel').onclick = closeBugReport;
+  $('#br-copy').onclick = async () => { const r = make(); const ok = await copyText(reportText(r)); toast(ok ? T('Report copied', 'Reporte copiado') : T('Copy failed', 'No se pudo copiar')); };
+  $('#br-dl').onclick = () => { const r = make(); const b = downloadAll(r, png, compactSave()); last.downloads = [b + '.png', b + '.json']; toast(T('Saved to Downloads', 'Guardado en Descargas')); };
+  $('#br-send').onclick = async () => {
+    const r = make(); const url = issueUrl(r); last.issue = url;
+    const b = downloadAll(r, png, compactSave()); last.downloads = [b + '.png', b + '.json'];
+    const imgCopied = await copyPng(png);
+    void transport.send({ ...r, screenshot: snapshot(viewCanvas(null)) }).catch(() => false); // best-effort e-mail copy
+    window.open(url, '_blank', 'noopener');
+    const st = $('#br-steps'); st.hidden = false;
+    st.innerHTML = `<p><b>1.</b> ${ES ? 'Se abrió GitHub con el reporte. Arrastra' : 'GitHub opened with the report. Drag'} <code>${b}.png</code> ${ES ? '(de Descargas) al cuadro del issue' : '(from Downloads) into the issue box'}${imgCopied ? (ES ? ' o pégala con Ctrl+V' : ' or paste it with Ctrl+V') : ''}.<br>
+      <b>2.</b> ${ES ? 'Pulsa «Submit new issue». ¡Gracias!' : 'Press “Submit new issue”. Thanks!'}<br>
+      <small>${ES ? 'Drag the PNG into the issue, then Submit.' : 'Arrastra el PNG al issue y pulsa Submit.'}</small></p>
+      <p class="hint">${ES ? '¿No abrió?' : 'Didn’t open?'} <a id="br-issue" target="_blank" rel="noopener" href="${url}">${ES ? 'Abrir issue' : 'Open issue'}</a></p>`;
   };
-  f.querySelector<HTMLElement>('#br-done')!.onclick = closeBugReport;
-  toast('🙏 Thanks! Report saved — copy it or open an issue.');
+  $('#br-desc').focus();
 }
-export function closeBugReport() { el?.remove(); el = null; }
+export function closeBugReport() { el?.remove(); el = null; const f = resume; resume = undefined; if (f) f(); }
 export function bugReportOpen() { return !!el; }
+// F8 anywhere (2D, first person, menus)
+window.addEventListener('keydown', (e) => { if (e.key === 'F8') { e.preventDefault(); e.stopImmediatePropagation(); if (el) closeBugReport(); else openBugReport(); } }, true);

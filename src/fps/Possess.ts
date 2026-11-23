@@ -786,7 +786,7 @@ export class Possess {
         ${this.canScope ? '<div class="ps-scope" id="ps-scope" hidden><div class="lens"><i class="h"></i><i class="v"></i><b></b></div><span>SCOPED · ×5</span></div>' : ''}
         <div class="ps-top"><span class="ps-tag">${this.ovr ? '🪲 OVERRUN' : '👁 POSSESSED'}</span><span class="ps-chip">🌊 Wave <b id="ps-wave"></b></span>
           <span class="ps-chip">🏰 HQ <b id="ps-hq"></b><span class="ps-bar"><b id="ps-hqb"></b></span></span><span class="ps-chip">💰 <b id="ps-cash"></b></span><span class="ps-chip">🎯 <b id="ps-hits">0</b> hits</span></div>
-        <div class="ps-btns"><button id="ps-pause" title="Pause">⏸</button><button class="ps-exit" id="ps-exit">${this.ovr ? '🗺 Tactical map (E/Tab)' : '⏏ Exit (Esc/E)'}</button></div>
+        <div class="ps-btns"><button id="ps-bug" title="Report a bug (F8) · Reportar un error">🐞</button><button id="ps-pause" title="Pause">⏸</button><button class="ps-exit" id="ps-exit">${this.ovr ? '🗺 Tactical map (E/Tab)' : '⏏ Exit (Esc/E)'}</button></div>
         <div class="ps-me"><div class="nm">${name}</div><div class="hp"><b id="ps-hp"></b></div><div class="cd"><b id="ps-cd"></b></div>
           <small>${mon ? `${mon.blurb} · bite ${mon.bite}` : `${this.isTower ? 'Stationary turret' : this.ovr ? 'WASD move' : 'WASD move · squad follows'} · direct hits +${Math.round((MANUAL_BONUS - 1) * 100)}% dmg · ammo ∞`}</small></div>
         <div class="ps-abil" id="ps-abil">${abil.map((id, i) => `<button data-ab="${id}">${ABILITIES[id].icon} ${ABILITIES[id].name}<br><small>${i === 0 ? 'Q / 1' : String(i + 1)}</small><i></i></button>`).join('')}${mon ? `<button data-bug="1">🦷 ${mon.ability}<br><small>Q / Space</small><i></i></button>` : ''}</div>
@@ -797,6 +797,7 @@ export class Possess {
       <canvas class="ps-mini" id="ps-mini" width="180" height="${Math.round(180 * this.g.map.height / this.g.map.width)}"></canvas>
       <div class="ps-touch" id="ps-touch" ${this.touch ? '' : 'hidden'}>${this.isTower ? '' : '<div class="ps-joy home" id="ps-joy"><i></i></div>'}<button class="ps-fire" id="ps-fire">FIRE</button></div>
       <div class="ps-pause" id="ps-pause-ov" hidden><div class="panel"><h2>⏸ Paused</h2><div class="row"><button class="btn primary" id="ps-resume">▶ Resume</button><button class="btn" id="ps-pexit">${this.ovr ? '🗺 Tactical map' : '⏏ Exit first-person'}</button></div></div></div>`);
+    this.root.querySelector<HTMLElement>('#ps-bug')!.onclick = (e) => { e.stopPropagation(); void import('../ui/BugReport').then((m) => m.openBugReport()); };
     for (const id of ['cross', 'wave', 'hq', 'hqb', 'cash', 'hits', 'hp', 'cd', 'abil', 'msg', 'pause-ov', 'joy', 'fire', 'veh']) this.el[id] = this.root.querySelector('#ps-' + id) as HTMLElement;
     this.mini = this.root.querySelector('#ps-mini') as HTMLCanvasElement; this.miniImg.src = assetUrl(this.g.map.image);
   }

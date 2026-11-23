@@ -31,7 +31,7 @@ import { Lobby, type MpStart } from './ui/Lobby';
 import { Sync } from './net/Sync';
 import { NetHud } from './ui/NetHud';
 import type { PingKind } from './game/Game';
-import { installConsoleCapture, logEvent, setReportContext, openBugReport, flushQueue, queued, buildReport, submit, issueUrl, reportText, transport, cooldownLeft, BUILD, type ReportCategory } from './ui/BugReport';
+import { installConsoleCapture, setReportHooks, last as reportLast, capturePng, logEvent, setReportContext, openBugReport, flushQueue, queued, buildReport, submit, issueUrl, reportText, transport, cooldownLeft, BUILD, type ReportCategory } from './ui/BugReport';
 import { PauseMenu } from './ui/PauseMenu';
 import { Overrun } from './overrun/Overrun';
 import { OverrunUI } from './overrun/OverrunUI';
@@ -537,9 +537,10 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   // First-play tutorial (auto on the first match; replay via 🎓 in the menu).
   let tut: Tutorial | null = null;
   if (!mp && !ov && !resume && (forceTutorial || !Tutorial.done())) { tut = new Tutorial(g, view, () => `${Math.round(r.cam.x)},${Math.round(r.cam.y)},${r.cam.zoom.toFixed(2)}`); tut.start(); }
-  setReportContext(() => ({ map: g.map.id, difficulty: g.diff.id, wave: g.waves.freeplay ? `freeplay ${g.waves.index}` : `${g.waves.index}/${g.waves.total}`, mode: g.mode === 'solo' ? 'SP' : g.mode, fps: Math.round(fps.cur), quality: r.quality, speed: g.speed, paused: g.paused, state: g.state, hq: Math.ceil(g.hq.health.hp), credits: Math.floor(g.res.credits), towers: g.towers.length, squads: g.squads.length, enemies: g.enemies.length, canvas }));
+  setReportContext(() => ({ map: g.map.id, difficulty: g.diff.id, wave: g.waves.freeplay ? `freeplay ${g.waves.index}` : `${g.waves.index}/${g.waves.total}`, mode: g.mode === 'solo' ? 'SP' : g.mode, view: document.getElementById('possess-root') ? 'FP' : '2D', coop: !!mp, fps: Math.round(fps.cur), quality: r.quality, speed: g.speed, paused: g.paused, state: g.state, hq: Math.ceil(g.hq.health.hp), credits: Math.floor(g.res.credits), towers: g.towers.length, squads: g.squads.length, enemies: g.enemies.length, canvas }));
+  setReportHooks({ pause: () => { if (mp || g.paused) return; g.paused = true; return () => { g.paused = false; }; }, save: () => (ov ? undefined : snapshot(g, diffId)) });
   window.__game = Object.assign(testHooks(g, view, hud, click, r), {
-    report: { build: (c: ReportCategory, d: string, shot = true) => buildReport(c, d, shot), submit, queued, issueUrl, reportText, transport, cooldownLeft, BUILD, open: openBugReport, flush: flushQueue },
+    report: { build: (c: ReportCategory, d: string, shot = true) => buildReport(c, d, shot), submit, queued, issueUrl, reportText, transport, cooldownLeft, BUILD, open: openBugReport, flush: flushQueue, last: reportLast, capturePng },
     shakeTest: (n: number, a = 16) => { for (let i = 0; i < n; i++) g.shake(a); return g.shakeAmt; },
     shakeState: () => ({ amt: g.shakeAmt, scale: g.shakeScale, calls: g.shakeCalls }),
     pauseMenu: () => ({ visible: !pauseMenu.el.hidden }),

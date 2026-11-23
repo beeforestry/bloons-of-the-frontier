@@ -473,3 +473,12 @@ body.tb-on #wave-preview { display: none; }
 }
 
 #pause-menu .pm-brief { text-align: center; font-size: 12px; opacity: .85; margin: 0 0 6px; color: #9be7ff; }
+#br-preview { width: 100%; max-height: 34vh; object-fit: contain; background: #000; border: 1px solid #ffffff33; border-radius: 8px; }
+#br-name { background: #0c1116; color: #eee; border: 1px solid #ffffff33; border-radius: 8px; padding: 8px; font: inherit; }
+.br-panel { max-height: 94vh; overflow: auto; }
+.br-btns .btn { min-height: 44px; }
+#br-steps { border-top: 1px solid #ffffff22; padding-top: 8px; font-size: 13px; }
+#btn-bug, #ps-bug { min-width: 44px; min-height: 44px; }
+.br-auto { font-size: 11px; opacity: .75; margin: 0; }
+
+body.hud-compact #btn-bug { min-width:44px; min-height:44px; padding:0; font-size:20px; order: 50; }
