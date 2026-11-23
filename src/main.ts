@@ -120,7 +120,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   // t101: first-person weapon/foley audio (counted like sfxCount so the e2e can verify it headless)
   const fpCount: Record<string, number> = {}; let engineOn = 0, ambCalls = 0, ambH = 0;
   g.fpAudio = { shot: (n, k) => { fpCount[n] = (fpCount[n] ?? 0) + 1; sfx.fp(n, k); }, engine: (on, speed, heavy) => { engineOn = on ? (heavy ? 2 : 1) : 0; sfx.engine(on, speed, heavy); },
-    ambient: (kind, h, near) => { ambCalls++; ambH = h; sfx.ambient(kind, h, near); } };
+    ambient: (kind, h, near) => { ambCalls++; ambH = h; sfx.ambient(kind, h, near); }, crashes: () => sfx.crashes };
   // Voice lines ("Orders received!", "Moving out!", "Under attack!") via speechSynthesis; toggle 🗣.
   let voiceOn = LS.get('bof.voice') !== '0', lastVoice = 0, lastLine = '';
   const voiceLog: string[] = [];

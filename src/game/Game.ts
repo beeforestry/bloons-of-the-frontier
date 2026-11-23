@@ -48,7 +48,9 @@ export type Damageable = (Tower | Unit | Building | Barrier) & { takeDamage(g: G
 export type FpSfxName = 'rifle' | 'marksman' | 'smg' | 'chaingun' | 'cannon' | 'beam' | 'rail' | 'dart' | 'arrow' | 'melee' | 'bite' | 'hit' | 'kill' | 'step' | 'scope';
 export interface FpAudio { shot(n: FpSfxName, k?: number): void; engine(on: boolean, speed: number, heavy: boolean): void;
   /** ambience (2026-11-18): first-person ambience bed (sea, wind, gulls) for the current map; kind null = off. */
-  ambient?(kind: AmbientKind | null, height: number, near?: number): void }
+  ambient?(kind: AmbientKind | null, height: number, near?: number): void;
+  /** 2026-11-23: breaker crashes synthesized so far (cliff spray throws a big burst on each new one). */
+  crashes?(): number }
 export type AmbientKind = 'morro' | 'cabras';
 export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap' | 'wave' | 'victory' | 'defeat';
 export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number; owner?: number; /** MAC: the exact aimed point (clears terrain there even when the sweep snaps to a lane). */ aim?: Vec }

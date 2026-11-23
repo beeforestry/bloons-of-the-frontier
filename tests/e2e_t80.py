@@ -59,6 +59,7 @@ with sync_playwright() as p:
 
     # ------------------------------------------------------------ first person: fort walls aligned to the aerial
     check(possess_at(1700, 1500), 'possessed a trooper on the esplanade lawn')
+    until('window.__possess.cur && window.__possess.cur.vm.flora > 1000', 30000)  # 2026-11-23: flora loads async — poll instead of a fixed wait
     st = P('({ fort: P.vm.fort, chunks: P.vm.fortChunks, flora: P.vm.flora, parked: P.vm.parked, glb: P.vm.parkedGlb, q: P.vm.quality })'); print('  vm', st)
     f = st['fort'] or {}
     check(f.get('tris', 0) > 100000 and st['chunks'] >= 16, f"3D fort mesh built from the lidar ({f.get('tris')} tris in {st['chunks']} chunks)")
@@ -93,8 +94,12 @@ with sync_playwright() as p:
         s1 = P('P.state()')
         check(s1['veh'] and s1['unitId'] == kind and G('H.g.parked.length') == n0 - 1, f'{label}: F entered the {kind} (driving {s1["unitId"]})')
         pg.wait_for_timeout(2500)
-        pg.keyboard.down('w'); pg.wait_for_timeout(3500); pg.keyboard.up('w'); pg.wait_for_timeout(400)
-        s2 = P('P.state()'); moved = ((s2['x'] - s1['x']) ** 2 + (s2['y'] - s1['y']) ** 2) ** 0.5
+        # 2026-11-23: hold W in slices (up to ~10 s) until it actually moved — the heavy Scorpion is slow to start under load
+        moved = 0
+        for _ in range(4):
+            pg.keyboard.down('w'); pg.wait_for_timeout(2500); pg.keyboard.up('w'); pg.wait_for_timeout(300)
+            s2 = P('P.state()'); moved = ((s2['x'] - s1['x']) ** 2 + (s2['y'] - s1['y']) ** 2) ** 0.5
+            if moved > 3: break
         check(moved > 3, f'{label}: drove the {kind} ({moved:.0f} px)')
         shot(pg, f'fp_driving_{kind}')
         prompt = pg.inner_text('#ps-veh') if pg.is_visible('#ps-veh') else ''

@@ -10,6 +10,7 @@
 // Everything is procedural (no assets). Low quality: a 24x24 grid with no vertex waves and a single
 // normal sample (fresnel + foam kept, so it still reads as sea), for phones / slow frames.
 import * as THREE from 'three';
+import type { SpraySites } from './spray';
 
 export type OceanKind = 'morro' | 'cabras';
 export type OceanMode = 'full' | 'medium' | 'low';
@@ -146,6 +147,8 @@ export type OceanInfo = { mode: OceanMode; kind: OceanKind; waves: number; amp: 
 
 export class Ocean {
   readonly mesh: THREE.Mesh; readonly mat: THREE.ShaderMaterial; readonly info: OceanInfo;
+  /** 2026-11-23 cliff spray: water cells hard against steep land (sea walls / cliffs / riprap), rebuilt by setShore. */
+  spraySites: SpraySites | null = null; sitesVer = 0;
   private shoreTex: THREE.DataTexture; private distW: Float32Array; private gw: number; private gh: number;
   private preset: (typeof OCEAN_PRESET)[OceanKind]; private sizes: Record<OceanMode, number> = { full: 260, medium: 150, low: 24 };
   constructor(readonly kind: OceanKind, mode: OceanMode, readonly size: number, readonly mapW: number, readonly mapD: number, readonly level: number,
@@ -194,7 +197,25 @@ export class Ocean {
       if (depth[k] > 0 && dL[k] <= cell * 1.5) shore++;
       if (depth[k] > 0 && dL[k] < this.preset.breakW) foam++;
     }
+    this.sprayFrom(depth, dL);
     this.shoreTex.needsUpdate = true; this.info.shoreCells = shore; this.info.foamCells = foam; this.info.fine = fine ? 1 : 0;
+  }
+  /** Spray sites: water cells next to land that rises steeply above sea level, seaward normal from the
+   *  distance-to-land gradient, open water ~6 m further out, strength from the rise within ~6 m. */
+  private sprayFrom(depth: Float32Array, dL: Float32Array) {
+    const { gw, gh, cell } = this, morro = this.kind === 'morro', minRise = morro ? 1.0 : 0.5, span = morro ? 8 : 2.5, R = 4; // rise measured within ~6 m
+    const xs: number[] = [], zs: number[] = [], nxs: number[] = [], nzs: number[] = [], st: number[] = [];
+    for (let j = R; j < gh - R; j++) for (let i = R; i < gw - R; i++) {
+      const k = j * gw + i; if (depth[k] <= 0.03 || dL[k] > cell * 1.5) continue;
+      let rise = -1e9; for (let b = -R; b <= R; b++) for (let a = -R; a <= R; a++) rise = Math.max(rise, -depth[k + b * gw + a]);
+      if (rise < minRise) continue;
+      let nx = dL[k + 1] - dL[k - 1], nz = dL[k + gw] - dL[k - gw]; const l = Math.hypot(nx, nz); if (l < 1e-3) continue; nx /= l; nz /= l;
+      const oi = Math.round(i + (nx * 6) / cell), oj = Math.round(j + (nz * 6) / cell);
+      if (oi >= 0 && oj >= 0 && oi < gw && oj < gh && depth[oj * gw + oi] <= 0) continue; // sheltered pocket, not open water
+      xs.push(i * cell); zs.push(j * cell); nxs.push(nx); nzs.push(nz); st.push(Math.min(1, 0.3 + (rise - minRise) / span));
+    }
+    const F = (a: number[]) => Float32Array.from(a);
+    this.spraySites = { n: xs.length, x: F(xs), z: F(zs), nx: F(nxs), nz: F(nzs), str: F(st) }; this.sitesVer++;
   }
   /** Metres from (x, z) to the nearest open water (0 over water / off the map). */
   waterDist(x: number, z: number): number {

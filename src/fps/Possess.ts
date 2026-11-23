@@ -21,6 +21,7 @@ import { assetUrl } from '../assetUrl';
 import { logEvent } from '../ui/BugReport';
 import { groundH, heights, standH, setFineHeights, rawH } from '../data/terrain';
 import { Ocean, type OceanInfo } from './ocean';
+import { Spray, type SprayInfo } from './spray';
 import { loadFort, fortH, fortMesh, morroSet, garitaSpots, FORT, type FortGrid, type MorroSet } from './morro3d';
 import { carveMorro, morroT93, type T93Set } from './morro93';
 import { oldSanJuan } from './oldsj';
@@ -197,9 +198,11 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo };
+  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo };
   /** 2026-11-19 living ocean (src/fps/ocean.ts): Gerstner swell + fresnel + shore foam; vm.ocean = test hook. */
   ocean: Ocean | null = null;
+  /** 2026-11-23 cliff spray (src/fps/spray.ts): swell-timed white water on cliffs / sea walls / riprap; vm.spray = test hook. */
+  spray: Spray | null = null;
   /** t80 El Morro: fine fort heights + set pieces; the lidar floor geometry / photo it lowers + re-uses. */
   private fort: FortGrid | null = null; private morro: MorroSet | null = null; private floorGeo: THREE.BufferGeometry | null = null; private groundPhoto: THREE.Texture | null = null;
   /** t80: parked world vehicles in the scene (by ParkedVeh id) + what the possessed trooper currently is. */
@@ -395,6 +398,7 @@ export class Possess {
     // 2026-11-19 living ocean: animated Gerstner swell, fresnel sky reflection + sun glint, shore foam / surf from the terrain heights
     const ocean = new Ocean(g.map.id === 'morro' ? 'morro' : 'cabras', ({ high: 'full', medium: 'medium', low: 'low' } as const)[this.vm.quality], SEA, W, D, T.water, waterNormal(), this.sunDir, this.isWar);
     ocean.setShore((xm, zm) => groundH(g.map, xm / S, zm / S)); scene.add(ocean.mesh); this.ocean = ocean; this.vm.ocean = ocean.info;
+    const spray = new Spray(ocean, ocean.kind, this.isWar); scene.add(spray.points); this.spray = spray; this.vm.spray = spray.info;
     const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA).rotateX(-Math.PI / 2), lam(0x1c2c2e)); sea2.position.set(W / 2, this.real ? T.off - 0.3 : -1.7, D / 2); scene.add(sea2);
     // t50 warzone: plants/rocks -> 3D flora (burnt palms, dead trees), wrecks/bunkers/wire/sandbags -> models; flag stays a billboard
     const gy = (x: number, y: number) => groundH(g.map, x, y);
@@ -903,6 +907,7 @@ export class Possess {
     if (!this.alive) return;
     const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
     groundTime.value += dt; this.war?.update(dt, this.camera); this.ocean?.update(dt);
+    if (this.spray) { const cr = this.g.fpAudio?.crashes?.(); this.spray.update(this.g.paused ? 0 : dt, this.camera, this.renderer.domElement.height, this.g.paused ? -1 : (cr ?? -1)); }
     this.fpsAcc += Math.min(1, (now - this.last0) / 1000); this.last0 = now; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
     if (!this.tick(dt)) return;
     if (this.ctxLost) { this.raf = requestAnimationFrame(this.loop); return; }
@@ -1410,7 +1415,7 @@ export class Possess {
     if (document.pointerLockElement) void document.exitPointerLock();
     if (this.obj.alive) this.g.possessCtl(this.obj, null);
     this.scene.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); const mat = m.material as THREE.Material | THREE.Material[] | undefined; if (Array.isArray(mat)) mat.forEach((x) => x.dispose()); else mat?.dispose?.(); });
-    this.composer?.dispose(); this.envRT?.dispose(); this.ocean?.dispose(); this.ocean = null;
+    this.composer?.dispose(); this.envRT?.dispose(); this.ocean?.dispose(); this.ocean = null; this.spray?.dispose(); this.spray = null;
     this.renderer.dispose(); this.renderer.forceContextLoss?.();
     this.root.remove(); document.body.classList.remove('possess-on', 'ps-touch-on');
     if (cur === this) cur = null;
