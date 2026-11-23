@@ -216,7 +216,7 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 
 No commits, branches, stashes or local changes from those days. The box was replaced on 2026-11-21 (~07:22), and the replacement wiped `node_modules` and the Playwright browser cache (`~/.cache/ms-playwright`). It also left the old gh-pages worktree `/tmp/ghp_wt` dangling (`deploy_bof.sh` depends on it). So `npm run build` and the e2e tests could not run, and the runs could not ship. Fixed on 11-23 with `npm ci` + `playwright install chromium` + `git worktree prune`; the deploy now uses a fresh worktree (`/workspace/ap_ghp_1123`). If a future run fails early, check those three things first. GitHub HTTPS also had one transient TLS handshake failure; a retry worked.
 
-## 2026-11-23 — Cliff spray in first person (shipped, ~05:30)
+## 2026-11-23 — Cliff spray in first person (shipped, ~04:15)
 
 **What shipped.** White water now bursts up where the swell hits El Morro's cliffs and sea walls, and (much smaller) the Isla de Cabras riprap. The coast no longer looks like the sea just stops at the rocks.
 - **Sites.** `Ocean.setShore` now also finds spray sites. These are water cells right against land that rises ≥1.0 m (Cabras 0.5 m) within ~6 m. Each site gets a seaward normal from the distance-to-land gradient and a strength from the rise. Sheltered pockets are skipped (it needs open water 6 m out). They're rebuilt from the 0.5 m fine heights: El Morro has 461 sites along the Atlantic side and the south, Cabras ~1.1k.
