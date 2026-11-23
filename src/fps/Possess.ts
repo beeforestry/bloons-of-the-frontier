@@ -1275,7 +1275,7 @@ export class Possess {
     let nu = 0; const ug: Record<string, string[]> = {};
     for (const u of g.units) {
       if (!u.alive || u.garrison || u === me || nu >= 300) continue;
-      if (!this.isBug && (u.x - me.x) ** 2 + (u.y - me.y) ** 2 < 26 * 26) continue; // don't block the camera
+      if (!this.isBug && (u.x - me.x) ** 2 + (u.y - me.y) ** 2 < (1.3 / S) ** 2) continue; // don't block the camera (t108: metres, was 26 px = 3.25 m on the 0.125 m/px maps)
       const uid = u.squad.data.id, glb = unitGlb(uid, g.unitTier(uid));
       if (u.squad.data.vehicle) { this.vehicleUnit(u, dt); const vg = this.unitVeh.get(u)?.glb; if (vg) (ug[uid] ??= []).includes(vg) || ug[uid].push(vg); continue; }
       D.position.set(u.x * S, standH(g.map, u.x, u.y), u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(1); D.updateMatrix();
