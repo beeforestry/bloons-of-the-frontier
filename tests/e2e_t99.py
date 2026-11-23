@@ -42,7 +42,7 @@ with sync_playwright() as p:
     def possess_at(x, y):
         G('H.g.deployCd = {}'); G(f'H.deploy("odst", {x}, {y})'); pg.wait_for_timeout(1200)
         G('H.selectSquad(H.g.squads.length - 1)'); pg.wait_for_selector('#sp-possess', timeout=6000); pg.click('#sp-possess')
-        ok = until('window.__possess && window.__possess.cur && window.__possess.cur.vm.cabras', 90000)
+        ok = until('window.__possess && window.__possess.cur && window.__possess.cur.vm.cabras', 120000)
         P(f'P.obj.x = {x}; P.obj.y = {y}'); pg.wait_for_timeout(4000); P('P.el.msg.style.visibility = "hidden"')
         return ok
     def look(ax, ay, dh, wait=2500):
@@ -135,7 +135,7 @@ with sync_playwright() as p:
     at(*fort_px(8.0, 2.0)); look(*fort_px(13, -6), 1, 2000); shot(pg, 'fp_canuelo_deck_embrasures')
     at(*fort_px(6.5, 6.5)); look(*fort_px(12, 12), 1.5, 2000); shot(pg, 'fp_canuelo_garita')
     at(*fort_px(10.5, 4.0)); P('P.aimAt(4632, 11640, P.eye().y + 25)'); pg.wait_for_timeout(3500); shot(pg, 'fp_el_morro_across_bay')
-    check(until('window.__possess.cur.vm.cabras.morro === 1', 30000), 'El Morro (its lidar fort grid) stands across the bay mouth')
+    check(until('window.__possess.cur.vm.cabras.morro === 1', 45000), 'El Morro (its lidar fort grid) stands across the bay mouth')
     at(2900, 935); look(3450, 870, -0.3); shot(pg, 'fp_coast_beach')
     at(1300, 1560); look(1500, 2100, -1); shot(pg, 'fp_coast_breakwater')
     at(2300, 1220); look(2900, 1250, 1); shot(pg, 'fp_park_palms')

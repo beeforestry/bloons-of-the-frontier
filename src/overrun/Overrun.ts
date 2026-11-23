@@ -413,7 +413,7 @@ export class Overrun {
         players: this.players.map((p) => ({ pid: p.pid, bot: p.bot, role: p.role, cls: p.cls, mon: p.mon, points: p.points, earned: p.earned, kills: p.kills, deaths: p.deaths, respawnT: p.respawnT, towers: p.towers,
           unit: p.unit ? { id: p.unit.data.id, x: Math.round(p.unit.x), y: Math.round(p.unit.y), hp: Math.round(p.unit.health.hp), max: Math.round(p.unit.health.max), manual: !!p.unit.manual } : null,
           enemy: p.enemy ? { id: p.enemy.data.id, x: Math.round(p.enemy.x), y: Math.round(p.enemy.y), hp: Math.round(p.enemy.hp), max: p.enemy.maxHp, manual: !!p.enemy.manual } : null })) }),
-      setTime: (s: number) => { this.timeLeft = s; },
+      setTime: (s: number) => { this.timeLeft = Math.max(0, s); if (this.timeLeft <= 0 && this.phase === "live") this.end("survivors"); },
       noSpawn: (on: boolean) => { this.noSpawn = on; },
       addPoints: (n: number, pid = this.localPid) => { const p = this.player(pid); if (p) { p.points += n; p.earned += n; } return p?.points ?? 0; },
       /** Spawn AI monsters right next to a survivor (default: the local one). */

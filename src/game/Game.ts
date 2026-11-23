@@ -65,7 +65,7 @@ export interface Telegraph { x: number; y: number; lane: number; t: number; dur:
 /** t80: a vehicle parked in the world (El Morro grounds, Overrun spawns). hp = health fraction it keeps between drivers. */
 export interface ParkedVeh { id: number; kind: string; x: number; y: number; ang: number; hp: number }
 /** t80: how close (metres) a trooper must be to a parked vehicle to climb in. */
-export const BOARD_M = 6;
+export const BOARD_M = 8;
 /** t101b: parked-vehicle footprint half-extents in metres [along its heading, across] (matches the t77 GLBs) + trooper body radius. */
 export const PARKED_FOOT: Record<string, [number, number]> = { warthog: [2.35, 1.2], scorpion: [3.6, 1.85] };
 export const BODY_M = 0.35;
