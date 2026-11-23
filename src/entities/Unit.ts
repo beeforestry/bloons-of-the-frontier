@@ -1,4 +1,5 @@
 import { COVER } from '../data/props';
+import { scaledRange } from '../core/scale';
 // =============================================================================
 // UNITS (Halo-Wars-style troops) + WORKER UNIT (Farmhand)
 //  Squad: rally point, waypoint queue (Shift-click), patrol route, stance
@@ -117,7 +118,7 @@ export class Unit implements Buffable {
   }
   tier(g: Game) { return g.unitTier(this.data.id); }
   t(g: Game): UnitTier { return this.data.tiers[this.tier(g)]; }
-  range(g: Game) { return this.t(g).stats.range * (1 + this.buffs.totals.bonusRangePct) * (this.garrison ? 1 + this.garrison.gRange() : 1); }
+  range(g: Game) { return scaledRange(this.t(g).stats.range) * (1 + this.buffs.totals.bonusRangePct) * (this.garrison ? 1 + this.garrison.gRange() : 1); }
   get isWorker() { return this.data.role === 'worker'; }
   get blockCap() { return this.data.blockCap ?? 2; }
   get dmgMul() { return this.ovDmg * (1 + VET.dmg * this.stars) * (this.rallyT > 0 ? 1 + RALLY.dmg : 1); }
@@ -204,7 +205,7 @@ export class Unit implements Buffable {
     }
     if (melee && !this.garrison) {
       // Kingdom-Rush style: engage ground enemies near our post (Hold: only adjacent ones)
-      const reach = stance === 'hold' ? t.stats.range + 20 : 130;
+      const reach = stance === 'hold' ? scaledRange(t.stats.range) + 20 : 130;
       const origin = stance === 'hold' ? this : home;
       let best: Enemy | null = null, bd = reach;
       for (const e of g.enemies) {
@@ -213,7 +214,7 @@ export class Unit implements Buffable {
         if (d < bd) { bd = d; best = e; }
       }
       if (best) {
-        if (dist(this, best) > t.stats.range + best.data.radius) { if (stance !== 'hold') this.moveTo(best, speed, dt); }
+        if (dist(this, best) > scaledRange(t.stats.range) + best.data.radius) { if (stance !== 'hold') this.moveTo(best, speed, dt); }
         else target = best;
       } else this.moveTo(home, speed, dt);
     } else {

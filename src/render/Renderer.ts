@@ -2,6 +2,8 @@
 // RENDERER: draws the world onto a 2D canvas. Read-only view of Game.
 // Tier visuals: a distinct painted sprite per tier + scale + glow ring + tier pips.
 // =============================================================================
+import { scaledRange, SCALE } from '../core/scale';
+import { walkFrame, clearWalkCache } from './walkCycle';
 import { branchMark } from '../data/specs';
 import { isDiscovered } from '../data/recipes';
 import type { Game, Effect, Strike, ParkedVeh } from '../game/Game';
@@ -86,6 +88,8 @@ export class Renderer {
   /** 0 = full, 1 = reduced, 2 = minimal (set by the FPS governor in main.ts). */
   quality = 0;
   /** White hit-flash silhouette (plain sprite when Reduce flashing is on). */
+  /** t108: per-enemy walked distance (2D gait phase). */
+  private ewalk = new Map<number, { x: number; y: number; d: number }>();
   private fl(im: Img): Img | HTMLCanvasElement { return this.g.reduceFlash ? im : flashOf(im); }
   /** t48: 2D canvas context loss (GPU reset under heavy load): skip drawing while lost, rebuild caches on restore. */
   lost = false;
@@ -102,7 +106,7 @@ export class Renderer {
   constructor(readonly canvas: HTMLCanvasElement, readonly g: Game) {
     this.ctx = canvas.getContext('2d')!;
     canvas.addEventListener('contextlost', (e) => { e.preventDefault(); this.lost = true; console.warn('[render] 2D canvas context lost'); });
-    canvas.addEventListener('contextrestored', () => { this.lost = false; clearSpriteCaches(); this.roadCol = ''; });
+    canvas.addEventListener('contextrestored', () => { this.lost = false; clearSpriteCaches(); clearWalkCache(); this.roadCol = ''; });
     this.resize();
     this.cam.zoom = this.minZoom; this.clamp();
   }
@@ -221,9 +225,9 @@ export class Renderer {
     for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
     for (const p of g.parked) if (this.inView(p.x, p.y, 120)) objs.push({ y: p.y, f: () => this.parkedVeh(p) });
     const mp = g.net !== 'solo';
-    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); if (u.possessedBy >= 0) this.possessBadge(u.x, u.y - 34, u.possessedBy); } });
-    for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
-    for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
+    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => this.scaled(u.x, u.y + 14, () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); if (u.possessedBy >= 0) this.possessBadge(u.x, u.y - 34, u.possessedBy); }) });
+    for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.scaled(e.x, e.y, () => this.enemy(e)) });
+    for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.scaled(e.x, e.y, () => this.enemy(e)) });
     objs.sort((a, b) => a.y - b.y).forEach((o) => o.f());
     this.drawn.objs = objs.length;
     // Auto Army badge: green ⟳ when the squad runs its role AI, amber ⏸ while a manual order overrides it
@@ -236,7 +240,7 @@ export class Renderer {
       c.fillText(q.manual ? 'II' : 'A', bx, by + 0.5); c.textBaseline = 'alphabetic';
     }
     this.debris.draw(c, this.vx0 - 60, this.vy0 - 60, this.vx1 + 60, this.vy1 + 60);
-    for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.enemy(e);
+    for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.scaled(e.x, e.y, () => this.enemy(e));
     this.emitAmbient(gdt);
     // Harbor Beacon: constant lighthouse shaft (not a blink) while locked
     for (const tw of g.towers) {
@@ -542,7 +546,7 @@ export class Renderer {
   private ghost(id: string, cell: Cell & { x?: number; y?: number; bad?: boolean }) {
     const g = this.g, d = towerById(id), t0 = d.tiers[0], p = cell.x !== undefined ? { x: cell.x, y: cell.y! } : g.grid.cellCenter(cell.c, cell.r);
     const ok = g.canPlace(id, cell);
-    const r = t0.combat?.range ?? t0.cover?.auraRadius ?? 40;
+    const r = t0.combat ? scaledRange(t0.combat.range) : t0.cover?.auraRadius ?? 40;
     this.range(p.x, p.y, r, ok);
     const fp = d.footprint ?? 1;
     if (!g.gridKind(id)) { // t56 BTD6-style base circle: green = OK, red = blocked
@@ -551,7 +555,7 @@ export class Renderer {
       c.strokeStyle = ok ? '#7f7' : '#f55'; c.lineWidth = 2; c.stroke();
     } else if (fp > 1) { const s = g.grid.cell, h = (fp * s) / 2; this.ctx.fillStyle = ok ? 'rgba(120,255,140,0.18)' : 'rgba(255,70,70,0.25)'; this.ctx.fillRect(p.x - h, p.y - h, fp * s, fp * s); this.ctx.strokeStyle = ok ? '#8f8' : '#f66'; this.ctx.lineWidth = 2; this.ctx.strokeRect(p.x - h, p.y - h, fp * s, fp * s); }
     this.ctx.globalAlpha = 0.65;
-    this.towerImg(d.sprite, 0, p.x, p.y, t0.visual, 0, false);
+    this.scaled(p.x, p.y + (fp > 1 ? 6 : 18), () => this.towerImg(d.sprite, 0, p.x, p.y, t0.visual, 0, false));
     this.ctx.globalAlpha = 1;
   }
   private flag(from: { x: number; y: number }, r: { x: number; y: number }, col: string) {
@@ -916,13 +920,21 @@ export class Renderer {
     const c = this.ctx, [w, h] = this.fitWH(im, sz);
     c.save(); c.translate(x, y); if (rot) c.rotate(rot); if (flip) c.scale(-1, 1); c.drawImage(im, -w / 2, -h / 2, w, h); c.restore();
   }
+  /** t108: draw f() scaled by SCALE.sprite about (x, y) (the feet), so towers / troops / mobs read bigger on the big maps. */
+  private scaled(x: number, y: number, f: () => void) {
+    const k = SCALE.sprite; if (k === 1) { f(); return; }
+    const c = this.ctx; c.save(); c.translate(x, y); c.scale(k, k); c.translate(-x, -y); try { f(); } finally { c.restore(); }
+  }
   private tower(t: Tower, sel: boolean, selT: Tower | null = null) {
-    const c = this.ctx;
-    if (sel) {
+    if (sel) { // range ring + LOS stay in world units (not sprite-scaled)
       const r = t.combat ? t.range(t.t.combat!.range) : t.cover ? t.t.cover!.auraRadius : 0;
       if (r) this.range(t.x, t.y, r);
       if (r && usesLOS(t.data.id)) this.losShadow(t, Math.min(r, LOS.maxDist));
     }
+    this.scaled(t.x, t.y + ((t.data.footprint ?? 1) > 1 ? 6 : 18), () => this.towerBody(t, sel, selT));
+  }
+  private towerBody(t: Tower, sel: boolean, selT: Tower | null) {
+    const c = this.ctx;
     if (t.slide) { // dust trail while sliding into the organized grid
       c.fillStyle = 'rgba(230,210,160,0.55)';
       for (let i = 0; i < 4; i++) { const k = i / 4; c.beginPath(); c.arc(t.slide.fx + (t.x - t.slide.fx) * k, t.slide.fy + (t.y - t.slide.fy) * k + 18, 4 + i * 2, 0, 7); c.fill(); }
@@ -1164,14 +1176,18 @@ export class Renderer {
     if (bug) {
       [w, h] = this.fitWH(im, d.size * 1.15);
       footY = e.y + h * 0.42;
-      const stride = e.progress / Math.max(8, d.size * 0.22);
+      // t108: gait phase from the distance actually walked (lane progress, free-roam hunts and Overrun alike)
+      const ws = this.ewalk.get(e.uid) ?? { x: e.x, y: e.y, d: 0 }; ws.d += Math.min(40, Math.hypot(e.x - ws.x, e.y - ws.y)); ws.x = e.x; ws.y = e.y; this.ewalk.set(e.uid, ws);
+      if (this.ewalk.size > 3000) this.ewalk.clear();
+      const stride = ws.d / Math.max(8, d.size * 0.22);
       const fighting = !!e.blockedBy;
+      const legs = d.flying ? im : walkFrame(d.sprite + (e.ally ? ':ally' : ''), im, stride); // t108 GMMG-3: leg walk cycle
       const bob = Math.abs(Math.sin(stride)) * (d.boss ? 2 : 1.6) + (fighting ? Math.abs(Math.sin(time * 14)) * 2 : 0);
       const sx = 1 + Math.sin(stride * 2) * 0.035, sy = 1 - Math.sin(stride * 2) * 0.035;
       const rot = Math.sin(stride) * 0.04 + (fighting ? Math.sin(time * 14) * 0.06 : 0);
       this.shadowAt(e.x, footY - 2, w * 0.45, Math.max(4, h * 0.14), 0.38);
-      this.feet(im, e.x, footY - bob, w, h, flip, sx, sy, rot);
-      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; this.feet(this.fl(im), e.x, footY - bob, w, h, flip, sx, sy, rot); c.globalAlpha = 1; }
+      this.feet(legs, e.x, footY - bob, w, h, flip, sx, sy, rot);
+      if (e.hitFlash > 0) { c.globalAlpha = Math.min(1, e.hitFlash * 8) * 0.6; this.feet(this.fl(legs), e.x, footY - bob, w, h, flip, sx, sy, rot); c.globalAlpha = 1; }
     } else {
       const moab = d.boss;
       [w, h] = this.fitWH(im, moab ? d.size : d.size * 1.1);

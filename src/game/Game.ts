@@ -4,6 +4,7 @@
 // Rendering and DOM UI only READ from this object.
 // =============================================================================
 import { Faction, TargetingMode, TARGETING_ORDER, TARGETING_INFO, TARGETING_LABEL, type AbilityId, type ManualCtl, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
+import { setMapScale } from '../core/scale';
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
 import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
@@ -69,7 +70,17 @@ export const BOARD_M = 8;
 /** t101b: parked-vehicle footprint half-extents in metres [along its heading, across] (matches the t77 GLBs) + trooper body radius. */
 export const PARKED_FOOT: Record<string, [number, number]> = { warthog: [2.35, 1.2], scorpion: [3.6, 1.85] };
 export const BODY_M = 0.35;
-export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.8, tropical: 0.8 };
+/** t108: first-person solid footprints in METRES (measured from the 3D models: median radius of the model at knee..chest height).
+ *  Before t108 these were fixed map-pixel radii (rock/log 26 px, tower 20 px, HQ 70 px, pad 40 px) — 2.5x too big on the
+ *  0.125 m/px El Morro / Isla de Cabras maps, so every tower, log and the HQ had a wide invisible wall around it. */
+export const SOLID_M = { rock: 2.0, log: 0.2, hqHalf: 3, padHalf: 1.7, tower: 0.9 } as const;
+export const TOWER_SOLID_M: Record<string, number> = {
+  dart_monkey: 0.35, ninja_monkey: 0.35, wizard_monkey: 0.35, super_monkey: 0.35, sniper_monkey: 0.35, boomerang_monkey: 0.35, glue_slinger: 0.4,
+  money_monkey: 0.85, banana_drop: 0.95, unsc_autoturret: 1.2, unsc_rail: 1.2, unsc_flak: 1.2, unsc_firebase: 1.55, unsc_depot: 0.9,
+  frost_wallnut_bastion: 1.0, stone_wall: 0.95, hypno_shroom: 1.05, tesla_coil: 1.0, arcane_obelisk: 0.7, unsc_beacon: 1.6,
+  unsc_tank: 2.3, unsc_heli: 1.2, unsc_destroyer: 2.25,
+};
+export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.92, tropical: 0.8 }; // t108: El Morro 0.8 -> 0.92 offsets the x1.4 ranged reach (Cabras' bot run is bimodal at wave 19, kept)
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
 export interface Effect {
@@ -217,6 +228,7 @@ export class Game {
   ownedSquads(pid = this.actingPid) { return this.squads.filter((s) => s.alive && (this.net === 'solo' || s.owner === pid)); }
 
   constructor(readonly map: MapDef = resolveMap(DEFAULT_MAP), readonly diff: Difficulty = DIFFICULTIES[1]) {
+    setMapScale(map); // t108: bigger sprites + longer ranged reach on the 0.125 m/px maps
     applyCostMul(diff.cost);
     this.waves = new WaveManager(buildWaves(diff.waves), diff.hp, diff.count, diff.late);
     this.waves.boostHp = BOOST_HP[diff.id] ?? 0; // t106
@@ -838,9 +850,11 @@ export class Game {
   walkable(x: number, y: number, fx?: number, fy?: number): boolean {
     if (x < 12 || y < 12 || x > this.map.width - 12 || y > this.map.height - 12) return false;
     if (this.overrun && this.isWaterAt(x, y)) return false; // t78: Overrun is fought on foot / wheels — no wading into the sea
-    for (const o of this.obstacles) if (o.alive && (o.x - x) ** 2 + (o.y - y) ** 2 < 26 * 26) return false;
-    for (const t of this.towers) if (t.alive && (t.x - x) ** 2 + (t.y - y) ** 2 < 20 * 20) return false;
-    for (const b of this.buildings) if (b.alive && (b.x - x) ** 2 + (b.y - y) ** 2 < (b.isHQ ? 70 : 40) ** 2) return false;
+    // t108: solids in metres, matching what first person draws (see SOLID_M); boxes for the HQ keep / pads
+    const k = 1 / (this.map.mpp ?? 0.05);
+    for (const o of this.obstacles) if (o.alive) { const r = ((o.kind === 'rock' ? SOLID_M.rock : SOLID_M.log) + BODY_M) * k; if ((o.x - x) ** 2 + (o.y - y) ** 2 < r * r) return false; }
+    for (const t of this.towers) if (t.alive) { const r = ((TOWER_SOLID_M[t.data.id] ?? SOLID_M.tower) + BODY_M) * k; if ((t.x - x) ** 2 + (t.y - y) ** 2 < r * r) return false; }
+    for (const b of this.buildings) if (b.alive) { const h = ((b.isHQ ? SOLID_M.hqHalf : SOLID_M.padHalf) + BODY_M) * k; if (Math.abs(b.x - x) < h && Math.abs(b.y - y) < h) return false; }
     // t101b: parked Raider Buggies / Bulwark Scorpions are solid. A body already overlapping one (spawned / just stepped out) may only move outward.
     if (this.parked.length) { const d = this.parkedDepth(x, y); if (d > 0 && (fx == null || fy == null || d >= this.parkedDepth(fx, fy) - 1e-6)) return false; }
     return true;

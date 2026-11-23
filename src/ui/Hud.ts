@@ -587,14 +587,14 @@ export class Hud {
     btn.onclick = (ev) => { ev.stopPropagation(); const open = more.hidden; more.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.classList.toggle('on', open); };
     document.addEventListener('pointerdown', (ev) => { if (!more.hidden && !more.contains(ev.target as Node) && ev.target !== btn) close(); });
     sp.onclick = () => { const order = [1, 2, 4]; this.g.speed = order[(order.indexOf(this.g.speed) + 1) % order.length] ?? 1; };
-    const mq = window.matchMedia('(max-width: 820px)');
+    const mq = window.matchMedia('(max-width: 820px)'), mid = window.matchMedia('(min-width: 821px) and (max-width: 1600px)');
     const apply = () => {
-      const phone = mq.matches;
-      btn.hidden = !phone; sp.hidden = !phone; document.body.classList.toggle('hud-compact', phone);
+      const phone = mq.matches, m = mid.matches; // t108: mid-size desktops (1280..1600) swap 1x/2x/4x for the single cycle button
+      btn.hidden = !phone; sp.hidden = !phone && !m; document.body.classList.toggle('hud-compact', phone); document.body.classList.toggle('hud-mid', m);
       if (phone) for (const e of items) more.appendChild(e);
       else { items.forEach((e, i) => marks[i].after(e)); close(); }
     };
-    mq.addEventListener('change', apply); apply();
+    mq.addEventListener('change', apply); mid.addEventListener('change', apply); apply();
   }
 
 }

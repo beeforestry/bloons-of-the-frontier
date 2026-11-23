@@ -109,10 +109,12 @@ export const BLOON_GLB_IDS = ['red', 'blue', 'green', 'yellow', 'pink', 'lead', 
 /** t77: Vanguard deployable troops -> one Blender GLB per (unit, tier), modelled on public/assets/v3/<id>_<tier>.webp.
  *  Code ids stay unsc-era (marine/odst/spartan/warthog/scorpion); display names are Frontier Marines, Orbital Drop
  *  Troopers, Aegis Operative, Raider Buggy, Bulwark Scorpion. Infantry are instanced; the two vehicles are clones. */
-export const UNIT_GLB_IDS = ['marine', 'odst', 'spartan', 'warthog', 'scorpion'] as const;
+export const UNIT_GLB_IDS = ['marine', 'odst', 'spartan', 'warthog', 'scorpion', 'farmhand'] as const;
+/** t108: the free Sprout Farmhand collector (farmhand_0 Farmhand / farmhand_1 Foreman sprites) has 2 tiers. */
+const UNIT_GLB_TIERS: Record<string, number> = { farmhand: 2 };
 export const UNIT_GLB_VEHICLES = new Set<string>(['warthog', 'scorpion']);
 export function unitGlb(id: string, tier: number): string | undefined {
-  return (UNIT_GLB_IDS as readonly string[]).includes(id) ? `unit_${id}_${Math.max(0, Math.min(2, tier))}` : undefined;
+  return (UNIT_GLB_IDS as readonly string[]).includes(id) ? `unit_${id}_${Math.max(0, Math.min((UNIT_GLB_TIERS[id] ?? 3) - 1, tier))}` : undefined;
 }
 
 /** t77: first-person viewmodel guns for the Vanguard troops, built from the same Blender parts as their world models.

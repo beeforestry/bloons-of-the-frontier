@@ -3,6 +3,7 @@
 // co-op safe): this module only renders a lazy three.js view of the current entities and feeds
 // aim / fire / move input into the possessed entity's ManualCtl (Game.possessCtl).
 import * as THREE from 'three';
+import { walkBox, walkMaterial, WALK_GLB, strideM } from './walk3d';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import './possess.css';
 import type { FpSfxName, Game } from '../game/Game';
@@ -190,7 +191,15 @@ export class Possess {
   hits = 0; shots = 0; private lastShot = -1; private hitT = 0; private sendT = 0; private sentFire = false;
   private bloonMeshes = new Map<string, THREE.InstancedMesh>(); private bloonMesh!: THREE.InstancedMesh; private bugMesh!: THREE.InstancedMesh; private unitMesh!: THREE.InstancedMesh; private shotMesh!: THREE.InstancedMesh; private acidMesh!: THREE.InstancedMesh; private poolMesh!: THREE.InstancedMesh; private bitMesh!: THREE.InstancedMesh;
   /** t76: per-enemy-type instanced GLB sets (one InstancedMesh per GLB primitive, shared matrices) + boss/blimp templates. */
-  private enemySets = new Map<string, { parts: THREE.InstancedMesh[]; n: number; cap: number; glb: string }>(); private bossTpl = new Map<string, THREE.Group>();
+  private enemySets = new Map<string, { parts: THREE.InstancedMesh[]; n: number; cap: number; glb: string; walk?: THREE.InstancedBufferAttribute; biped?: boolean }>();
+  /** t108: per-enemy gait phase (radians) from the distance walked; vm.walk = test hook. */
+  private walkPh = new Map<Enemy, { x: number; y: number; ph: number }>();
+  private walkPhase(e: Enemy, k: number, biped: boolean) {
+    let w = this.walkPh.get(e); if (!w) { w = { x: e.x, y: e.y, ph: (e.uid * 1.37) % 6.283 }; this.walkPh.set(e, w); }
+    const d = Math.min(2, Math.hypot(e.x - w.x, e.y - w.y) * S); w.x = e.x; w.y = e.y; w.ph += (d / strideM(k, biped)) * Math.PI * 2;
+    if (this.walkPh.size > 1500) for (const q of this.walkPh.keys()) if (!q.alive) this.walkPh.delete(q);
+    return w.ph;
+  } private bossTpl = new Map<string, THREE.Group>();
   private bossModels = new Map<Enemy, THREE.Group>(); private towerModels = new Map<Tower, { root: THREE.Group; head: THREE.Group; veh?: 'tank' | 'heli' | 'destroyer' | 'beacon'; tier?: number; model?: THREE.Group; base?: number }>();
   private unitVeh = new Map<Unit, { g: THREE.Group; ang: number; x: number; y: number; glb?: string }>();
   /** t77: Vanguard troop GLBs — per (unit, tier) instanced sets for infantry, clone templates for Raider / Scorpion (lazy, on first sight). */
@@ -198,7 +207,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo };
+  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 } };
   /** 2026-11-19 living ocean (src/fps/ocean.ts): Gerstner swell + fresnel + shore foam; vm.ocean = test hook. */
   ocean: Ocean | null = null;
   /** 2026-11-23 cliff spray (src/fps/spray.ts): swell-timed white water on cliffs / sea walls / riprap; vm.spray = test hook. */
@@ -234,6 +243,9 @@ export class Possess {
     this.pinQ = !!fq; // an explicit ?fpq= disables the automatic downgrade
     setMatQuality({ high: 2, medium: 1, low: 0 }[this.vm.quality]);
     this.root.appendChild(this.renderer.domElement);
+    // t108: a shader that fails to link on the player's GPU (e.g. more samplers than MAX_TEXTURE_IMAGE_UNITS) used to make the
+    // Isla de Cabras fine ground silently vanish ("no floor"). Count failures; the fine-ground material falls back to plain Lambert.
+    this.renderer.debug.onShaderError = (gl, prog) => { this.vm.shaderErrors = (this.vm.shaderErrors ?? 0) + 1; console.warn('[possess] shader link failed:', (gl.getProgramInfoLog(prog) ?? '').slice(0, 240)); };
     // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
     this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; if (this.composer) this.composer.setSize(innerWidth, innerHeight); });
@@ -422,7 +434,7 @@ export class Possess {
     setFineHeights(g.map.id, (x, y) => cabrasH(f, x, y)); this.fort = f;
     const step = this.vm.quality === 'high' ? 1 : 2;
     const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
-    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, f.fl, { win: CABRAS, ext: true, skipBelow: -3.2, quadBelow: -1.5 }); mesh.name = 'cabras3d'; this.scene.add(mesh);
+    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, f.fl, { win: CABRAS, ext: true, skipBelow: -3.2, quadBelow: -1.5 }); mesh.name = 'cabras3d'; this.scene.add(mesh); this.fineMesh = mesh;
     const geo = this.floorGeo, T = g.map.terrain!;
     if (geo) { // sink the 3 m lidar floor under the fine window (its border ring keeps the seam closed)
       const pos = geo.attributes.position as THREE.BufferAttribute, x0 = CABRAS.x0 * S, z0 = CABRAS.y0 * S, x1 = (CABRAS.x0 + (CABRAS.cols - 1) * CABRAS.step) * S, z1 = (CABRAS.y0 + (CABRAS.rows - 1) * CABRAS.step) * S;
@@ -447,7 +459,7 @@ export class Possess {
     this.fort = f; setFineHeights(g.map.id, (x, y) => fortH(f, x, y));
     const step = this.vm.quality === 'high' ? 1 : 2;
     const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
-    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, lay.fl); this.scene.add(mesh); mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
+    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, lay.fl); this.scene.add(mesh); this.fineMesh = mesh; mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
     // sink the coarse lidar floor under the fort window (keep its border ring so the seam stays closed)
     const geo = this.floorGeo, T = g.map.terrain!;
     if (geo) {
@@ -669,8 +681,14 @@ export class Possess {
         } else {
           const parts = await loadGlbParts(glb); if (!this.alive || !parts.length) return;
           const cap = glb.startsWith('bloon_') ? 200 : 300;
-          const meshes = parts.map((p) => { const im = new THREE.InstancedMesh(p.geometry, p.material, cap); im.count = 0; im.frustumCulled = false; im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3); this.scene.add(im); return im; });
-          this.enemySets.set(id, { parts: meshes, n: 0, cap, glb });
+          const gait = WALK_GLB[glb], box = gait ? walkBox(parts.map((p) => p.geometry)) : null; // t108: legged bugs walk
+          const walk = gait ? new THREE.InstancedBufferAttribute(new Float32Array(cap), 1) : undefined;
+          const meshes = parts.map((p) => {
+            if (walk) p.geometry.setAttribute('aWalk', walk);
+            const im = new THREE.InstancedMesh(p.geometry, gait ? walkMaterial(p.material as THREE.Material, box!, gait === 'biped') : p.material, cap); im.count = 0; im.frustumCulled = false; im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3); this.scene.add(im); return im;
+          });
+          this.enemySets.set(id, { parts: meshes, n: 0, cap, glb, walk, biped: gait === 'biped' });
+          if (gait) this.vm.walk.sets++;
         }
         this.vm.towers3d['glb_' + glb] = 1;
       } catch (err) { console.warn('glb enemy', glb, err); }
@@ -701,6 +719,13 @@ export class Possess {
     if (m) { this.scene.remove(m); this.bossModels.delete(e); } // procedural placeholder -> GLB now loaded
     if (tpl) {
       m = new THREE.Group(); const c = tpl.clone(true); m.add(c); m.userData.glb = ENEMY_GLB[e.data.id];
+      const gait = WALK_GLB[m.userData.glb as string];
+      if (gait) { // t108: own leg-warp materials per boss (phase uniform)
+        const ms: THREE.Mesh[] = []; c.updateMatrixWorld(true); c.traverse((o) => { if ((o as THREE.Mesh).isMesh) ms.push(o as THREE.Mesh); });
+        const box = walkBox(ms.map((x) => x.geometry.clone().applyMatrix4(x.matrixWorld))), us: { value: number }[] = [];
+        for (const x of ms) { const wm = walkMaterial(Array.isArray(x.material) ? x.material[0] : x.material, box, gait === 'biped'); x.material = wm; us.push(wm.userData.walkU); }
+        m.userData.walkU = us; m.userData.biped = gait === 'biped'; this.vm.walk.bosses++;
+      }
       this.scene.add(m); this.bossModels.set(e, m); return m;
     }
     m = new THREE.Group(); const col = enemyCol(e) || (BOSS_COL[e.data.id] ?? 0x8a3fd8);
@@ -922,8 +947,34 @@ export class Possess {
       const bg = this.scene.background; this.scene.background = null;
       c.layers.set(1); r.autoClear = false; r.clearDepth(); r.render(this.scene, c); c.layers.set(0); this.scene.background = bg;
     }
+    if (this.fineMesh && this.fineOk == null) this.checkFine();
     this.raf = requestAnimationFrame(this.loop);
   };
+  /** t108: the fine El Morro / Isla de Cabras ground mesh + whether its custom shader linked (null = not drawn yet). */
+  private fineMesh: THREE.Group | null = null; private fineOk: boolean | null = null;
+  private checkFine() {
+    let mat: THREE.Material | null = null; this.fineMesh!.traverse((o) => { if (!mat && (o as THREE.Mesh).isMesh) mat = (o as THREE.Mesh).material as THREE.Material; });
+    if (!mat) return;
+    const prog = (this.renderer.properties.get(mat) as { currentProgram?: { diagnostics?: { runnable: boolean } } }).currentProgram;
+    if (!prog) return; // not compiled yet
+    this.fineOk = prog.diagnostics?.runnable !== false;
+    if (!this.fineOk) { // plain photo-draped ground: no detail textures, but the player always has a floor
+      const plain = new THREE.MeshLambertMaterial({ map: this.groundPhoto });
+      this.fineMesh!.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = plain; });
+      console.warn('[possess] fine ground shader failed -> plain material');
+    }
+    this.vm.fineOk = this.fineOk;
+  }
+  /** t108 test hook: most texture samplers any linked program uses vs the GPU limit. */
+  samplerAudit() {
+    const gl = this.renderer.getContext(); let max = 0, name = '';
+    for (const p of (this.renderer.info.programs ?? []) as unknown as { program: WebGLProgram; name: string }[]) {
+      const n = gl.getProgramParameter(p.program, gl.ACTIVE_UNIFORMS) as number; let k = 0;
+      for (let i = 0; i < n; i++) { const u = gl.getActiveUniform(p.program, i); if (u && (u.type === gl.SAMPLER_2D || u.type === gl.SAMPLER_CUBE || u.type === 0x8B62 /* SAMPLER_2D_SHADOW */ || u.type === 0x8DC1 /* 2D_ARRAY */ || u.type === 0x8B5F /* 3D */)) k += u.size; }
+      if (k > max) { max = k; name = p.name; }
+    }
+    return { max, name, limit: gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number, fineOk: this.fineOk, errors: this.vm.shaderErrors ?? 0 };
+  }
   private governor() {
     if (this.fps < 45) this.slow++; else this.slow = Math.max(0, this.slow - 1);
     if (!this.pinQ && this.slow >= 3 && this.fps < 24 && this.vm.quality !== 'low') { if (this.composer) this.dropPost(); else this.dropToLow(); this.slow = 0; return; }
@@ -1162,6 +1213,7 @@ export class Possess {
         // t76: walker GLBs stand on the ground; centred blimp/flyer GLBs float high enough not to clip terrain
         const yy = !glb ? y : CENTRED_GLB.has(glb) ? Math.max(y, gh + 1.25 * k) : gh;
         m.position.set(x, yy, z); m.rotation.set(0, -e.ang, 0); m.scale.setScalar(k);
+        if (m.userData.walkU) { const ph = this.walkPhase(e, k, !!m.userData.biped); for (const u of m.userData.walkU as { value: number }[]) u.value = ph; }
         if (glb) eg[id] = glb;
         this.seen.set(e, { x, y, z, c: BOSS_COL[id] ?? 0x8a3fd8 }); continue;
       }
@@ -1175,6 +1227,7 @@ export class Possess {
         } else {
           const k = Math.max(0.6, e.data.radius * SZ * 1.6);
           D.position.set(x, gh, z); D.rotation.set(0, -e.ang, 0); D.scale.setScalar(k);
+          if (set.walk) set.walk.setX(set.n, this.walkPhase(e, k, !!set.biped));
           this.seen.set(e, { x, y: gh + 0.5, z, c: enemyCol(e) });
         }
         D.updateMatrix(); const tn = elemTint(e); this.tmpC.setHex(tn ?? 0xffffff); for (const im of set.parts) { im.setMatrixAt(set.n, D.matrix); im.setColorAt(set.n, this.tmpC); }
@@ -1205,7 +1258,7 @@ export class Possess {
     this.bloonMesh.count = (this.bloonMesh.userData._n as number) || 0; this.bloonMesh.userData._n = 0;
     this.bloonMesh.instanceMatrix.needsUpdate = true; if (this.bloonMesh.instanceColor) this.bloonMesh.instanceColor.needsUpdate = true;
     this.bugMesh.count = ng;
-    for (const set of this.enemySets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; } set.n = 0; }
+    for (const set of this.enemySets.values()) { for (const im of set.parts) { im.count = set.n; im.visible = set.n > 0; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; } if (set.walk) set.walk.needsUpdate = true; set.n = 0; }
     this.vm.enemyGlb = eg;
     this.bugMesh.instanceMatrix.needsUpdate = true;
     if (this.bugMesh.instanceColor) this.bugMesh.instanceColor.needsUpdate = true;
@@ -1222,7 +1275,7 @@ export class Possess {
     let nu = 0; const ug: Record<string, string[]> = {};
     for (const u of g.units) {
       if (!u.alive || u.garrison || u === me || nu >= 300) continue;
-      if (!this.isBug && (u.x - me.x) ** 2 + (u.y - me.y) ** 2 < 26 * 26) continue; // don't block the camera
+      if (!this.isBug && (u.x - me.x) ** 2 + (u.y - me.y) ** 2 < (1.3 / S) ** 2) continue; // don't block the camera (t108: metres, was 26 px = 3.25 m on the 0.125 m/px maps)
       const uid = u.squad.data.id, glb = unitGlb(uid, g.unitTier(uid));
       if (u.squad.data.vehicle) { this.vehicleUnit(u, dt); const vg = this.unitVeh.get(u)?.glb; if (vg) (ug[uid] ??= []).includes(vg) || ug[uid].push(vg); continue; }
       D.position.set(u.x * S, standH(g.map, u.x, u.y), u.y * S); D.rotation.set(0, u.facing > 0 ? 0 : Math.PI, 0); D.scale.setScalar(1); D.updateMatrix();
