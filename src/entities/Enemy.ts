@@ -309,11 +309,11 @@ export class Enemy {
   private reward(g: Game, d: EnemyData) {
     g.res.add(d.bounty * g.bountyMul);
     g.stats.kills++;
-    if (d.bossKit) { g.stats.bossKills++; g.toast(`💀 ${d.name} destroyed!`, '#ffd84a'); g.shake(18); g.fx({ kind: 'boom', x: this.x, y: this.y, r: d.size * 0.7, dur: 0.9 }); g.sfx('explosion', this.x, this.y); g.voice('Target down! Outstanding!'); }
+    if (d.bossKit) { g.stats.bossKills++; g.toast(`💀 ${d.name} destroyed!`, '#ffd84a'); g.shake(18); g.fx({ kind: 'boom', x: this.x, y: this.y, r: d.size * 0.7, dur: 0.9 }); g.voice('Target down! Outstanding!'); }
     g.stats.layers = (g.stats.layers ?? 0) + 1;
     this.lastSrc?.addXp?.(d.boss ? 10 : d.heavy ? 3 : 1);
     if (d.scrap) g.spawnPickup(this.x + rand(-8, 8), this.y + rand(-8, 8), d.scrap, 'scrap');
-    g.sfx(d.family === 'bloon' ? 'pop' : 'splat');
+    g.sfx2dDeath(d.bossKit || d.boss ? 'boss' : this.deathCause());
     g.fx({ kind: d.family === 'bloon' ? 'pop' : 'splat', x: this.x, y: this.y, r: d.size * 0.5, color: d.color, dur: d.boss ? 0.7 : 0.3 });
     if (d.dropChance && Math.random() < d.dropChance) g.spawnPickup(this.x, this.y, d.boss ? 60 : 10 + Math.round(d.bounty));
   }
