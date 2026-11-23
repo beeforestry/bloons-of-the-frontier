@@ -10,6 +10,7 @@ export class PauseMenu {
   constructor(readonly g: Game, resume: () => void) {
     this.el = document.createElement('div'); this.el.id = 'pause-menu'; this.el.hidden = true;
     this.el.innerHTML = `<h2>⏸ Paused</h2>
+      <div class="pm-brief" id="pm-brief"></div>
       <button class="btn go" id="pm-resume">▶ Resume</button>
       <div class="pm-set"><span>📳 Screen shake</span><div class="seg" id="pm-shake">${(['full', 'reduced', 'off'] as const).map((v) => `<button class="btn small" data-shake="${v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div>
       <div class="pm-set"><span>⚡ Reduce flashing</span><div class="seg" id="pm-flash"><button class="btn small" data-flash="0">Off</button><button class="btn small" data-flash="1">On</button></div></div>
@@ -38,5 +39,9 @@ export class PauseMenu {
   update() {
     const want = this.g.paused && this.g.state === 'playing';
     if (want !== this.shown) { this.shown = want; this.el.hidden = !want; }
+    if (want) {
+      const b = this.el.querySelector('#pm-brief');
+      if (b) b.textContent = this.g.briefStatus();
+    }
   }
 }

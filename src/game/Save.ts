@@ -18,6 +18,9 @@ export interface SaveData {
   unitTiers: Record<string, number>; armory: string[];
   /** t106 Overload Core level. */
   ov?: number;
+  /** t109 one-wave contract + Overload Routing. */
+  ct?: string;
+  or?: string;
   towers: { id: string; c: number; r: number; x?: number; y?: number; tier: number; tg: TargetingMode; fu?: number; br?: number }[];
   buildings: { pad: number; id: string; tier: number }[];
   squads: { id: string; x: number; y: number; n: number; auto: boolean; tg: TargetingMode }[];
@@ -29,7 +32,7 @@ export function snapshot(g: Game, diff: DifficultyId): SaveData {
   return {
     v: SAVE_V, at: Date.now(), map: g.map.id, mapW: g.map.width, mapH: g.map.height, diff,
     wave: g.waves.index, freeplay: g.waves.freeplay, credits: Math.floor(w.credits), scrap: Math.floor(w.scrap), energy: g.energy, hq: Math.ceil(g.hq.health.hp),
-    unitTiers: { ...g.unitTiers }, armory: [...g.armory], ov: g.overload,
+    unitTiers: { ...g.unitTiers }, armory: [...g.armory], ov: g.overload, ct: g.contract, or: g.overloadRoute,
     towers: g.towers.filter((t) => t.alive).map((t) => ({ id: t.data.id, c: t.cell.c, r: t.cell.r, x: Math.round(t.x), y: Math.round(t.y), tier: t.tier, tg: t.targeting, ...(t.fused ? { fu: 1 } : {}), ...(t.branch != null ? { br: t.branch } : {}) })),
     buildings: g.buildings.filter((b) => b.alive && b.built && b.pad).map((b) => ({ pad: g.pads.indexOf(b.pad!), id: b.data.id, tier: b.tier })).filter((b) => b.pad >= 0),
     squads: g.squads.filter((s) => s.alive).map((s) => { const c = s.center; return { id: s.data.id, x: Math.round(c.x), y: Math.round(c.y), n: s.units.filter((u) => u.alive).length, auto: s.auto, tg: s.targeting }; }),
@@ -83,6 +86,8 @@ export function applySave(g: Game, s: SaveData) {
   for (const a of s.armory ?? []) g.armory.add(a as never);
   g.waves.freeplay = !!s.freeplay; g.waves.skipTo(s.wave + 1);
   g.overload = Math.max(0, s.ov ?? 0) | 0;
+  if (s.ct === 'sky' || s.ct === 'plate' || s.ct === 'supply' || s.ct === 'neutral') g.contract = s.ct;
+  if (s.or === 'balanced' || s.or === 'sky' || s.or === 'plated' || s.or === 'rush') g.overloadRoute = s.or;
   g.energy = s.energy ?? g.energy; g.hq.health.hp = Math.max(1, Math.min(g.hq.health.max, s.hq));
   g.res.load({ credits: s.credits, scrap: s.scrap }, true);
   g.effects.length = 0;

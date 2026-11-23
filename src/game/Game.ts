@@ -12,7 +12,8 @@ import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
 import { PROX, updateProximity } from '../systems/Proximity';
 import { DEATH_TUNE, type DeathEvent } from '../systems/Deaths';
-import { BOOST_HP, CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadMul } from '../systems/Boosts';
+import { BOOST_HP, CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadRouteMul, routingUnlocked, type OverloadRoute } from '../systems/Boosts';
+import { CONTRACT_BY_ID, SUPPLY_FARM, SUPPLY_WAVE_BONUS, briefUnlocked, contractTowerMul, contractsUnlocked, threatClass, type ContractId } from '../systems/Contracts';
 import { recipeFor, recipeFee, discover, type Recipe } from '../data/recipes';
 import { UNITS, unitById } from '../data/units';
 import { ENEMIES } from '../data/enemies';
@@ -237,6 +238,7 @@ export class Game {
     this.waves = new WaveManager(buildWaves(diff.waves), diff.hp, diff.count, diff.late);
     this.waves.boostHp = BOOST_HP[diff.id] ?? 0; // t106
     this.waves.mapEase = MAP_EASE[map.id] ?? 1;
+    this.waves.mapId = map.id;
     this.res = new ResourceManager(this.bus, diff.cash ?? START_CREDITS);
     this.grid = new PlacementSystem<Tower>(map);
     const lanes = map.lanes?.length ? map.lanes : [map.waypoints];
@@ -731,7 +733,7 @@ export class Game {
     const kind = tw.data.projectile ?? 'dart';
     const muzzle = { x: tw.x + Math.cos(tw.aim) * 18, y: tw.y - 14 + Math.sin(tw.aim) * 12 };
     // t106: Overload Core (+5% damage per level) + wave-scaling crit (×CRIT.mul)
-    const om = overloadMul(this.overload); if (om !== 1) c = { ...c, damage: c.damage * om, specialDamage: c.specialDamage != null ? c.specialDamage * om : undefined };
+    // t109: Overload (incl. Routing) + contracts apply per-target in Enemy.takeDamage via towerDmgMul()
     const crit = Math.random() < critChance(this.waves.index); if (crit) this.stats.crits++;
     const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
     // t103 element status + heavy-impact flag (Shatter); the tank's roof MG (secondary) carries neither
@@ -1123,7 +1125,54 @@ export class Game {
   voice(line: string) { this.voiceHook(line); }
   onWaveEnd() {
     for (const t of this.towers) if (t.alive && t.farm && !t.disabled) t.farm.onWaveEnd(t, this);
-    for (const b of this.buildings) if (b.built && b.t.stats.waveBonus) { this.res.add(b.t.stats.waveBonus); this.stats.supplyIncome += b.t.stats.waveBonus; this.fx({ kind: 'text', x: b.x, y: b.y - 60, text: `+${b.t.stats.waveBonus}`, color: '#ffe14d', dur: 1.4 }); }
+    for (const b of this.buildings) if (b.built && b.t.stats.waveBonus) {
+      const n = Math.round(b.t.stats.waveBonus * this.incomeMul());
+      this.res.add(n); this.stats.supplyIncome += n; this.fx({ kind: 'text', x: b.x, y: b.y - 60, text: `+${n}`, color: '#ffe14d', dur: 1.4 });
+    }
+  }
+  /** t109: lock the picked (or Neutral) contract for the wave that just started. */
+  onWaveStart() { /* contract already set; Auto Waves keeps Neutral if nobody picked */ }
+  /** t109: contracts last one wave, then reset to Neutral. */
+  onWaveContractClear() { this.contract = 'neutral'; }
+
+  /** Next wave number (1-based), even mid-wave (the one after the wave in progress). */
+  get nextWaveNum() { return this.waves.index + 1; }
+  incomeMul() { return this.contract === 'supply' ? SUPPLY_FARM : 1; }
+  waveBonusMul() { return this.contract === 'supply' ? SUPPLY_WAVE_BONUS : 1; }
+  /** Combined tower damage multiplier (Overload Routing × one-wave contract) vs this enemy. */
+  towerDmgMul(e: { data: import('../core/types').EnemyData }): number {
+    return contractTowerMul(this.contract, e.data) * overloadRouteMul(this.overload, this.overloadRoute, threatClass(e.data));
+  }
+  briefUnlocked() { return briefUnlocked(this.nextWaveNum); }
+  contractsUnlocked() { return contractsUnlocked(this.nextWaveNum); }
+  routingUnlocked() { return routingUnlocked(this.nextWaveNum, this.overload); }
+  briefStatus() {
+    const ct = CONTRACT_BY_ID[this.contract].name;
+    const ov = this.overload ? `Overload ${this.overloadRoute[0].toUpperCase() + this.overloadRoute.slice(1)} Lv ${this.overload}` : 'Overload off';
+    const w = this.waves.active ? `Wave ${this.waves.current}` : `Next wave ${this.nextWaveNum}`;
+    return `${w} · ${ct} · ${ov}`;
+  }
+  /** Pick a one-wave contract between waves (no-op during a wave or before unlock). Networked (G_METHODS). */
+  setContract(id: ContractId): boolean {
+    if (this.waves.active) { this.toast('Contracts lock in when the wave starts', '#ff8a7a'); return false; }
+    if (!this.contractsUnlocked()) { this.toast('Contracts unlock at wave 21', '#ff8a7a'); return false; }
+    if (!CONTRACT_BY_ID[id]) return false;
+    this.contract = id;
+    const d = CONTRACT_BY_ID[id];
+    this.toast(id === 'neutral' ? 'Neutral — no contract this wave' : `${d.name}: ${d.short}`, '#ffe14d');
+    return true;
+  }
+  /** Change Overload Routing between waves once unlocked. Networked (G_METHODS). */
+  setOverloadRoute(route: OverloadRoute): boolean {
+    if (this.waves.active) { this.toast('Overload Routing can only change between waves', '#ff8a7a'); return false; }
+    if (!this.routingUnlocked()) { this.toast('Overload Routing unlocks at wave 31 with Overload Core Lv 4+', '#ff8a7a'); return false; }
+    if (!['balanced', 'sky', 'plated', 'rush'].includes(route)) return false;
+    this.overloadRoute = route;
+    const pct = (cls: 'sky' | 'plated' | 'rush') => Math.round((overloadRouteMul(this.overload, route, cls) - 1) * 100);
+    this.toast(route === 'balanced'
+      ? `⚙ Routing: Balanced (+${pct('rush')}% all classes)`
+      : `⚙ Routing: ${route[0].toUpperCase() + route.slice(1)} (+${pct(route)}% ${route} / +${pct(route === 'sky' ? 'rush' : 'sky')}% others)`, '#7fd3ff');
+    return true;
   }
 
   // ------------------------------------------------------------------ player actions
@@ -1609,6 +1658,10 @@ export class Game {
   private proxT = 0;
   // ------------------------------------------------------------------ t106 Overload Core + Rage (team-wide, synced)
   overload = 0;
+  /** t109 Overload Routing (Balanced until the player picks Sky / Plated / Rush). */
+  overloadRoute: OverloadRoute = 'balanced';
+  /** t109 one-wave contract (Neutral by default / Auto Waves). */
+  contract: ContractId = 'neutral';
   rageT = 0;
   rageCd = 0;
   /** Global attack-speed multiplier (Rage). */
@@ -1620,7 +1673,7 @@ export class Game {
     const cost = overloadCost(this.overload);
     if (!this.res.spend({ credits: cost })) { this.toast(`Overload Core costs ¢${cost}`, '#ff8a7a'); this.sfx('error'); return false; }
     this.overload++; this.stats.overloads++;
-    this.toast(`⚙ Overload Core Lv ${this.overload}: towers +${Math.round(OVERLOAD.dmgPer * this.overload * 100)}% damage`, '#7fd3ff');
+    this.toast(`⚙ Overload Core Lv ${this.overload}: towers +${Math.round(OVERLOAD.dmgPer * this.overload * 100)}% damage` + (this.routingUnlocked() ? ' (Routing unlocked — change between waves)' : ''), '#7fd3ff');
     this.fx({ kind: 'ring', x: this.hq.x, y: this.hq.y, r: 120, color: '#7fd3ff', dur: 0.7 }); this.sfx2dCue('overload-level');
     return true;
   }

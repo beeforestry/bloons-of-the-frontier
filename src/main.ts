@@ -389,7 +389,7 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   let possessing = false;
   const enterFP = (o: Parameters<NonNullable<typeof hud.onPossess>>[0] | Unit | Enemy) => {
     if (possessing) return; possessing = true;
-    g.toast(ov ? '🎯 Deploying…' : '👁 Loading first-person view…', '#7fe8ff');
+    g.toast(ov ? '🎯 Deploying…' : `👁 ${g.briefStatus()}`, '#7fe8ff');
     import('./fps/Possess').then((m) => { const p = m.possess({ g, onExit: () => { possessing = false; keys.clear(); hud.refresh(true); ovUI?.onExitFP(); } }, o, { overrun: !!ov }); if (!p) possessing = false; })
       .catch((e) => { possessing = false; console.error('possess load failed', e); g.toast('Could not load the 3D view', '#ff8a6a'); });
   };
@@ -585,6 +585,21 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     boosts: () => ({ overload: g.overload, cost: overloadCost(g.overload), rageT: g.rageT, rageCd: g.rageCd, crit: g.critPct, rateMul: g.rateMul(), stats: { crits: g.stats.crits, kb: g.stats.knockbacks, rages: g.stats.rages } }),
     buyOverload: () => g.buyOverload(),
     rage: () => g.activateRage(),
+    // t109 Threat Brief / contracts / Overload Routing
+    threatBrief: () => {
+      const cur = g.waves.plan(g), next = g.waves.plan(g, g.waves.index + 1);
+      return { unlocked: g.briefUnlocked(), contracts: g.contractsUnlocked(), routing: g.routingUnlocked(),
+        contract: g.contract, route: g.overloadRoute, overload: g.overload, status: g.briefStatus(),
+        waves: [cur, next].filter(Boolean).map((p) => ({ wave: p!.wave, boss: p!.boss, hpMul: p!.hpMul,
+          groups: p!.groups.map((x) => ({ id: x.id, name: x.name, count: x.count, hp: x.hp, cls: x.cls, air: x.air, lanes: x.lanes })),
+          queue: p!.queue })) };
+    },
+    setContract: (id: string) => g.setContract(id as import('./systems/Contracts').ContractId),
+    setOverloadRoute: (id: string) => g.setOverloadRoute(id as import('./systems/Boosts').OverloadRoute),
+    towerDmgMul: (id: string) => { const d = ENEMIES[id]; return d ? g.towerDmgMul({ data: d }) : 1; },
+    setOverload: (n: number) => { g.overload = Math.max(0, n) | 0; },
+    incomeMul: () => g.incomeMul(),
+    waveBonusMul: () => g.waveBonusMul(),
     setTargeting: (i: number, m: string) => { const t = g.towers[i]; if (t) g.setTargeting(t, m as never); return t?.targeting; },
     pick: (i: number) => { const t = g.towers[i]; if (!t || !t.t.combat) return null; const f = { hitsAir: t.data.hitsAir ?? true, hitsGround: t.data.hitsGround ?? true, antiAir: !!t.data.antiAir }; const e = pickTarget(g.enemies, t, t.range(t.t.combat.range), t.targeting, f); return e ? e.uid : null; },
     predict: (uid: number, t: number) => { const e = g.enemies.find((x) => x.uid === uid); return e ? e.predict(g, t) : null; },

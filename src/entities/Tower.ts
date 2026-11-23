@@ -396,14 +396,14 @@ export class FarmTower {
     this.timer -= dt;
     if (this.timer <= 0) {
       this.timer = 60 / f.payoutsPerMin;
-      const v = Math.round(f.income * (1 + tw.buffs.totals.incomePct));
+      const v = Math.round(f.income * (1 + tw.buffs.totals.incomePct) * g.incomeMul());
       if (tw.data.bankCrates) { this.crates += v; g.fx({ kind: 'text', x: tw.x, y: tw.y - 34, text: '📦', color: '#ffe14d', dur: 0.6 }); return; }
       const a = Math.random() * Math.PI * 2;
       g.spawnPickup(tw.x + Math.cos(a) * 30, tw.y + 12 + Math.sin(a) * 18, v);
     }
   }
   onWaveEnd(tw: Tower, g: Game) {
-    const b = Math.round(tw.t.farm!.waveBonus * (1 + tw.buffs.totals.incomePct)) + this.crates;
+    const b = Math.round(tw.t.farm!.waveBonus * (1 + tw.buffs.totals.incomePct) * g.incomeMul()) + this.crates;
     if (this.crates) g.stats.bananaBank += this.crates;
     this.crates = 0;
     g.res.add(b);

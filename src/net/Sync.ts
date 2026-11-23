@@ -41,7 +41,7 @@ type Ref = { $: string; u?: number; i?: number; p?: number; x?: number; y?: numb
 
 /** Game methods that become network commands on a client (and permission-checked on the host). */
 const G_METHODS = ['placeTower', 'placeBarrier', 'sellTower', 'moveTower', 'cycleTargeting', 'setTargeting', 'deploySquad', 'moveSquad', 'moveGroup', 'patrolSquad', 'setStance',
-  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl', 'toggleVehicle', 'fuseTowers', 'fuseRecipe', 'buyOverload', 'activateRage'] as const;
+  'garrisonSquad', 'ungarrisonSquad', 'useAbility', 'researchUnit', 'buyArmory', 'buildOnPad', 'demolish', 'setRally', 'castPower', 'orderOrganizeFarms', 'demolishShortcut', 'startFreeplay', 'setAutoArmy', 'setSquadAuto', 'possessCtl', 'toggleVehicle', 'fuseTowers', 'fuseRecipe', 'buyOverload', 'activateRage', 'setContract', 'setOverloadRoute'] as const;
 /** Applied optimistically on the client too (instant response; the snapshot corrects). */
 const OPTIMISTIC = new Set(['possessCtl', 'moveSquad', 'moveGroup', 'moveTower', 'patrolSquad', 'setStance', 'setTargeting', 'cycleTargeting']);
 /** Proto methods (Tower / Building instances). */
@@ -438,6 +438,7 @@ export class Sync {
       A: [...g.armory],
       AA: g.autoArmy,
       CO: [g.overload, r1(g.rageT), r1(g.rageCd)],
+      CT: g.contract, OR: g.overloadRoute,
       V: this.versus ? this.versus.s : null,
       OV: g.overrun ? (g.overrun as unknown as { snapshot(): unknown }).snapshot() : null,
       AL: [...this.allowAlly].filter(([, v]) => v).map(([k]) => k),
@@ -473,6 +474,8 @@ export class Sync {
       g.armory.clear(); for (const a of s.A as string[]) g.armory.add(a as never);
       if (Array.isArray(s.AA)) g.autoArmy = (s.AA as boolean[]).map(Boolean);
       if (Array.isArray(s.CO)) { const co = s.CO as number[]; g.overload = co[0] | 0; g.rageT = +co[1] || 0; g.rageCd = +co[2] || 0; } // t106
+      if (s.CT === 'sky' || s.CT === 'plate' || s.CT === 'supply' || s.CT === 'neutral') g.contract = s.CT;
+      if (s.OR === 'balanced' || s.OR === 'sky' || s.OR === 'plated' || s.OR === 'rush') g.overloadRoute = s.OR;
       this.allowAlly.clear(); for (const p of s.AL as number[]) this.allowAlly.set(p, true);
       if (s.V) this.vs = s.V as Versus['s'];
       if (Array.isArray(s.DE)) this.replayDeaths(s.DE as unknown[][]); // t107 (before the vanished enemies are dropped)

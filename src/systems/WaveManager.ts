@@ -5,7 +5,7 @@
 import type { WaveData } from '../core/types';
 import type { Game } from '../game/Game';
 import { procWave } from '../data/waves';
-import { boostHpMul } from './Boosts';
+import { planWave, waveScale, type WavePlan } from './WavePreview';
 
 export class WaveManager {
   index = 0; // waves completed / index of next wave
@@ -20,6 +20,8 @@ export class WaveManager {
   mapEase = 1;
   /** t106: Capa-4 power offset (BOOST_HP of the difficulty). */
   boostHp = 0;
+  /** Map id used by planWave (Cabras-only 16–21 tweaks). */
+  mapId = '';
   constructor(readonly waves: WaveData[], readonly diffHp = 1, readonly diffCount = 1, readonly diffLate = 1) {}
   get total() { return this.waves.length; }
   get current() { return this.active ? this.index + 1 : this.index; }
@@ -29,30 +31,31 @@ export class WaveManager {
   get next(): WaveData | undefined { return this.wave(this.index); }
   /** Pending spawn ids (wave preview for the active wave). */
   pending() { return this.queue.map((q) => q.id); }
+  /** Lane-accurate pending queue (for Threat Brief / tests). */
+  pendingSpawns() { return this.queue.map((q) => ({ id: q.id, lane: q.lane, t: q.t })); }
+
+  /** Same spawn plan start() will (or did) use. `index` is 0-based. */
+  plan(g: Game, index = this.index): WavePlan | null {
+    const w = this.wave(index);
+    if (!w) return null;
+    return planWave({
+      mapId: this.mapId, index, wave: w, lanes: Math.max(1, g.paths.length),
+      diffHp: this.diffHp, diffCount: this.diffCount, diffLate: this.diffLate,
+      mapEase: this.mapEase, boostHp: this.boostHp,
+    });
+  }
 
   start(g: Game): boolean {
-    const w = this.wave(this.index);
-    if (this.active || !w || g.state !== 'playing') return false;
-    this.queue = [];
-    const sc = waveScale(this.index + 1), lanes = Math.max(1, g.paths.length);
-    // Hard/Impoppable HP bonus ramps in over the first 25 waves (no early-game wall: the
-    // sim showed fully-spent bots going broke by wave 9-10), full strength after that.
-    const ramp = Math.min(1, 0.35 + this.index / 25);
-    // t50: tougher + bigger waves on Medium/Hard, ramped in over waves 15-35 (early economy untouched)
-    const lr = Math.max(0, Math.min(1, (this.index - 14) / 20)), cm = 1 + (this.diffCount - 1) * lr;
-    this.hpMul = sc.hp * (this.diffHp > 1 ? 1 + (this.diffHp - 1) * ramp : this.diffHp) * (1 + (this.diffLate - 1) * lr) * this.mapEase * boostHpMul(this.boostHp, this.index);
-    w.groups.forEach((grp, gi) => {
-      const big = grp.count > 2, n = Math.round(grp.count * (big ? sc.count * cm : 1));
-      const spacing = grp.spacing / Math.sqrt(sc.count * (big ? cm : 1));
-      // spread spawns round-robin over every entry lane
-      for (let i = 0; i < n; i++) this.queue.push({ t: grp.delay + i * spacing, id: grp.enemy, lane: (gi + i) % lanes });
-    });
-    this.queue.sort((a, b) => a.t - b.t);
+    const planned = this.plan(g);
+    if (this.active || !planned || g.state !== 'playing') return false;
+    this.queue = planned.queue.map((q) => ({ t: q.t, id: q.id, lane: q.lane }));
+    this.hpMul = planned.hpMul;
     this.t = 0;
     this.active = true;
+    g.onWaveStart();
     g.bus.emit('wave', { wave: this.index + 1, total: this.total, active: true });
-    g.bus.emit('toast', { text: `${this.freeplay ? 'Freeplay wave' : 'Wave'} ${this.index + 1} incoming!${w.boss ? ' ⚠ BOSS WAVE' : ''}`, color: w.boss ? '#ff6b6b' : undefined });
-    if (w.boss) g.sfx('boss');
+    g.bus.emit('toast', { text: `${this.freeplay ? 'Freeplay wave' : 'Wave'} ${this.index + 1} incoming!${planned.boss ? ' ⚠ BOSS WAVE' : ''}`, color: planned.boss ? '#ff6b6b' : undefined });
+    if (planned.boss) g.sfx('boss');
     return true;
   }
   /** Debug / test: jump straight to wave n (1-based) without playing the ones before. */
@@ -67,19 +70,17 @@ export class WaveManager {
     while (this.queue.length && this.queue[0].t <= this.t) { const q = this.queue.shift()!; g.spawnEnemy(q.id, 0, 0, q.lane, this.hpMul); }
     if (!this.queue.length && !g.enemies.some((e) => e.alive)) {
       const w = this.wave(this.index)!;
+      const bonus = Math.round(w.bonus * g.waveBonusMul());
       this.active = false;
       this.index++;
-      g.res.add(w.bonus);
+      g.res.add(bonus);
       g.onWaveEnd();
+      g.onWaveContractClear();
       g.bus.emit('wave', { wave: this.index, total: this.total, active: false });
-      g.bus.emit('toast', { text: `Wave ${this.index} cleared! +${w.bonus}` });
+      g.bus.emit('toast', { text: `Wave ${this.index} cleared! +${bonus}` });
       if (this.index >= this.waves.length && !this.freeplay) g.win();
     }
   }
 }
 
-/** Ramp: HP and crowd scaling from wave 4; steeper HP past 40 and in freeplay (crowd capped for 60 FPS). */
-export function waveScale(wave: number) {
-  const k = Math.max(0, wave - 3), late = Math.max(0, wave - 40), fp = Math.max(0, wave - 100);
-  return { hp: 1 + 0.065 * k + 0.09 * late + 0.004 * fp * fp, count: Math.min(2.6, 1 + 0.035 * k) };
-}
+export { waveScale };

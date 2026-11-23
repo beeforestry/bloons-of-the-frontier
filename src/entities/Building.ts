@@ -112,9 +112,10 @@ export class Building {
       this.incomeT -= dt;
       if (this.incomeT <= 0) {
         this.incomeT = 60 / (s.payoutsPerMin ?? 10);
-        g.res.add(s.income);
-        g.stats.supplyIncome += s.income;
-        g.fx({ kind: 'text', x: this.x, y: this.y - 50, text: `+${s.income}`, color: '#ffe14d', dur: 1 });
+        const n = Math.round(s.income * g.incomeMul());
+        g.res.add(n);
+        g.stats.supplyIncome += n;
+        g.fx({ kind: 'text', x: this.x, y: this.y - 50, text: `+${n}`, color: '#ffe14d', dur: 1 });
       }
     }
     if (s.gun && !g.overrun) { // t78: the HQ gun stays silent in Overrun (survivors earn their own kills)

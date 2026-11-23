@@ -14,7 +14,9 @@ import { canFuseType, fusedTier, fusionFee } from '../data/fusion';
 import { specsFor, branchTier } from '../data/specs';
 import { recipeFee, isDiscovered, type Recipe } from '../data/recipes';
 import { proxLines } from '../systems/Proximity';
-import { OVERLOAD, RAGE, overloadCost } from '../systems/Boosts';
+import { OVERLOAD, OVERLOAD_ROUTES, RAGE, overloadCost, overloadRouteMul } from '../systems/Boosts';
+import { CONTRACTS, CONTRACT_BY_ID, type ContractId } from '../systems/Contracts';
+import { fmtHp, laneSplit, topThreats, type WavePlan } from '../systems/WavePreview';
 import { Faction, TARGETING_ORDER, TARGETING_LABEL, TARGETING_INFO, type AbilityId, type Stance, type TowerTier, type UnitTier } from '../core/types';
 import { ABILITIES } from '../data/abilities';
 import { ENEMIES } from '../data/enemies';
@@ -120,6 +122,7 @@ export class Hud {
     $('#btn-auto').onclick = () => { this.g.waves.auto = !this.g.waves.auto; };
     for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-speed]'))) b.onclick = () => { this.g.speed = +b.dataset.speed!; };
     this.compactTopbar();
+    this.bindBrief();
     $('#btn-pause').onclick = () => { const on = !this.g.paused; if (this.g.netPause) this.g.netPause(on); else this.g.paused = on; };
     $('#btn-organize').onclick = () => this.g.orderOrganizeFarms();
     this.buildPowers();
@@ -473,7 +476,13 @@ export class Hud {
     }
     { // t106 crit %, Overload level, Rage state
       const ce = $('#crit'); if (ce) ce.textContent = `${Math.round(g.critPct * 100)}%`;
-      const oe = $('#ovl'); if (oe) { oe.textContent = `Lv ${g.overload}`; oe.parentElement!.title = `Overload Core Lv ${g.overload}: towers +${Math.round(OVERLOAD.dmgPer * g.overload * 100)}% damage`; }
+      const oe = $('#ovl'); if (oe) {
+        const tag = g.overload && g.overloadRoute !== 'balanced' ? ` ${g.overloadRoute[0].toUpperCase() + g.overloadRoute.slice(1)}` : '';
+        oe.textContent = `Lv ${g.overload}${tag}`;
+        oe.parentElement!.title = g.overload
+          ? `Overload Core Lv ${g.overload} (${g.overloadRoute}): Sky +${Math.round((overloadRouteMul(g.overload, g.overloadRoute, 'sky') - 1) * 100)}% · Plated +${Math.round((overloadRouteMul(g.overload, g.overloadRoute, 'plated') - 1) * 100)}% · Rush +${Math.round((overloadRouteMul(g.overload, g.overloadRoute, 'rush') - 1) * 100)}%`
+          : 'Overload Core: +5% tower damage per level (buy it in the ability bar)';
+      }
       const oc = $('#ovl-cost'), ob = $<HTMLButtonElement>('#btn-overload');
       if (oc && ob) { const max = g.overload >= OVERLOAD.max, cost = overloadCost(g.overload); oc.textContent = max ? 'MAX' : `¢${cost}`; ob.classList.toggle('poor', max || g.res.credits < cost); $('.pn', ob).textContent = `Overload ${g.overload ? 'Lv ' + g.overload : ''}`.trim(); }
       const rb = $('#btn-rage');
@@ -483,8 +492,10 @@ export class Hud {
     $('#wave').textContent = g.waves.freeplay ? `Freeplay ${g.waves.current}` : `${g.waves.current}/${g.waves.total}`;
     $('#wave').parentElement!.classList.toggle('freeplay', g.waves.freeplay);
     const next = g.waves.next;
-    $('#wave-info').textContent = g.waves.active ? `${g.waves.remainingToSpawn} incoming · ${g.enemies.length} on field${g.allies.length ? ` · 🌀${g.allies.length} hypnotized` : ''}` : next ? `Next: ${describeWave(next)}` : 'All waves cleared';
+    const planned = !g.waves.active ? g.waves.plan(g) : null;
+    $('#wave-info').textContent = g.waves.active ? `${g.waves.remainingToSpawn} incoming · ${g.enemies.length} on field${g.allies.length ? ` · 🌀${g.allies.length} hypnotized` : ''}` : planned ? `Next: ${describePlan(planned)}` : next ? `Next: ${describeWave(next)}` : 'All waves cleared';
     this.wavePreview();
+    this.threatBrief();
     this.bossBar();
     const sb = $<HTMLButtonElement>('#btn-start'); sb.disabled = g.waves.active || g.state !== 'playing';
     $('#btn-auto').classList.toggle('on', g.waves.auto);
@@ -555,7 +566,8 @@ export class Hud {
   private wavePreview() {
     const el = document.getElementById('wave-preview'); if (!el) return;
     const g = this.g, w = g.waves.active ? null : g.waves.next;
-    const ids = g.waves.active ? g.waves.pending() : w ? w.groups.flatMap((gr) => Array(gr.count).fill(gr.enemy) as string[]) : [];
+    const planned = !g.waves.active ? g.waves.plan(g) : null;
+    const ids = g.waves.active ? g.waves.pending() : planned ? planned.queue.map((q) => q.id) : w ? w.groups.flatMap((gr) => Array(gr.count).fill(gr.enemy) as string[]) : [];
     const m = new Map<string, number>(); for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
     const sig = `${g.waves.active}|${g.waves.index}|${[...m].map(([k, v]) => k + v).join()}`;
     if (el.dataset.sig === sig) return; el.dataset.sig = sig;
@@ -576,6 +588,75 @@ export class Hud {
     const k = b.data.bossKit!, phases = k.frenzy ? 3 : 2;
     el.innerHTML = `<div class="bb-name">💀 ${b.data.name} <span>PHASE ${b.bossPhase}/${phases}${b.bossPhase === 1 ? ' · plated + shielded' : b.bossPhase === 2 ? ' · reinforcements + attacks' : ' · FRENZY'}</span></div>
       <div class="bb-bar"><i class="bb-hp" style="width:${(b.hp / b.maxHp) * 100}%"></i>${b.maxShield ? `<i class="bb-sh" style="width:${(b.shield / b.maxShield) * 100}%"></i>` : ''}<s style="left:50%"></s>${k.frenzy ? '<s style="left:20%"></s>' : ''}</div>`;
+  }
+  private bindBrief() {
+    const chip = document.getElementById('tb-chip'), panel = document.getElementById('threat-brief');
+    if (!chip || !panel) return;
+    chip.onclick = (ev) => { ev.stopPropagation(); const on = panel.classList.toggle('open'); chip.classList.toggle('on', on); chip.setAttribute('aria-expanded', String(on)); };
+    document.addEventListener('pointerdown', (ev) => {
+      if (!panel.classList.contains('open')) return;
+      const t = ev.target as Node;
+      if (panel.contains(t) || chip.contains(t)) return;
+      panel.classList.remove('open'); chip.classList.remove('on'); chip.setAttribute('aria-expanded', 'false');
+    });
+    panel.addEventListener('click', (ev) => {
+      const t = (ev.target as HTMLElement).closest<HTMLElement>('[data-ct], [data-or]');
+      if (!t) return;
+      if (t.dataset.ct) this.g.setContract(t.dataset.ct as ContractId);
+      if (t.dataset.or) this.g.setOverloadRoute(t.dataset.or as import('../systems/Boosts').OverloadRoute);
+      panel.dataset.sig = ''; this.refresh(true);
+    });
+  }
+  /** t109 Threat Brief: post-scaling counts, threat class, lane split; contracts + routing. */
+  private threatBrief() {
+    const el = document.getElementById('threat-brief'), chip = document.getElementById('tb-chip');
+    if (!el) return;
+    const g = this.g, show = g.state === 'playing' && !g.overrun && g.briefUnlocked();
+    document.body.classList.toggle('tb-on', show);
+    if (chip) chip.hidden = !show;
+    if (!show) { el.hidden = true; return; }
+    const lanes = Math.max(1, g.paths.length);
+    const plans: WavePlan[] = [];
+    if (g.waves.active) {
+      // current remaining + the wave after it
+      const cur = g.waves.plan(g, g.waves.index);
+      if (cur) {
+        const left = new Map<string, number>();
+        for (const s of g.waves.pending()) left.set(s, (left.get(s) ?? 0) + 1);
+        cur.groups = cur.groups.map((gr) => ({ ...gr, count: left.get(gr.id) ?? 0 })).filter((gr) => gr.count > 0);
+      }
+      if (cur && cur.groups.length) plans.push(cur);
+      const nxt = g.waves.plan(g, g.waves.index + 1); if (nxt) plans.push(nxt);
+    } else {
+      const a = g.waves.plan(g); if (a) plans.push(a);
+      const b = g.waves.plan(g, g.waves.index + 1); if (b) plans.push(b);
+    }
+    const ctOn = g.contractsUnlocked() && !g.waves.active;
+    const orOn = g.routingUnlocked() && !g.waves.active;
+    const sig = `${g.waves.active}|${g.waves.index}|${g.contract}|${g.overloadRoute}|${g.overload}|${plans.map((p) => p.wave + ':' + p.groups.map((x) => x.id + x.count).join()).join('|')}|${el.classList.contains('open')}`;
+    if (el.dataset.sig === sig) { el.hidden = false; return; }
+    el.dataset.sig = sig;
+    const wavesHtml = plans.map((p) => {
+      const top = topThreats(p.groups, 3);
+      const rows = top.map((gr) => {
+        const tags = [gr.air ? '🪽 air' : 'ground', gr.armored ? '⛨ armored' : '', gr.shielded ? '🛡 shield' : '', gr.boss ? '💀 boss' : '', gr.cls].filter(Boolean).join(' · ');
+        const split = laneSplit(gr.lanes, lanes);
+        return `<div class="tb-g"><b>${gr.count} ${gr.name}</b><span class="tb-meta">${fmtHp(gr.hp)} HP each · ${tags}${split ? ' · ' + split : ''}</span></div>`;
+      }).join('');
+      return `<div class="tb-wave"><div class="tb-wtitle">Wave ${p.wave}${p.boss ? ' · <span class="bad">⚠ BOSS</span>' : ''}${g.waves.active && p.wave === g.waves.current ? ' · still coming' : ''}</div>${rows || '<div class="tb-meta">cleared</div>'}</div>`;
+    }).join('');
+    const ctHtml = (g.contractsUnlocked() ? `<div class="tb-sec">One-wave contract</div><div class="tb-row">${CONTRACTS.map((c) =>
+      `<button type="button" data-ct="${c.id}" class="${g.contract === c.id ? 'on' : ''}" ${g.waves.active ? 'disabled' : ''} title="${c.tip}"><b>${c.name}</b><small>${c.short}</small></button>`).join('')}</div><div class="tb-hint">${g.waves.active ? `Locked: ${CONTRACT_BY_ID[g.contract].name} this wave.` : 'Optional. Auto Waves stays Neutral unless you pick first. Closes when the wave starts.'}</div>` : '');
+    const orHtml = (g.routingUnlocked() ? `<div class="tb-sec">Overload Routing · Lv ${g.overload}</div><div class="tb-row">${OVERLOAD_ROUTES.map((r) => {
+      const sky = Math.round((overloadRouteMul(g.overload, r.id, 'sky') - 1) * 100);
+      const pl = Math.round((overloadRouteMul(g.overload, r.id, 'plated') - 1) * 100);
+      const ru = Math.round((overloadRouteMul(g.overload, r.id, 'rush') - 1) * 100);
+      return `<button type="button" data-or="${r.id}" class="${g.overloadRoute === r.id ? 'on' : ''}" ${g.waves.active ? 'disabled' : ''} title="${r.tip}"><b>${r.name}</b><small>Sky +${sky}% · Plate +${pl}% · Rush +${ru}%</small></button>`;
+    }).join('')}</div><div class="tb-hint">${g.waves.active ? 'Locked during the wave.' : 'Optional. Change only between waves.'}</div>` : g.overload > 0 && g.nextWaveNum < 31 ? `<div class="tb-hint">Overload Routing unlocks at wave 31 with Core Lv 4+.</div>` : '');
+    const range = plans.length ? `Waves ${plans[0].wave}${plans[1] ? '–' + plans[1].wave : ''}` : '';
+    el.innerHTML = `<div class="tb-head">Threat Brief <span class="tb-sub">${range} · post-scale counts</span></div>${wavesHtml}${ctHtml}${orHtml}`;
+    el.hidden = false;
+    void ctOn; void orOn;
   }
   /** Phones: keep the top HUD to two rows by moving less-used items into a ☰ dropdown
    *  (moved back into place on wider screens). */
@@ -614,3 +695,9 @@ function describeWave(w: { groups: { enemy: string; count: number }[] }) {
   for (const g of w.groups) m.set(g.enemy, (m.get(g.enemy) ?? 0) + g.count);
   return [...m].map(([k, v]) => `${v} ${k}`).join(', ');
 }
+function describePlan(p: WavePlan) {
+  const m = new Map<string, number>();
+  for (const g of p.groups) m.set(g.id, (m.get(g.id) ?? 0) + g.count);
+  return [...m].map(([k, v]) => `${v} ${k}`).join(', ');
+}
+

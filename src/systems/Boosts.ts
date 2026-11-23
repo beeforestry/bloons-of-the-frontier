@@ -14,8 +14,30 @@ export const KNOCK = { bossK: 0.3, resAdd: 0.35, resMax: 0.85, resDecay: 0.45 };
 
 /** Price of the NEXT Overload level (500, 800, 1280, 2050 …, rounded to 10). */
 export const overloadCost = (lvl: number) => Math.round((OVERLOAD.base * OVERLOAD.k ** lvl) / 10) * 10;
-/** Global tower damage multiplier from Overload. */
+/** Global tower damage multiplier from Overload (Balanced routing). */
 export const overloadMul = (lvl: number) => 1 + OVERLOAD.dmgPer * lvl;
+
+/** t109 Overload Routing: Balanced (current +5%/lvl) or first min(level,6) levels
+ *  go +9% to one class / +1% to the others; remaining levels stay +5% global. */
+export const ROUTING_FROM = 31;
+export const ROUTING_MIN_LEVEL = 4;
+export type OverloadRoute = 'balanced' | 'sky' | 'plated' | 'rush';
+export const OVERLOAD_ROUTES: { id: OverloadRoute; name: string; tip: string }[] = [
+  { id: 'balanced', name: 'Balanced', tip: 'Every Overload level is +5% tower damage against every threat class.' },
+  { id: 'sky', name: 'Sky', tip: 'First 6 levels: +9% vs flying / air, +1% vs others. Extra levels stay +5% global.' },
+  { id: 'plated', name: 'Plated', tip: 'First 6 levels: +9% vs heavy, armored, shielded, or ground bosses, +1% vs others. Extra levels stay +5% global.' },
+  { id: 'rush', name: 'Rush', tip: 'First 6 levels: +9% vs everything else (fast ground trash), +1% vs Sky/Plated. Extra levels stay +5% global.' },
+];
+export function routingUnlocked(nextWave: number, level: number): boolean {
+  return nextWave >= ROUTING_FROM && level >= ROUTING_MIN_LEVEL;
+}
+export function overloadRouteMul(level: number, route: OverloadRoute, cls: 'sky' | 'plated' | 'rush'): number {
+  if (level <= 0) return 1;
+  if (route === 'balanced') return overloadMul(level);
+  const routed = Math.min(level, 6), rest = Math.max(0, level - 6);
+  return 1 + (cls === route ? 0.09 : 0.01) * routed + OVERLOAD.dmgPer * rest;
+}
+
 /** Tower crit chance at wave index `w` (0-based, 0 before the first wave). */
 export const critChance = (w: number) => Math.min(CRIT.cap, CRIT.base + CRIT.perWave * Math.max(0, w));
 
