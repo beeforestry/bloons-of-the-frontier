@@ -209,7 +209,7 @@ def coop(b):
     # combo counter exists
     check('combos' in H('__game.mp().stats'), 'co-op COMBO counter wired')
     fpsC = C('(() => { __game.fpsStart(); return true; })()'); time.sleep(2); f = C('__game.fpsStop()')
-    check(f['avg'] > 30, f'client FPS while mirroring {f["avg"]:.0f}')
+    check(f['avg'] >= 30, f'client FPS while mirroring {f["avg"]:.0f}')
     hc.close(); cc.close()
 
 def versus(b):

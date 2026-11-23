@@ -175,6 +175,12 @@ export class Overrun {
     const g = this.g, e = g.spawnEnemy(id, 0, 0, 0, hpMul);
     e.hunt = true; e.x = at.x; e.y = at.y; e.ov.side = Math.random() < 0.5 ? 1 : -1;
     e.ov.spawnT = (ENEMIES[id].spawns?.every ?? 0) * 0.8;
+    // Overrun uses OV_MONSTERS HP (scavenger 80, hunter 140, …), not the 4–14 HP
+    // tower-defense stats. Without this, a squadmate's SMG erased packs before
+    // they could bite, and the player got no kills or points.
+    const ov = OV_MONSTERS.find((m) => m.id === id);
+    const hp = Math.round((ov ? ov.hp : Math.max(e.maxHp, 80)) * hpMul);
+    e.maxHp = e.hp = hp; e.ov.hpK = hpMul;
     this.mobs.add(e);
     return e;
   }
