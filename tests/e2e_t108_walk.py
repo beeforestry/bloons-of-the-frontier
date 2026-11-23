@@ -70,6 +70,11 @@ with sync_playwright() as p:
         check(au['fineOk'] is True and au['errors'] == 0, f'{tag}: fine-ground shader linked (fineOk={au["fineOk"]}, shader errors {au["errors"]})')
         fl = P(FLOOR)
         check(fl['land'] > 50 and fl['nBad'] == 0, f'{tag}: visible floor under every land sample ({fl["land"]} land samples, {fl["nBad"]} floating {fl["bad"]})')
+        # the boulder models stream in after the ground (slow over the network on the live site): wait for the first rock to be hit
+        until('''(() => { const P = window.__possess.cur, g = window.__game.g, S = g.map.mpp, o = g.obstacles.find(o => o.alive && o.kind === 'rock'); if (!o) return true;
+          const V = P.v.constructor, gh = P.groundAt(o.x, o.y), objs = []; P.floraGrp && P.floraGrp.userData.updateLod(P.camera, true);
+          P.scene.traverse(m => { if ((m.isMesh || m.isInstancedMesh) && m.visible && !/floor|fort3d|ocean|sea|sky|hills|ring|cabras/.test(m.name)) { if (m.isInstancedMesh) m.computeBoundingSphere(); objs.push(m); } });
+          P.ray.set(new V(o.x * S + 7, gh + 0.9, o.y * S), new V(-1, 0, 0)); P.ray.far = 7; return P.ray.intersectObjects(objs, false).length > 0; })()''', 90000)
         ms = P(MEASURE)
         for k, worst, centre in ms:
             check(worst == 0, f'{tag}: {k} — no invisible wall just outside its model ({worst}/16 blocked)')
