@@ -127,7 +127,7 @@ export class Tower implements Buffable, Garrisonable {
     this.attachModules();
     this.cover?.aura.refresh();
     this.flora?.aura.refresh();
-    g.sfx('upgrade');
+    g.sfx2dCue('upgrade');
     g.fx({ kind: 'ring', x: this.x, y: this.y, r: 40, color: this.t.visual.glow ?? '#fff', dur: 0.6 });
     g.fx({ kind: 'text', x: this.x, y: this.y - 40, text: this.t.name + '!', color: '#ffe27a', dur: 1 });
     return true;

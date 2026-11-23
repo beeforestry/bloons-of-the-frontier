@@ -20,6 +20,7 @@ import { pickTarget } from './systems/TargetingSystem';
 import { dist } from './core/math';
 import type { AbilityId, Formation, Stance, TargetingMode, Vec } from './core/types';
 import { Sfx } from './audio/Sfx';
+import { get2dSfxDiagnostics, playEnemyDeath, playGameCue, playTowerFire, reset2dSfxDiagnostics, set2dSfxSettings, unlock2dSfx, type EnemyDeathSound, type GameCue } from './audio/sfx2d';
 import type { Squad } from './entities/Unit';
 import type { Garrisonable } from './entities/Garrison';
 import { towerById, TOWERS } from './data/towers';
@@ -116,7 +117,15 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     selSquads: [], box: null, boxMode: false, queueMode: false, patrolMode: false, patrolPts: [], showFps: false };
   // WebAudio SFX (unlocked on first input); the counter lets the e2e verify cues fire headless.
   const sfx = new Sfx(), sfxCount: Record<string, number> = {};
-  g.sfxHook = (n) => { sfxCount[n] = (sfxCount[n] ?? 0) + 1; sfx.play(n); };
+  g.sfxHook = (n) => {
+    sfxCount[n] = (sfxCount[n] ?? 0) + 1;
+    // Keep the existing wave cue count for e2e_t55, but play the richer 2D wave-start.
+    if (n === 'wave') { playGameCue('wave-start'); return; }
+    sfx.play(n);
+  };
+  g.sfx2dFire = (type, tier) => playTowerFire(type, tier);
+  g.sfx2dDeath = (kind) => playEnemyDeath(kind as EnemyDeathSound);
+  g.sfx2dCue = (kind) => playGameCue(kind as GameCue);
   // t101: first-person weapon/foley audio (counted like sfxCount so the e2e can verify it headless)
   const fpCount: Record<string, number> = {}; let engineOn = 0, ambCalls = 0, ambH = 0;
   g.fpAudio = { shot: (n, k) => { fpCount[n] = (fpCount[n] ?? 0) + 1; sfx.fp(n, k); }, engine: (on, speed, heavy) => { engineOn = on ? (heavy ? 2 : 1) : 0; sfx.engine(on, speed, heavy); },
@@ -139,12 +148,16 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   const VOLS = [0, 0.15, 0.35, 0.7], VICONS = ['🔇', '🔈', '🔉', '🔊'];
   const sBtn = document.getElementById('btn-sfx');
   let vi = Math.max(0, VOLS.indexOf(Number(LS.get('bof.vol') ?? '0.35'))); if (LS.get('bof.vol') == null) vi = 2;
-  const syncVol = () => { sfx.setVolume(VOLS[vi]); if (sBtn) { sBtn.textContent = VICONS[vi]; sBtn.title = `Sound: ${vi ? Math.round(VOLS[vi] * 100) + '%' : 'muted'} (click to change)`; sBtn.classList.toggle('on', vi > 0); } };
+  const syncVol = () => {
+    sfx.setVolume(VOLS[vi]);
+    set2dSfxSettings({ muted: VOLS[vi] <= 0, volume: VOLS[vi] });
+    if (sBtn) { sBtn.textContent = VICONS[vi]; sBtn.title = `Sound: ${vi ? Math.round(VOLS[vi] * 100) + '%' : 'muted'} (click to change)`; sBtn.classList.toggle('on', vi > 0); }
+  };
   sBtn?.addEventListener('click', () => { vi = (vi + 1) % VOLS.length; LS.set('bof.vol', String(VOLS[vi])); sfx.unlock(); syncVol(); if (vi) sfx.play('select'); });
   syncVol();
-  g.bus.on('wave', (e) => { if (e.active) g.sfx('wave', g.hq.x, g.hq.y); });
+  g.bus.on('wave', (e) => { if (e.active) g.sfx('wave', g.hq.x, g.hq.y); else playGameCue('wave-end'); });
   g.bus.on('gameover', (e) => g.sfx(e.won ? 'victory' : 'defeat', g.hq.x, g.hq.y));
-  const unlock = () => sfx.unlock();
+  const unlock = () => { sfx.unlock(); unlock2dSfx(); };
   window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
   const r = new Renderer(canvas, g);
   const hud = new Hud(g, view, document.body);
@@ -590,6 +603,11 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     enemyIds: () => Object.values(ENEMIES).map((d) => ({ id: d.id, hp: d.hp, flying: d.flying, boss: !!d.boss, kit: !!d.bossKit })),
     boxSelect, command, sfxCount: () => ({ ...sfxCount }), fpSfx: () => ({ ...fpCount, engine: engineOn, played: sfx.fpPlayed, level: +sfx.engineLevel.toFixed(3) }),
     ambSfx: () => ({ kind: sfx.ambKind, level: sfx.ambLevel, wind: sfx.ambWind, gulls: sfx.gulls, crashes: sfx.crashes, calls: ambCalls, h: +ambH.toFixed(2), surf: sfx.ambSurf, near: sfx.ambNear }),
+    sfx2d: () => get2dSfxDiagnostics(),
+    sfx2dReset: () => reset2dSfxDiagnostics(),
+    sfx2dFire: (type: string, tier = 0) => playTowerFire(type, tier),
+    sfx2dDeath: (kind: EnemyDeathSound) => playEnemyDeath(kind),
+    sfx2dCue: (kind: GameCue) => playGameCue(kind),
     fpsStart: () => { fps.sample = []; },
     fpsStop: () => { const s = fps.sample ?? []; fps.sample = null; const f = s.map((x) => 1 / Math.max(1e-4, x)).sort((a, b) => a - b); return { frames: s.length, avg: s.length / Math.max(1e-6, s.reduce((a, b) => a + b, 0)), p5: f[Math.floor(f.length * 0.05)] ?? 0, min: f[0] ?? 0, quality: r.quality, parts: r.parts.n }; },
     fpsNow: () => ({ fps: fps.cur, quality: r.quality }),

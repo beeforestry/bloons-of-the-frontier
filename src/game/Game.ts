@@ -176,6 +176,10 @@ export class Game {
   shocks: { x: number; y: number; r: number; t: number; dur: number }[] = [];
   /** WebAudio hook (main.ts wires Sfx); no-op headless. */
   sfxHook: (n: SfxName, x?: number, y?: number) => void = () => {};
+  /** Procedural 2D SFX (main.ts wires sfx2d.ts); no-op until wired. */
+  sfx2dFire: (type: string, tier?: number) => void = () => {};
+  sfx2dDeath: (kind: string) => void = () => {};
+  sfx2dCue: (kind: string) => void = () => {};
   /** t101: first-person audio (set by main.ts; null in headless tools). */
   fpAudio: FpAudio | null = null;
   /** t101: the real enemy the last manual (possessed) shot was resolved against — first-person hit tick / kill confirm. */
@@ -722,6 +726,7 @@ export class Game {
 
   // ------------------------------------------------------------------ combat
   towerFire(tw: Tower, targets: Enemy[], c: CombatStats, shotNo: number) {
+    this.sfx2dFire(tw.data.id, tw.tier);
     const type = tw.data.damageType ?? 'sharp';
     const kind = tw.data.projectile ?? 'dart';
     const muzzle = { x: tw.x + Math.cos(tw.aim) * 18, y: tw.y - 14 + Math.sin(tw.aim) * 12 };
@@ -760,13 +765,11 @@ export class Game {
           kind: 'bullet', x: muzzle.x, y: muzzle.y, angle: ang, speed: c.projectileSpeed ?? 1100,
           damage: dmg0, type: 'ballistic', pierce: c.pierce, hitsAir: tw.data.hitsAir, hitsGround: tw.data.hitsGround, hit,
         });
-        this.sfx('fire', tw.x, tw.y);
         return;
       }
       // Beacon: lock beam is drawn continuously from CombatTower.beamTo — only deal damage here.
       if (beacon) {
         for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, '#ffe9a0', 0, hit, { reach: dist(muzzle, tgt) + 40, silent: true });
-        this.sfx('laser', tw.x, tw.y);
         return;
       }
       // Rail Lance: keep acquire range, but the slug travels/pierces far across the map (cooler long streak).
@@ -775,10 +778,8 @@ export class Game {
       const reach = rail ? 950 + tw.tier * 280 : sniper ? 4200 : undefined;
       const dur = rail ? 0.22 + tw.tier * 0.04 : 0.1;
       for (const tgt of targets) this.beam(muzzle, tgt, dmg0, type, c.pierce, col, w, hit, { reach, dur });
-      this.sfx(rail || kind === 'rail' ? 'rail' : 'laser', tw.x, tw.y);
       return;
     }
-    if (shotNo % 3 === 0) this.sfx('fire', tw.x, tw.y);
     const tgt = targets[0];
     const special = c.specialRate && shotNo % Math.round(1 / c.specialRate) === 0;
     if (kind === 'glue') { this.fireAcid(tw, tgt, c, muzzle, dmg0, type, hit); return; }
@@ -941,7 +942,7 @@ export class Game {
     const c2: CombatStats = direct ? { ...c, damage: c.damage * MANUAL_BONUS, specialDamage: c.specialDamage != null ? c.specialDamage * MANUAL_BONUS : undefined } : c;
     if (!tgt) {
       const ex = tw.x + Math.cos(m.aim) * range, ey = tw.y + Math.sin(m.aim) * range;
-      if (tw.data.hitscan || c.chain || c.devour != null) { this.fx({ kind: 'beam', x: tw.x, y: tw.y - 14, x2: ex, y2: ey, color: '#ffe08a', width: 2, dur: 0.08 }); this.sfx('laser', tw.x, tw.y); return; }
+      if (tw.data.hitscan || c.chain || c.devour != null) { this.fx({ kind: 'beam', x: tw.x, y: tw.y - 14, x2: ex, y2: ey, color: '#ffe08a', width: 2, dur: 0.08 }); this.sfx2dFire(tw.data.id, tw.tier); return; }
       // a free shot down the crosshair: fake 'target' at the aim point (projectiles fly on and can still hit)
       tgt = { x: ex, y: ey, ang: m.aim, alive: false, data: { speed: 0, boss: false, radius: 0 }, maxHp: Infinity } as unknown as Enemy;
     }
@@ -978,7 +979,6 @@ export class Game {
       for (const e of this.enemies) if (e.alive && !done.has(e) && (!e.data.air || hit.antiAir)) { const d = dist2(e, from); if (d < bd) { bd = d; best = e; } }
       cur = best;
     }
-    this.sfx('zap', tw.x, tw.y);
   }
   beam(from: Vec, tgt: Enemy, dmg: number, type: DamageType, pierce: number, color: string, width: number, hit?: HitOpts, opts?: { reach?: number; dur?: number; silent?: boolean }) {
     // hitscan: hit target + up to (pierce-1) enemies along the line (reach can exceed lock range for long rail streaks)
@@ -1258,7 +1258,7 @@ export class Game {
       t.fixedAim = t.aim = Math.atan2(q.y - t.y, q.x - t.x);
       if (nl.dist < 20) t.fixedAim = t.aim = q.ang + Math.PI;
     }
-    this.sfx('command');
+    this.sfx2dCue('place');
     this.fx({ kind: 'dust', x: t.x, y: t.y + 16, r: 26, color: '#e8d8b0', dur: 0.4 });
     return t;
   }
@@ -1275,6 +1275,7 @@ export class Game {
     t.remove();
     this.towers = this.towers.filter((x) => x !== t); this.losVer++;
     this.fx({ kind: 'text', x: t.x, y: t.y - 20, text: `+${t.sellValue}`, color: '#ffe14d', dur: 1 });
+    this.sfx2dCue('sell');
   }
   /** t104: the nearest tower `t` can fuse with right now (same type + owner, both last tier, unfused, adjacent), or null. */
   fusionPartner(t: Tower): Tower | null {
@@ -1303,7 +1304,7 @@ export class Game {
     this.towers = this.towers.filter((x) => x !== p); this.losVer++;
     a.applyFusion(this, add);
     this.stats.fusions++;
-    this.sfx('upgrade'); this.shake(5);
+    this.sfx2dCue('fusion'); this.shake(5);
     return true;
   }
   /** t105: an adjacent DIFFERENT max-tier tower that forms a hidden recipe with `t`, or null. */
@@ -1339,7 +1340,7 @@ export class Game {
     this.stats.recipes++;
     const fresh = discover(r.id);
     this.toast(fresh ? `⚛ Hidden fusion discovered: ${data.name}!` : `⚛ ${data.name} fused`, data.mark?.color ?? '#fff');
-    this.sfx('upgrade'); this.shake(7);
+    this.sfx2dCue('fusion'); this.shake(7);
     return nt;
   }
   /** Relocate a movable vehicle (tank / gunship). Cancels auto-chase until it arrives. */
@@ -1620,7 +1621,7 @@ export class Game {
     if (!this.res.spend({ credits: cost })) { this.toast(`Overload Core costs ¢${cost}`, '#ff8a7a'); this.sfx('error'); return false; }
     this.overload++; this.stats.overloads++;
     this.toast(`⚙ Overload Core Lv ${this.overload}: towers +${Math.round(OVERLOAD.dmgPer * this.overload * 100)}% damage`, '#7fd3ff');
-    this.fx({ kind: 'ring', x: this.hq.x, y: this.hq.y, r: 120, color: '#7fd3ff', dur: 0.7 }); this.sfx('upgrade');
+    this.fx({ kind: 'ring', x: this.hq.x, y: this.hq.y, r: 120, color: '#7fd3ff', dur: 0.7 }); this.sfx2dCue('overload-level');
     return true;
   }
   /** Rage: every tower fires RAGE.mul× faster for RAGE.dur s, then RAGE.cd s cooldown. Team-shared. Networked (G_METHODS). */
@@ -1628,7 +1629,7 @@ export class Game {
     if (this.rageT > 0 || this.rageCd > 0) { this.toast(this.rageT > 0 ? 'Rage already active' : `Rage recharging (${Math.ceil(this.rageCd)}s)`, '#ff8a7a'); return false; }
     this.rageT = RAGE.dur; this.rageCd = RAGE.dur + RAGE.cd; this.stats.rages++;
     for (const t of this.towers) if (t.alive && t.t.combat) { const cb = t.combat as unknown as { cooldown: number } | undefined; if (cb) cb.cooldown = Math.min(cb.cooldown, cb.cooldown / RAGE.mul); }
-    this.toast(`🔥 RAGE! Towers fire ${Math.round((RAGE.mul - 1) * 100)}% faster for ${RAGE.dur}s`, '#ff5a3a'); this.shake(6); this.sfx('upgrade');
+    this.toast(`🔥 RAGE! Towers fire ${Math.round((RAGE.mul - 1) * 100)}% faster for ${RAGE.dur}s`, '#ff5a3a'); this.shake(6); this.sfx2dCue('rage-start');
     return true;
   }
   update(dtReal: number) {
@@ -1650,7 +1651,10 @@ export class Game {
     if (!this.isClient && !this.overrun) this.waves.update(this, dt);
     this.versus?.update(this, dt);
     this.overrun?.update(this, dt);
-    if (this.rageT > 0) this.rageT = Math.max(0, this.rageT - dt);
+    if (this.rageT > 0) {
+      this.rageT = Math.max(0, this.rageT - dt);
+      if (this.rageT <= 0) this.sfx2dCue('rage-end');
+    }
     if (this.rageCd > 0) this.rageCd = Math.max(0, this.rageCd - dt);
     this.proxT -= dt; if (this.proxT <= 0) { this.proxT = PROX.every; updateProximity(this); }
     for (const t of this.towers) { const n0 = this.projectiles.length; this.curOwner = t.owner; t.update(this, dt); for (let i = n0; i < this.projectiles.length; i++) this.projectiles[i].owner = t.owner; }
