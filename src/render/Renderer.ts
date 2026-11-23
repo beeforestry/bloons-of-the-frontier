@@ -4,6 +4,7 @@
 // =============================================================================
 import { scaledRange, SCALE } from '../core/scale';
 import { walkFrame, clearWalkCache } from './walkCycle';
+import { requestUnitWalk, unitWalkFrame, unitWalkDrawn } from './unitWalk';
 import { branchMark } from '../data/specs';
 import { isDiscovered } from '../data/recipes';
 import type { Game, Effect, Strike, ParkedVeh } from '../game/Game';
@@ -1123,14 +1124,18 @@ export class Renderer {
     }
     if (im) {
       const [w, h] = this.fitWH(im, sz);
+      requestUnitWalk(u.data.sprite, tier);
       const hop = Math.abs(Math.sin(st.walk)) * 2.6 * st.moving;
       const sway = Math.sin(st.walk) * 0.07 * st.moving;
       const breathe = 1 + Math.sin(g.time * 2.6 + u.uid) * 0.015 * (1 - st.moving);
       const atk = u.attackAnim > 0 ? Math.min(1, u.attackAnim / 0.18) : 0;
       const ranged = t.stats.range >= 60, dir = u.facing < 0 ? -1 : 1;
       const lunge = ranged ? -atk * 2 : atk * 6, rot = sway + (ranged ? 0 : atk * 0.18 * dir);
-      if (u.data.vehicle) this.feet(im, u.x + lunge * dir, footY - hop * 0.4 - Math.sin(st.walk * 3) * 0.8 * st.moving, w, h, u.facing < 0, 1, breathe, sway * 0.3);
-      else this.limbs(im, u.x + lunge * dir, footY - hop, w, h, u.facing < 0, breathe, rot, st.walk, st.moving, ranged ? -atk * 0.12 : atk * 0.3);
+      // t122: baked 6-frame walk at ~8 FPS while moving; original idle when stopped or attacking
+      const walkIm = !u.data.vehicle && st.moving > 0.3 && atk === 0 ? unitWalkFrame(u.data.sprite, tier, g.time + u.uid * 0.13) : undefined;
+      if (walkIm) { unitWalkDrawn.walk++; this.feet(walkIm, u.x, footY, w, h, u.facing < 0); }
+      else if (u.data.vehicle) this.feet(im, u.x + lunge * dir, footY - hop * 0.4 - Math.sin(st.walk * 3) * 0.8 * st.moving, w, h, u.facing < 0, 1, breathe, sway * 0.3);
+      else { unitWalkDrawn.other++; this.limbs(im, u.x + lunge * dir, footY - hop, w, h, u.facing < 0, breathe, rot, st.walk, st.moving, ranged ? -atk * 0.12 : atk * 0.3); }
       if (ranged && atk > 0.35 && !u.isWorker) this.additive(IMG.fx_muzzle, u.x + dir * w * 0.5, footY - hop - h * 0.66, 16 + tier * 3, dir < 0 ? Math.PI : 0, atk);
     }
     if (u.health.frac < 0.999) this.bar(u.x, u.y - sz * 0.75, 24, u.health.frac, '#7fd3ff', u.uid);
