@@ -2,6 +2,7 @@
 // RENDERER: draws the world onto a 2D canvas. Read-only view of Game.
 // Tier visuals: a distinct painted sprite per tier + scale + glow ring + tier pips.
 // =============================================================================
+import { scaledRange, SCALE } from '../core/scale';
 import { branchMark } from '../data/specs';
 import { isDiscovered } from '../data/recipes';
 import type { Game, Effect, Strike, ParkedVeh } from '../game/Game';
@@ -221,9 +222,9 @@ export class Renderer {
     for (const b of g.barriers) if (this.inView(b.x, b.y)) objs.push({ y: b.y, f: () => this.barrier(b) });
     for (const p of g.parked) if (this.inView(p.x, p.y, 120)) objs.push({ y: p.y, f: () => this.parkedVeh(p) });
     const mp = g.net !== 'solo';
-    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); if (u.possessedBy >= 0) this.possessBadge(u.x, u.y - 34, u.possessedBy); } });
-    for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
-    for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.enemy(e) });
+    for (const u of g.units) if (!u.garrison && this.inView(u.x, u.y)) objs.push({ y: u.y, f: () => this.scaled(u.x, u.y + 14, () => { if (mp && g.mode === 'coop') this.ownerRing(u.x, u.y + 12, 13, PCOLORS[u.squad.owner] ?? '#fff'); this.unit(u, sel.has(u.squad) || v.selSquad === u.squad); if (u.possessedBy >= 0) this.possessBadge(u.x, u.y - 34, u.possessedBy); }) });
+    for (const e of g.enemies) if (!e.data.flying && this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.scaled(e.x, e.y, () => this.enemy(e)) });
+    for (const e of g.allies) if (this.inView(e.x, e.y)) objs.push({ y: e.y, f: () => this.scaled(e.x, e.y, () => this.enemy(e)) });
     objs.sort((a, b) => a.y - b.y).forEach((o) => o.f());
     this.drawn.objs = objs.length;
     // Auto Army badge: green ⟳ when the squad runs its role AI, amber ⏸ while a manual order overrides it
@@ -236,7 +237,7 @@ export class Renderer {
       c.fillText(q.manual ? 'II' : 'A', bx, by + 0.5); c.textBaseline = 'alphabetic';
     }
     this.debris.draw(c, this.vx0 - 60, this.vy0 - 60, this.vx1 + 60, this.vy1 + 60);
-    for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.enemy(e);
+    for (const e of g.enemies) if (e.data.flying && this.inView(e.x, e.y)) this.scaled(e.x, e.y, () => this.enemy(e));
     this.emitAmbient(gdt);
     // Harbor Beacon: constant lighthouse shaft (not a blink) while locked
     for (const tw of g.towers) {
@@ -542,7 +543,7 @@ export class Renderer {
   private ghost(id: string, cell: Cell & { x?: number; y?: number; bad?: boolean }) {
     const g = this.g, d = towerById(id), t0 = d.tiers[0], p = cell.x !== undefined ? { x: cell.x, y: cell.y! } : g.grid.cellCenter(cell.c, cell.r);
     const ok = g.canPlace(id, cell);
-    const r = t0.combat?.range ?? t0.cover?.auraRadius ?? 40;
+    const r = t0.combat ? scaledRange(t0.combat.range) : t0.cover?.auraRadius ?? 40;
     this.range(p.x, p.y, r, ok);
     const fp = d.footprint ?? 1;
     if (!g.gridKind(id)) { // t56 BTD6-style base circle: green = OK, red = blocked
@@ -551,7 +552,7 @@ export class Renderer {
       c.strokeStyle = ok ? '#7f7' : '#f55'; c.lineWidth = 2; c.stroke();
     } else if (fp > 1) { const s = g.grid.cell, h = (fp * s) / 2; this.ctx.fillStyle = ok ? 'rgba(120,255,140,0.18)' : 'rgba(255,70,70,0.25)'; this.ctx.fillRect(p.x - h, p.y - h, fp * s, fp * s); this.ctx.strokeStyle = ok ? '#8f8' : '#f66'; this.ctx.lineWidth = 2; this.ctx.strokeRect(p.x - h, p.y - h, fp * s, fp * s); }
     this.ctx.globalAlpha = 0.65;
-    this.towerImg(d.sprite, 0, p.x, p.y, t0.visual, 0, false);
+    this.scaled(p.x, p.y + (fp > 1 ? 6 : 18), () => this.towerImg(d.sprite, 0, p.x, p.y, t0.visual, 0, false));
     this.ctx.globalAlpha = 1;
   }
   private flag(from: { x: number; y: number }, r: { x: number; y: number }, col: string) {
@@ -916,13 +917,21 @@ export class Renderer {
     const c = this.ctx, [w, h] = this.fitWH(im, sz);
     c.save(); c.translate(x, y); if (rot) c.rotate(rot); if (flip) c.scale(-1, 1); c.drawImage(im, -w / 2, -h / 2, w, h); c.restore();
   }
+  /** t108: draw f() scaled by SCALE.sprite about (x, y) (the feet), so towers / troops / mobs read bigger on the big maps. */
+  private scaled(x: number, y: number, f: () => void) {
+    const k = SCALE.sprite; if (k === 1) { f(); return; }
+    const c = this.ctx; c.save(); c.translate(x, y); c.scale(k, k); c.translate(-x, -y); try { f(); } finally { c.restore(); }
+  }
   private tower(t: Tower, sel: boolean, selT: Tower | null = null) {
-    const c = this.ctx;
-    if (sel) {
+    if (sel) { // range ring + LOS stay in world units (not sprite-scaled)
       const r = t.combat ? t.range(t.t.combat!.range) : t.cover ? t.t.cover!.auraRadius : 0;
       if (r) this.range(t.x, t.y, r);
       if (r && usesLOS(t.data.id)) this.losShadow(t, Math.min(r, LOS.maxDist));
     }
+    this.scaled(t.x, t.y + ((t.data.footprint ?? 1) > 1 ? 6 : 18), () => this.towerBody(t, sel, selT));
+  }
+  private towerBody(t: Tower, sel: boolean, selT: Tower | null) {
+    const c = this.ctx;
     if (t.slide) { // dust trail while sliding into the organized grid
       c.fillStyle = 'rgba(230,210,160,0.55)';
       for (let i = 0; i < 4; i++) { const k = i / 4; c.beginPath(); c.arc(t.slide.fx + (t.x - t.slide.fx) * k, t.slide.fy + (t.y - t.slide.fy) * k + 18, 4 + i * 2, 0, 7); c.fill(); }

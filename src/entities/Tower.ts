@@ -7,6 +7,7 @@
 // e.g. the Frost Wall-Nut Bastion is Cover + (weak) Combat.
 // =============================================================================
 import type { ProxState } from '../systems/Proximity';
+import { scaledRange } from '../core/scale';
 import { TargetingMode, type CombatStats, type ManualCtl, type TowerData, type TowerTier } from '../core/types';
 import { nextId, easeInOut } from '../core/math';
 import { AuraEmitter, BuffReceiver, Health, type Buffable } from '../systems/BuffSystem';
@@ -105,7 +106,7 @@ export class Tower implements Buffable, Garrisonable {
   get isFarm() { return !!this.farm; }
   get disabled() { return this.disabledT > 0; }
   /** Buffed range (CoverTower aura adds a %). */
-  range(base: number) { return base * (1 + this.buffs.totals.bonusRangePct); }
+  range(base: number) { return scaledRange(base) * (1 + this.buffs.totals.bonusRangePct); } // t108: x SCALE.range on the big maps
 
   private attachModules() {
     if (this.t.combat && !this.combat) this.combat = new CombatTower();

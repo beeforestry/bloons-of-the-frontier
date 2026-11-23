@@ -4,6 +4,7 @@
 // Rendering and DOM UI only READ from this object.
 // =============================================================================
 import { Faction, TargetingMode, TARGETING_ORDER, TARGETING_INFO, TARGETING_LABEL, type AbilityId, type ManualCtl, type CombatStats, type DamageType, type Formation, type HitOpts, type Stance, type UnitTier, type Vec } from '../core/types';
+import { setMapScale } from '../core/scale';
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
 import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
@@ -79,7 +80,7 @@ export const TOWER_SOLID_M: Record<string, number> = {
   frost_wallnut_bastion: 1.0, stone_wall: 0.95, hypno_shroom: 1.05, tesla_coil: 1.0, arcane_obelisk: 0.7, unsc_beacon: 1.6,
   unsc_tank: 2.3, unsc_heli: 1.2, unsc_destroyer: 2.25,
 };
-export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.8, tropical: 0.8 };
+export const MAP_EASE: Record<string, number> = { jungle: 0.88, fortress: 0.95, morro: 0.92, tropical: 0.8 }; // t108: El Morro 0.8 -> 0.92 offsets the x1.4 ranged reach (Cabras' bot run is bimodal at wave 19, kept)
 export const START_LIVES = BUILDINGS[0].tiers[0].stats.maxHp;
 
 export interface Effect {
@@ -227,6 +228,7 @@ export class Game {
   ownedSquads(pid = this.actingPid) { return this.squads.filter((s) => s.alive && (this.net === 'solo' || s.owner === pid)); }
 
   constructor(readonly map: MapDef = resolveMap(DEFAULT_MAP), readonly diff: Difficulty = DIFFICULTIES[1]) {
+    setMapScale(map); // t108: bigger sprites + longer ranged reach on the 0.125 m/px maps
     applyCostMul(diff.cost);
     this.waves = new WaveManager(buildWaves(diff.waves), diff.hp, diff.count, diff.late);
     this.waves.boostHp = BOOST_HP[diff.id] ?? 0; // t106
