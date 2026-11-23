@@ -122,7 +122,7 @@ with sync_playwright() as p:
         until('window.__possess && window.__possess.cur', 60000); pg.wait_for_timeout(2500)
         worst = 0
         for tgt in range(3):
-            P(f'(() => {{ const es = P.g.enemies.filter(e => e.alive); const e = es[{tgt} % es.length]; P.aimAt(e.x, e.y, P.eye().y - 4 + {tgt} * 5); }})()')
+            P(f'(() => {{ const es = P.g.enemies.filter(e => e.alive); const e = es[{tgt} % es.length]; P.aimAt(e.x, e.y, P.eye().y + [-7, 7, -5][{tgt}]); }})()')
             P('P.yaw += 0.9'); pg.wait_for_timeout(300)
             pg.mouse.move(800, 480); pg.mouse.down(button='right'); pg.wait_for_timeout(1200)
             s0 = P('P.state()'); pg.mouse.down(); pg.wait_for_timeout(1500); pg.mouse.up(); pg.wait_for_timeout(500); s1 = P('P.state()')

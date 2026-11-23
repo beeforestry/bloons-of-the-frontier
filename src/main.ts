@@ -462,9 +462,26 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
   // FPS meter + auto-quality governor (drops particle caps / shockwave refraction /
   // damage numbers when frames dip below 45 fps, restores above 57).
   const fps = { cur: 60, lowT: 0, highT: 0, acc: 0, n: 0, t: 0, sample: null as null | number[] };
-  let last = performance.now(), lastFrame = last;
-  // MP host in a background tab: rAF pauses, so keep the authoritative sim + snapshots ticking.
-  if (sync?.isHost) setInterval(() => { const now = performance.now(); if (now - lastFrame > 300) { lastFrame = now; g.update(0.1); sync.update(0.1); } }, 100);
+  let last = performance.now(), simLast = last;
+  // Wall-clock sim, independent of how long a frame takes to draw. rAF used to pass
+  // Math.min(0.1, raw) once per painted frame, so a 1 s first-person / SwiftShader
+  // frame only advanced 0.1 s of game time — Overrun timers, the spawn director,
+  // monster hunts, and first-person walking all ran ~10× slow. A 50 ms backup tick
+  // also covers a background tab (replaces the host-only catch-up).
+  const tickSim = (budget = 0.25) => {
+    const now = performance.now();
+    let raw = (now - simLast) / 1000;
+    if (raw < 0.001) return;
+    simLast = now;
+    raw = Math.min(budget, raw);
+    while (raw > 0.001) {
+      const dt = Math.min(0.1, raw); raw -= dt;
+      let sk = 1; if (g.slowT > 0) { g.slowT -= dt; sk = DEATH_TUNE.bossSlow.k; } // t107 boss-kill slow motion (solo)
+      g.update(dt * sk);
+      sync?.update(dt);
+    }
+  };
+  setInterval(() => { tickSim(0.25); }, 50);
   let frameErrT = 0;
   function frame(now: number) {
     const raw = (now - last) / 1000, dt = Math.min(0.1, raw); last = now;
@@ -478,12 +495,9 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
       fps.t = 0;
       if (view.showFps && fpsEl) fpsEl.textContent = `${fps.cur.toFixed(0)} FPS · Q${r.quality} · ${r.drawn.parts} parts · ${r.debris.live.length} debris · ${g.enemies.length} foes · ${r.drawn.objs} drawn`;
     }
-    lastFrame = now;
     try {
-    let sk = 1; if (g.slowT > 0) { g.slowT -= dt; sk = DEATH_TUNE.bossSlow.k; } // t107 boss-kill slow motion (solo)
-    g.update(dt * sk);
+    tickSim(0.25);
     pauseMenu.update();
-    sync?.update(dt);
     netHud?.update(dt);
     hud.update(dt);
     tut?.update(dt);

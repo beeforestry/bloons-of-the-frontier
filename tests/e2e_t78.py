@@ -159,6 +159,18 @@ with sync_playwright() as p:
     check(until(pg, "() => window.__overrun.inFP()", 15000), 'back to first person from the tactical map')
 
     # ---------------------------------------------------------------- 5. death -> monster picker -> turned
+    # With real Overrun HP pools the earlier swarm can down the AI squadmate.
+    # The monster picker only appears when another survivor still stands, so
+    # freeze the director, clear leftover packs, and keep the teammate up.
+    pg.evaluate("""() => {
+      const o = window.__overrun;
+      o.noSpawn(true); o.killMobs();
+      const p = o.ov.players.find((q) => q.bot);
+      if (!p) return;
+      if (p.unit && !p.unit.alive) { p.unit.alive = true; p.unit.health.revive(1); }
+      else if (p.unit) p.unit.health.hp = p.unit.health.max;
+      p.role = 'survivor'; p.respawnT = 0;
+    }""")
     pg.evaluate("() => window.__overrun.killUnit(0)")
     check(until(pg, "() => window.__overrun.screen().includes('turn')", 6000), 'dying (team still alive) opens the monster class picker')
     mons = pg.evaluate("() => [...document.querySelectorAll('.ov-pick[data-mon]')].map((b) => b.dataset.mon)")

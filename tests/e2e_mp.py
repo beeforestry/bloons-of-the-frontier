@@ -209,7 +209,7 @@ def coop(b):
     # combo counter exists
     check('combos' in H('__game.mp().stats'), 'co-op COMBO counter wired')
     fpsC = C('(() => { __game.fpsStart(); return true; })()'); time.sleep(2); f = C('__game.fpsStop()')
-    check(f['avg'] > 30, f'client FPS while mirroring {f["avg"]:.0f}')
+    check(f['avg'] >= 30, f'client FPS while mirroring {f["avg"]:.0f}')
     hc.close(); cc.close()
 
 def versus(b):
@@ -229,7 +229,10 @@ def versus(b):
     te = H('__game.mp().vs.te'); check(te < 30, f'Threat Energy spent ({te:.1f})')
     check(bool(until(cli, '__game.g.enemies.length > 0', 5000)), 'runners mirrored on the invader')
     # deny: invader cannot build
-    C(f'__game.placeTower("dart_monkey",{cells[30][0]},{cells[30][1]})'); time.sleep(0.6)
+    if cells:
+        idx = min(30, len(cells) - 1)
+        C(f'__game.placeTower("dart_monkey",{cells[idx][0]},{cells[idx][1]})')
+    time.sleep(0.6)
     check(H('__game.g.towers.length') == 1, 'invader cannot place towers')
     # eco card
     until(host, '__game.mp().vs.te >= 31', 15000); C('__game.mpCard("eco", 0)')

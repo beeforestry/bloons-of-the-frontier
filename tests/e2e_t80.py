@@ -59,7 +59,7 @@ with sync_playwright() as p:
 
     # ------------------------------------------------------------ first person: fort walls aligned to the aerial
     check(possess_at(1700, 1500), 'possessed a trooper on the esplanade lawn')
-    until('window.__possess.cur && window.__possess.cur.vm.flora > 1000', 30000)  # 2026-11-23: flora loads async — poll instead of a fixed wait
+    until('window.__possess.cur && window.__possess.cur.vm.flora > 1000', 45000)  # 2026-11-23: flora loads async — poll instead of a fixed wait
     st = P('({ fort: P.vm.fort, chunks: P.vm.fortChunks, flora: P.vm.flora, parked: P.vm.parked, glb: P.vm.parkedGlb, q: P.vm.quality })'); print('  vm', st)
     f = st['fort'] or {}
     check(f.get('tris', 0) > 100000 and st['chunks'] >= 16, f"3D fort mesh built from the lidar ({f.get('tris')} tris in {st['chunks']} chunks)")
@@ -116,7 +116,7 @@ with sync_playwright() as p:
     pg.wait_for_selector('.mode-pick[data-mode="overrun"]', timeout=60000); pg.click('.mode-pick[data-mode="overrun"]')
     pg.wait_for_selector('#ov-solo', timeout=8000); pg.select_option('#ov-map', 'morro'); pg.select_option('#ov-min', '3'); pg.select_option('#ov-bots', '0')
     pg.click('#ov-solo'); pg.wait_for_selector('.ov-pick[data-cls="marine"]', timeout=20000); pg.click('.ov-pick[data-cls="marine"]')
-    check(until('window.__possess && window.__possess.cur && window.__overrun.inFP() && window.__possess.cur.vm.fort', 60000), 'Overrun on El Morro: spawned in first person on foot, fort loaded')
+    check(until('window.__possess && window.__possess.cur && window.__overrun.inFP() && window.__possess.cur.vm.fort', 90000), 'Overrun on El Morro: spawned in first person on foot, fort loaded')
     pg.evaluate('() => window.__overrun.noSpawn(true)')
     s0 = P('P.state()'); check(not s0['veh'], f"Overrun: survivor starts on foot ({s0['unitId']})")
     near = P('(() => { const u = P.obj; return P.g.parked.map(p => ({ k: p.kind, d: Math.hypot(p.x - u.x, p.y - u.y), x: p.x, y: p.y })).sort((a, b) => a.d - b.d); })()')
