@@ -211,3 +211,47 @@ Nightly runs while Sebastian is away: one focused, shippable improvement per run
 - Underwater fog / caustics on the shallow sand at Cabras; wet-sand darkening band above the waterline on the terrain shader.
 - Spray particles where the swell hits the El Morro cliffs, synced with the ambience breaker crashes.
 - Boats / buoys bobbing on `heightAt()`.
+
+## 2026-11-20 .. 2026-11-22 — no runs logged (diagnosed 2026-11-23)
+
+No commits, branches, stashes or local changes from those days. The box was replaced on 2026-11-21 (~07:22), and the replacement wiped `node_modules` and the Playwright browser cache (`~/.cache/ms-playwright`). It also left the old gh-pages worktree `/tmp/ghp_wt` dangling (`deploy_bof.sh` depends on it). So `npm run build` and the e2e tests could not run, and the runs could not ship. Fixed on 11-23 with `npm ci` + `playwright install chromium` + `git worktree prune`; the deploy now uses a fresh worktree (`/workspace/ap_ghp_1123`). If a future run fails early, check those three things first. GitHub HTTPS also had one transient TLS handshake failure; a retry worked.
+
+## 2026-11-23 — Cliff spray in first person (shipped, ~05:30)
+
+**What shipped.** White water now bursts up where the swell hits El Morro's cliffs and sea walls, and (much smaller) the Isla de Cabras riprap. The coast no longer looks like the sea just stops at the rocks.
+- **Sites.** `Ocean.setShore` now also finds spray sites. These are water cells right against land that rises ≥1.0 m (Cabras 0.5 m) within ~6 m. Each site gets a seaward normal from the distance-to-land gradient and a strength from the rise. Sheltered pockets are skipped (it needs open water 6 m out). They're rebuilt from the 0.5 m fine heights: El Morro has 461 sites along the Atlantic side and the south, Cabras ~1.1k.
+- **Timing.** Each nearby site (up to 360 within 170 m) watches the CPU swell mirror (`heightAt`). When a crest climbs past its threshold, that site throws a fan of droplet clusters plus a slower, larger mist puff. Wind drift: onshore −x at El Morro, +z at Cabras.
+- **Synced with the sound.** Every ambience breaker crash (`Sfx.crashes`, exposed as `FpAudio.crashes()`) throws one big burst at a strong cliff site in front of the eye, plus its two neighbours, so the boom and the white water line up.
+- **Height.** El Morro spray reaches ~7.5 m above sea level; Cabras splashes reach ~1.8 m.
+- **Rendering.** One pooled `THREE.Points` draw named `spray`. The blobs are procedural (lumpy, speckled droplets; thin mist), use fog, and need no textures or assets.
+- **Quality.** Caps are full 900 / medium (touch) 480 / low 220. Low has no swell, so it uses timer bursts, and the pool is trimmed when quality drops. The spray freezes while paused.
+- **Code.** New `src/fps/spray.ts`. Changed `ocean.ts` (`sprayFrom`, `spraySites`, `sitesVer`), `Possess.ts` (create / update / dispose), `Game.ts` + `main.ts` (`crashes()`).
+- **Test hooks.** `__possess.cur.vm.spray` → `{sites, near, live, cap, bursts, crashBursts, spawned, maxH, mode}`; `__possess.cur.spray.crash(camera)`.
+- **Also:** hardened `tests/e2e_t80.py`. It now polls `vm.flora > 1000` (async load) before reading it, and holds W for the Scorpion in 2.5 s slices (up to 4) until it moves. A baseline run before this change had failed on "first-person flora (0 plants)".
+
+**Commits.** main `e75b928`. gh-pages `4182799` (BASE=/bloons-of-the-frontier/, .nojekyll kept). Live bundle `assets/index-CctIZgL9.js` (+ `Possess-C8j-kO8K.js`).
+
+**Tests.**
+- `npm run build` (typecheck + validator + vite): OK.
+- New `tests/e2e_spray.py`: PASS locally and live. It checks per map:
+  - sites found
+  - one Points draw
+  - swell-timed bursts near the eye
+  - spray height
+  - ambience crashes produce synced bursts
+  - spray visible on screen (pixel diff, spray shown vs hidden: El Morro ~1.8–2.2k px, Cabras ~0.6k)
+  - the cap holds under spam
+  - nothing new while paused
+  - slow-frame drop → low cap 220 with timer bursts
+
+  It also checks El Morro spray is taller than Cabras', the `?fpq=low` path, and no console errors.
+- Core e2e_t53, e2e_t80 (hardened), e2e_t97, e2e_ocean, e2e_ambience: PASS.
+
+**Live.** https://beeforestry.github.io/bloons-of-the-frontier/ → 200, serves `index-CctIZgL9.js`. Screenshots: `autopilot_shots/2026-11-23_live_fp_spray_morro_cliffs.png`, `autopilot_shots/2026-11-23_live_fp_spray_cabras_riprap.png`.
+
+**Ideas for next time.**
+- Positional sound for towers' and teammates' shots and nearby pops in first person (PannerNode).
+- Wet-rock darkening on the cliff faces where spray lands (terrain shader band near the spray sites).
+- Finer foam breakup at El Morro's south flats.
+- Buoys / boats bobbing on `heightAt()`.
+- A wet-sand band at Cabras.
