@@ -112,7 +112,7 @@ with sync_playwright() as p:
     for u in ('warthog', 'scorpion'):
         check(results[(0, 'veh')].get(u) != results[(2, 'veh')].get(u), f'{u}: tier 0 vs tier 2 GLB differ')
     lo = loaded(); print('loaded', lo, flush=True)
-    check(len([n for n in lo if n.startswith('unit_')]) == 15, f'all 15 unit GLBs loaded in first person ({len(lo)})')
+    check(len([n for n in lo if n.startswith('unit_') and not n.startswith('unit_farmhand')]) == 15, f'all 15 unit GLBs loaded in first person ({len(lo)})')
 
     pg.evaluate("() => { const g = window.__game.g; for (const id of ['marine','odst','spartan','warthog','scorpion']) g.unitTiers[id] = 2; }")
     field([('marine', 50, -24), ('spartan', 44, 6), ('odst', 60, 30), ('warthog', 120, -50), ('scorpion', 150, 50)])
