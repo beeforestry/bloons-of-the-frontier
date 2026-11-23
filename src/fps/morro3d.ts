@@ -7,7 +7,6 @@
 // bastion salients), the yellow Plaza de Armas with white arches, the grey/black lighthouse, the three flags over the plaza.
 import * as THREE from 'three';
 import { assetUrl } from '../assetUrl';
-import { groundTex } from './groundTex';
 
 /** Fort window on the 4416 x 2976 morro map (game px of sample (0,0), px per sample). Mirrors morro_fort3d.py. */
 export const FORT = { x0: 1682, y0: 642, step: 4, cols: 540, rows: 500, off: -5 };
@@ -170,11 +169,11 @@ function fortMaterial(mat: THREE.MeshLambertMaterial, ground: THREE.Texture, ext
   const prev = mat.onBeforeCompile.bind(mat), prevKey = mat.customProgramCacheKey.bind(mat);
   mat.onBeforeCompile = (sh, r) => {
     prev(sh, r);
-    if (ext) { sh.uniforms.t_sa = { value: groundTex('sand') }; sh.uniforms.t_rk = { value: groundTex('rock') }; sh.uniforms.t_cb = { value: groundTex('cobble') }; sh.uniforms.t_br = { value: extTex('mr_brick') }; sh.uniforms.t_as = { value: extTex('concrete') }; }
+    if (ext) { sh.uniforms.t_br = { value: extTex('mr_brick') }; sh.uniforms.t_as = { value: extTex('concrete') }; } // t108: sand / rock / cobble re-use detailGround's t_sand / t_rock / t_cobble (same textures) -> 15 samplers, under the 16 most GPUs allow
     sh.uniforms.t_pl = { value: pl }; sh.uniforms.t_st = { value: pr }; sh.uniforms.t_gr = { value: grime }; sh.uniforms.t_ea = { value: te }; sh.uniforms.t_dk = { value: td };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCls; attribute float aFl; varying float vCls; varying float vFl; varying vec3 vFN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCls = aCls; vFl = aFl; vFN = normalize(mat3(modelMatrix) * objectNormal);');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCls; varying float vFl; varying vec3 vFN; uniform sampler2D t_pl; uniform sampler2D t_st; uniform sampler2D t_gr; uniform sampler2D t_ea; uniform sampler2D t_dk;\n' + (ext ? 'uniform sampler2D t_sa; uniform sampler2D t_rk; uniform sampler2D t_cb; uniform sampler2D t_br; uniform sampler2D t_as;\n' : '') + WALL_GLSL)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCls; varying float vFl; varying vec3 vFN; uniform sampler2D t_pl; uniform sampler2D t_st; uniform sampler2D t_gr; uniform sampler2D t_ea; uniform sampler2D t_dk;\n' + (ext ? 'uniform sampler2D t_br; uniform sampler2D t_as;\n' : '') + WALL_GLSL)
       .replace('diffuseColor.rgb *= mix(vec3(1.0), det, 0.9);\n}', `diffuseColor.rgb *= mix(vec3(1.0), det, 0.9);
 }
 {
@@ -216,12 +215,12 @@ const EXT_GLSL = `
   {
     float fx = smoothstep(0.55, 0.85, nY) * (1.0 - wall); vec2 q = vGW.xz;
     vec3 a = diffuseColor.rgb; float al = dot(a, vec3(0.2126, 0.7152, 0.0722));
-    if (vFl > 2.5 && vFl < 3.5) { vec3 t = texture2D(t_sa, q / 2.6).rgb / vec3(0.2268, 0.1742, 0.1096); diffuseColor.rgb = mix(a, a * clamp(mix(vec3(dot(t, vec3(0.33))), t, 0.3), 0.55, 1.6) * vec3(1.04, 1.0, 0.94), fx * 0.92); }
-    else if (vFl > 3.5 && vFl < 4.5) { vec3 t = texture2D(t_rk, q / 1.9).rgb / vec3(0.1719, 0.1232, 0.0515); float tl = dot(t, vec3(0.2126, 0.7152, 0.0722));
+    if (vFl > 2.5 && vFl < 3.5) { vec3 t = texture2D(t_sand, q / 2.6).rgb / vec3(0.2268, 0.1742, 0.1096); diffuseColor.rgb = mix(a, a * clamp(mix(vec3(dot(t, vec3(0.33))), t, 0.3), 0.55, 1.6) * vec3(1.04, 1.0, 0.94), fx * 0.92); }
+    else if (vFl > 3.5 && vFl < 4.5) { vec3 t = texture2D(t_rock, q / 1.9).rgb / vec3(0.1719, 0.1232, 0.0515); float tl = dot(t, vec3(0.2126, 0.7152, 0.0722));
       vec3 c = vec3(0.30, 0.29, 0.27) * clamp(tl, 0.35, 1.9) * (0.75 + al * 1.1); diffuseColor.rgb = mix(a, c, 0.8 * smoothstep(0.15, 0.5, nY) * (1.0 - wall)); }
     else if (vFl > 4.5 && vFl < 5.5) { vec3 t = texture2D(t_as, q / 3.0).rgb; float tl = dot(t, vec3(0.2126, 0.7152, 0.0722));
       diffuseColor.rgb = mix(a, vec3(0.085, 0.085, 0.09) * (0.6 + tl * 1.6) * (0.8 + al * 1.4), fx * 0.85); }
-    else if (vFl > 5.5 && vFl < 6.5) { vec3 t = texture2D(t_cb, q / 1.8).rgb / vec3(0.3016, 0.276, 0.2305); diffuseColor.rgb = mix(a, vec3(0.36, 0.33, 0.28) * clamp(t, 0.4, 1.7), 1.0 - wall); }
+    else if (vFl > 5.5 && vFl < 6.5) { vec3 t = texture2D(t_cobble, q / 1.8).rgb / vec3(0.3016, 0.276, 0.2305); diffuseColor.rgb = mix(a, vec3(0.36, 0.33, 0.28) * clamp(t, 0.4, 1.7), 1.0 - wall); }
     else if (vFl > 6.5) { vec3 t = texture2D(t_br, q / 1.6).rgb; diffuseColor.rgb = mix(a, t * vec3(1.05, 0.95, 0.9) * (0.75 + al * 1.2), fx * 0.85); }
   }`;
 const WALL_GLSL = `

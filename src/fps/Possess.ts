@@ -198,7 +198,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo };
+  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean };
   /** 2026-11-19 living ocean (src/fps/ocean.ts): Gerstner swell + fresnel + shore foam; vm.ocean = test hook. */
   ocean: Ocean | null = null;
   /** 2026-11-23 cliff spray (src/fps/spray.ts): swell-timed white water on cliffs / sea walls / riprap; vm.spray = test hook. */
@@ -234,6 +234,9 @@ export class Possess {
     this.pinQ = !!fq; // an explicit ?fpq= disables the automatic downgrade
     setMatQuality({ high: 2, medium: 1, low: 0 }[this.vm.quality]);
     this.root.appendChild(this.renderer.domElement);
+    // t108: a shader that fails to link on the player's GPU (e.g. more samplers than MAX_TEXTURE_IMAGE_UNITS) used to make the
+    // Isla de Cabras fine ground silently vanish ("no floor"). Count failures; the fine-ground material falls back to plain Lambert.
+    this.renderer.debug.onShaderError = (gl, prog) => { this.vm.shaderErrors = (this.vm.shaderErrors ?? 0) + 1; console.warn('[possess] shader link failed:', (gl.getProgramInfoLog(prog) ?? '').slice(0, 240)); };
     // t48: GPU reset under heavy load -> keep the loop alive, skip rendering until three.js restores the context
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ctxLost = true; console.warn('[possess] WebGL context lost'); });
     this.renderer.domElement.addEventListener('webglcontextrestored', () => { this.ctxLost = false; if (this.composer) this.composer.setSize(innerWidth, innerHeight); });
@@ -422,7 +425,7 @@ export class Possess {
     setFineHeights(g.map.id, (x, y) => cabrasH(f, x, y)); this.fort = f;
     const step = this.vm.quality === 'high' ? 1 : 2;
     const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
-    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, f.fl, { win: CABRAS, ext: true, skipBelow: -3.2, quadBelow: -1.5 }); mesh.name = 'cabras3d'; this.scene.add(mesh);
+    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, f.fl, { win: CABRAS, ext: true, skipBelow: -3.2, quadBelow: -1.5 }); mesh.name = 'cabras3d'; this.scene.add(mesh); this.fineMesh = mesh;
     const geo = this.floorGeo, T = g.map.terrain!;
     if (geo) { // sink the 3 m lidar floor under the fine window (its border ring keeps the seam closed)
       const pos = geo.attributes.position as THREE.BufferAttribute, x0 = CABRAS.x0 * S, z0 = CABRAS.y0 * S, x1 = (CABRAS.x0 + (CABRAS.cols - 1) * CABRAS.step) * S, z1 = (CABRAS.y0 + (CABRAS.rows - 1) * CABRAS.step) * S;
@@ -447,7 +450,7 @@ export class Possess {
     this.fort = f; setFineHeights(g.map.id, (x, y) => fortH(f, x, y));
     const step = this.vm.quality === 'high' ? 1 : 2;
     const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
-    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, lay.fl); this.scene.add(mesh); mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
+    const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, lay.fl); this.scene.add(mesh); this.fineMesh = mesh; mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
     // sink the coarse lidar floor under the fort window (keep its border ring so the seam stays closed)
     const geo = this.floorGeo, T = g.map.terrain!;
     if (geo) {
@@ -922,8 +925,34 @@ export class Possess {
       const bg = this.scene.background; this.scene.background = null;
       c.layers.set(1); r.autoClear = false; r.clearDepth(); r.render(this.scene, c); c.layers.set(0); this.scene.background = bg;
     }
+    if (this.fineMesh && this.fineOk == null) this.checkFine();
     this.raf = requestAnimationFrame(this.loop);
   };
+  /** t108: the fine El Morro / Isla de Cabras ground mesh + whether its custom shader linked (null = not drawn yet). */
+  private fineMesh: THREE.Group | null = null; private fineOk: boolean | null = null;
+  private checkFine() {
+    let mat: THREE.Material | null = null; this.fineMesh!.traverse((o) => { if (!mat && (o as THREE.Mesh).isMesh) mat = (o as THREE.Mesh).material as THREE.Material; });
+    if (!mat) return;
+    const prog = (this.renderer.properties.get(mat) as { currentProgram?: { diagnostics?: { runnable: boolean } } }).currentProgram;
+    if (!prog) return; // not compiled yet
+    this.fineOk = prog.diagnostics?.runnable !== false;
+    if (!this.fineOk) { // plain photo-draped ground: no detail textures, but the player always has a floor
+      const plain = new THREE.MeshLambertMaterial({ map: this.groundPhoto });
+      this.fineMesh!.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = plain; });
+      console.warn('[possess] fine ground shader failed -> plain material');
+    }
+    this.vm.fineOk = this.fineOk;
+  }
+  /** t108 test hook: most texture samplers any linked program uses vs the GPU limit. */
+  samplerAudit() {
+    const gl = this.renderer.getContext(); let max = 0, name = '';
+    for (const p of (this.renderer.info.programs ?? []) as unknown as { program: WebGLProgram; name: string }[]) {
+      const n = gl.getProgramParameter(p.program, gl.ACTIVE_UNIFORMS) as number; let k = 0;
+      for (let i = 0; i < n; i++) { const u = gl.getActiveUniform(p.program, i); if (u && (u.type === gl.SAMPLER_2D || u.type === gl.SAMPLER_CUBE || u.type === 0x8B62 /* SAMPLER_2D_SHADOW */ || u.type === 0x8DC1 /* 2D_ARRAY */ || u.type === 0x8B5F /* 3D */)) k += u.size; }
+      if (k > max) { max = k; name = p.name; }
+    }
+    return { max, name, limit: gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) as number, fineOk: this.fineOk, errors: this.vm.shaderErrors ?? 0 };
+  }
   private governor() {
     if (this.fps < 45) this.slow++; else this.slow = Math.max(0, this.slow - 1);
     if (!this.pinQ && this.slow >= 3 && this.fps < 24 && this.vm.quality !== 'low') { if (this.composer) this.dropPost(); else this.dropToLow(); this.slow = 0; return; }
