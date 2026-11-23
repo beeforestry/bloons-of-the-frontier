@@ -12,7 +12,7 @@ import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
 import { PROX, updateProximity } from '../systems/Proximity';
 import { DEATH_TUNE, type DeathEvent } from '../systems/Deaths';
-import { BOOST_HP, CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadRouteMul, routingUnlocked, type OverloadRoute } from '../systems/Boosts';
+import { BOOST_HP, CRIT, OVERLOAD, RAGE, critChance, overloadCost, overloadMul, overloadRouteMul, routingUnlocked, type OverloadRoute } from '../systems/Boosts';
 import { CONTRACT_BY_ID, SUPPLY_FARM, SUPPLY_WAVE_BONUS, briefUnlocked, contractTowerMul, contractsUnlocked, threatClass, type ContractId } from '../systems/Contracts';
 import { recipeFor, recipeFee, discover, type Recipe } from '../data/recipes';
 import { UNITS, unitById } from '../data/units';
@@ -732,10 +732,12 @@ export class Game {
     const type = tw.data.damageType ?? 'sharp';
     const kind = tw.data.projectile ?? 'dart';
     const muzzle = { x: tw.x + Math.cos(tw.aim) * 18, y: tw.y - 14 + Math.sin(tw.aim) * 12 };
-    // t106: Overload Core (+5% damage per level) + wave-scaling crit (×CRIT.mul)
-    // t109: Overload (incl. Routing) + contracts apply per-target in Enemy.takeDamage via towerDmgMul()
+    // t106: Overload Core (+5% damage per level) is baked into the shot so projectiles,
+    // splash, beams, and e2e_t106 (which wraps takeDamage and records `amount`) all see it.
+    // t109: per-target residual (Routing + contracts) is applied in Enemy.takeDamage via hit.tower.
+    const om = overloadMul(this.overload); if (om !== 1) c = { ...c, damage: c.damage * om, specialDamage: c.specialDamage != null ? c.specialDamage * om : undefined };
     const crit = Math.random() < critChance(this.waves.index); if (crit) this.stats.crits++;
-    const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit };
+    const hit: HitOpts = { antiAir: !!tw.data.antiAir, ap: !!tw.data.armorPiercing || c.pierce >= 3, shred: c.armorShred, shieldBreak: c.shieldBreak, crit, tower: true };
     // t103 element status + heavy-impact flag (Shatter); the tank's roof MG (secondary) carries neither
     { const el = tw.data.element2 && shotNo % 2 === 1 ? tw.data.element2 : tw.elem; if (el && c.status && shotNo < 900) { hit.elem = el; hit.elemDur = c.status; }
       // t105 proximity: every 3rd shot carries the adjacent ice / fire tower's element instead (combo setups)
@@ -1142,6 +1144,10 @@ export class Game {
   /** Combined tower damage multiplier (Overload Routing × one-wave contract) vs this enemy. */
   towerDmgMul(e: { data: import('../core/types').EnemyData }): number {
     return contractTowerMul(this.contract, e.data) * overloadRouteMul(this.overload, this.overloadRoute, threatClass(e.data));
+  }
+  /** Residual after the fire-time Overload Core mul (routing + contracts only). */
+  towerHitMul(e: { data: import('../core/types').EnemyData }): number {
+    return this.towerDmgMul(e) / overloadMul(this.overload);
   }
   briefUnlocked() { return briefUnlocked(this.nextWaveNum); }
   contractsUnlocked() { return contractsUnlocked(this.nextWaveNum); }

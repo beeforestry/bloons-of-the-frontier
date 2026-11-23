@@ -48,6 +48,8 @@ export interface HitOpts {
   shieldBreak?: number;
   /** Veterancy receiver (Unit). */
   src?: { addXp?: (n: number) => void } | null;
+  /** t109: hit fired by a tower (Overload / Routing / contract multipliers apply). */
+  tower?: boolean;
   crit?: boolean;
   /** t103 element status this hit applies (see src/systems/Elements.ts). */
   elem?: Element;

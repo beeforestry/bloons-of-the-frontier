@@ -20,10 +20,6 @@ import { newElemState, onHit as elemOnHit, preHit as elemPreHit, tick as elemTic
 export interface Blocker { x: number; y: number; alive: boolean; garrison: unknown; takeDamage(g: Game, n: number): void }
 
 
-/** True when `from` is a Tower (has a placement cell + tier). Avoids importing Tower (cycle). */
-function isTowerSource(from: { x: number; y: number } | object): boolean {
-  return 'cell' in from && 'tier' in from && 't' in from;
-}
 export class Enemy {
   readonly uid = nextId();
   hp: number;
@@ -237,7 +233,7 @@ export class Enemy {
     }
     if (d.air && !hit?.antiAir) return 0;
     // t109: Overload Routing + contracts — only tower-sourced hits (units / leaks unchanged)
-    if (from && isTowerSource(from)) amount *= g.towerDmgMul(this);
+    if (hit?.tower) amount *= g.towerHitMul(this);
     if (hit?.src) this.lastSrc = hit.src;
     this.lastType = type; this.lastElem = hit?.elem; if (from) { this.lastFx = from.x; this.lastFy = from.y; } else { this.lastFx = NaN; }
     amount *= elemPreHit(g, this, type, hit);
