@@ -52,7 +52,14 @@ export interface FpAudio { shot(n: FpSfxName, k?: number): void; engine(on: bool
   /** ambience (2026-11-18): first-person ambience bed (sea, wind, gulls) for the current map; kind null = off. */
   ambient?(kind: AmbientKind | null, height: number, near?: number): void;
   /** 2026-11-23: breaker crashes synthesized so far (cliff spray throws a big burst on each new one). */
-  crashes?(): number }
+  crashes?(): number;
+  /** 2026-11-24: first-person ear (camera) for positional sound, mutated in place each frame; null = left first person. */
+  listener?(l: Listener3d | null): void }
+/** 2026-11-24: the first-person listener. x/y/z = camera in metres (three.js axes: x = px*S, z = py*S, y up), yaw as Possess,
+ *  S = metres per map px, ground(px, py) = ground height in metres, hrtf = HRTF panning (else equal-power), cap = max voices. */
+export interface Listener3d { x: number; y: number; z: number; yaw: number; S: number; ground(px: number, py: number): number; hrtf: boolean; cap: number }
+/** Sounds that can play positionally in first person: weapon reports + world pops / blasts. */
+export type Sfx3dName = FpSfxName | 'pop' | 'splat' | 'explosion' | 'smash' | 'zap' | 'boss' | 'mac' | 'laser' | 'hypno' | 'emp' | 'fuse';
 export type AmbientKind = 'morro' | 'cabras';
 export type SfxName = 'select' | 'command' | 'fire' | 'laser' | 'rail' | 'pop' | 'splat' | 'explosion' | 'ability' | 'mac' | 'coin' | 'orb' | 'upgrade' | 'error' | 'fuse' | 'emp' | 'hypno' | 'boss' | 'smash' | 'zap' | 'wave' | 'victory' | 'defeat';
 export interface Strike { kind: 'mac' | 'heal'; x: number; y: number; ang: number; t: number; hit: Set<number>; segs: number; owner?: number; /** MAC: the exact aimed point (clears terrain there even when the sweep snaps to a lane). */ aim?: Vec }
@@ -181,6 +188,33 @@ export class Game {
   sfx2dFire: (type: string, tier?: number) => void = () => {};
   sfx2dDeath: (kind: string) => void = () => {};
   sfx2dCue: (kind: string) => void = () => {};
+  /** 2026-11-24: positional first-person sound at map px (lift m above ground). Returns true when first person handled it
+   *  (then the flat 2D sound is skipped); false outside first person. own = the local player's possessed shooter. */
+  sfx3d: (n: Sfx3dName, x: number, y: number, lift?: number, own?: boolean) => boolean = () => false;
+  /** Which report a tower's shot makes in first person (same mapping as your own gun when possessed). */
+  towerVoice(tw: Tower): FpSfxName {
+    const id = tw.data.id, pk = tw.data.projectile ?? 'bullet';
+    if (id === 'sniper_monkey') return 'marksman';
+    if (id === 'unsc_tank' || pk === 'shell') return 'cannon';
+    if (id === 'unsc_heli' || id === 'unsc_autoturret' || id === 'unsc_flak' || pk === 'flak') return 'chaingun';
+    if (pk === 'rail' || id === 'unsc_rail') return 'rail';
+    if (pk === 'laser' || pk === 'tesla' || pk === 'magic') return 'beam';
+    if (pk === 'bullet') return 'rifle';
+    return 'dart';
+  }
+  /** Tower shot sound: positional in first person (skipped for your own possessed tower), else the 2D tick. */
+  private towerShotSfx(tw: Tower) {
+    const own = !!tw.manual && tw.manual.pid === this.localPid;
+    const lift = tw.data.id === 'unsc_heli' ? 7.6 : tw.data.id === 'unsc_beacon' ? 9.5 : 2.7;
+    if (!this.sfx3d(this.towerVoice(tw), tw.x, tw.y, lift, own)) this.sfx2dFire(tw.data.id, tw.tier);
+  }
+  /** Troop shot (AI or a teammate possessing it): first person only — troops have no 2D shot sound. */
+  private unitShotSfx(u: Unit, w: UnitTier['weapon'], ranged: boolean) {
+    const own = !!u.manual && u.manual.pid === this.localPid;
+    const n: FpSfxName = !ranged || w.type === 'melee' ? 'melee' : u.data.vehicle ? (w.projectile === 'shell' ? 'cannon' : 'chaingun') : w.beam || w.type === 'energy' ? 'beam'
+      : w.projectile === 'arrow' ? 'arrow' : w.projectile === 'shell' ? 'cannon' : w.projectile === 'dart' ? 'dart' : /smg/i.test(w.name) ? 'smg' : 'rifle';
+    this.sfx3d(n, u.x, u.y, u.data.vehicle ? 2.2 : 1.4, own);
+  }
   /** t101: first-person audio (set by main.ts; null in headless tools). */
   fpAudio: FpAudio | null = null;
   /** t101: the real enemy the last manual (possessed) shot was resolved against — first-person hit tick / kill confirm. */
@@ -728,7 +762,7 @@ export class Game {
 
   // ------------------------------------------------------------------ combat
   towerFire(tw: Tower, targets: Enemy[], c: CombatStats, shotNo: number) {
-    this.sfx2dFire(tw.data.id, tw.tier);
+    this.towerShotSfx(tw);
     const type = tw.data.damageType ?? 'sharp';
     const kind = tw.data.projectile ?? 'dart';
     const muzzle = { x: tw.x + Math.cos(tw.aim) * 18, y: tw.y - 14 + Math.sin(tw.aim) * 12 };
@@ -946,7 +980,7 @@ export class Game {
     const c2: CombatStats = direct ? { ...c, damage: c.damage * MANUAL_BONUS, specialDamage: c.specialDamage != null ? c.specialDamage * MANUAL_BONUS : undefined } : c;
     if (!tgt) {
       const ex = tw.x + Math.cos(m.aim) * range, ey = tw.y + Math.sin(m.aim) * range;
-      if (tw.data.hitscan || c.chain || c.devour != null) { this.fx({ kind: 'beam', x: tw.x, y: tw.y - 14, x2: ex, y2: ey, color: '#ffe08a', width: 2, dur: 0.08 }); this.sfx2dFire(tw.data.id, tw.tier); return; }
+      if (tw.data.hitscan || c.chain || c.devour != null) { this.fx({ kind: 'beam', x: tw.x, y: tw.y - 14, x2: ex, y2: ey, color: '#ffe08a', width: 2, dur: 0.08 }); this.towerShotSfx(tw); return; }
       // a free shot down the crosshair: fake 'target' at the aim point (projectiles fly on and can still hit)
       tgt = { x: ex, y: ey, ang: m.aim, alive: false, data: { speed: 0, boss: false, radius: 0 }, maxHp: Infinity } as unknown as Enemy;
     }
@@ -963,6 +997,7 @@ export class Game {
     if (tgt) { if (direct) this.stats.manualHits++; this.unitAttack(u, tgt, t, direct ? MANUAL_BONUS : 1); return; }
     if (t.stats.range < 60) { this.fx({ kind: 'text', x: u.x + Math.cos(m.aim) * 20, y: u.y - 12, text: '⚔', color: '#fff', dur: 0.2 }); return; }
     const from = { x: u.x + u.facing * 8, y: u.y - 12 };
+    this.unitShotSfx(u, w, true); // a teammate's free shot down their crosshair is heard too
     if (w.hitscan) { this.fx({ kind: 'beam', x: from.x, y: from.y, x2: u.x + Math.cos(m.aim) * range, y2: u.y + Math.sin(m.aim) * range, color: '#ffe08a', width: 1.5, dur: 0.08 }); return; }
     const crit = Math.random() < 0.08, dmg = t.stats.damage * u.dmgMul * (crit ? 2 : 1) * (this.armory.has('servos') ? 1 + ARMORY_FX.servosDmg : 1);
     this.projectiles.push(new Projectile({ kind: w.projectile ?? 'bullet', x: u.x, y: u.y - 10, angle: m.aim, speed: 800, damage: dmg, type: w.type, pierce: 1, splash: w.splash, hitsAir: w.hitsAir,
@@ -1058,6 +1093,7 @@ export class Game {
   unitAttack(u: Unit, tgt: Enemy, t: UnitTier, mul = 1) {
     const w = t.weapon, crit = Math.random() < 0.08, dmg = mul * t.stats.damage * u.dmgMul * (crit ? 2 : 1) * (this.armory.has('servos') ? 1 + ARMORY_FX.servosDmg : 1);
     if (crit) this.stats.crits++;
+    this.unitShotSfx(u, w, t.stats.range >= 60);
     const hit: HitOpts = { antiAir: !!w.antiAir, ap: !!w.armorPiercing || this.armory.has('ap'), src: u, crit };
     if (t.stats.range < 60) {
       if (w.splash) this.splash(tgt.x, tgt.y, w.splash, dmg, w.type, u, 'boom', { ...hit, ap: true });

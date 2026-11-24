@@ -30,7 +30,7 @@ import { ENEMIES } from './data/enemies';
 import { Lobby, type MpStart } from './ui/Lobby';
 import { Sync } from './net/Sync';
 import { NetHud } from './ui/NetHud';
-import type { PingKind } from './game/Game';
+import type { PingKind, Sfx3dName } from './game/Game';
 import { installConsoleCapture, setReportHooks, last as reportLast, capturePng, logEvent, setReportContext, openBugReport, flushQueue, queued, buildReport, submit, issueUrl, reportText, transport, cooldownLeft, BUILD, type ReportCategory } from './ui/BugReport';
 import { PauseMenu } from './ui/PauseMenu';
 import { Overrun } from './overrun/Overrun';
@@ -117,19 +117,23 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     selSquads: [], box: null, boxMode: false, queueMode: false, patrolMode: false, patrolPts: [], showFps: false };
   // WebAudio SFX (unlocked on first input); the counter lets the e2e verify cues fire headless.
   const sfx = new Sfx(), sfxCount: Record<string, number> = {};
-  g.sfxHook = (n) => {
+  // 2026-11-24: world sounds with a position (pops, blasts, zaps) play positionally while in first person
+  const SFX3D = new Set<string>(['pop', 'splat', 'explosion', 'smash', 'zap', 'boss', 'mac', 'laser', 'hypno', 'emp', 'fuse']);
+  g.sfxHook = (n, x, y) => {
     sfxCount[n] = (sfxCount[n] ?? 0) + 1;
     // Keep the existing wave cue count for e2e_t55, but play the richer 2D wave-start.
     if (n === 'wave') { playGameCue('wave-start'); return; }
+    if (x != null && y != null && SFX3D.has(n) && sfx.at3d(n as Sfx3dName, x, y, n === 'mac' ? 0.5 : 1.2)) return;
     sfx.play(n);
   };
+  g.sfx3d = (n, x, y, lift, own) => sfx.at3d(n, x, y, lift, own);
   g.sfx2dFire = (type, tier) => playTowerFire(type, tier);
   g.sfx2dDeath = (kind) => playEnemyDeath(kind as EnemyDeathSound);
   g.sfx2dCue = (kind) => playGameCue(kind as GameCue);
   // t101: first-person weapon/foley audio (counted like sfxCount so the e2e can verify it headless)
   const fpCount: Record<string, number> = {}; let engineOn = 0, ambCalls = 0, ambH = 0;
   g.fpAudio = { shot: (n, k) => { fpCount[n] = (fpCount[n] ?? 0) + 1; sfx.fp(n, k); }, engine: (on, speed, heavy) => { engineOn = on ? (heavy ? 2 : 1) : 0; sfx.engine(on, speed, heavy); },
-    ambient: (kind, h, near) => { ambCalls++; ambH = h; sfx.ambient(kind, h, near); }, crashes: () => sfx.crashes };
+    ambient: (kind, h, near) => { ambCalls++; ambH = h; sfx.ambient(kind, h, near); }, crashes: () => sfx.crashes, listener: (l) => sfx.listen(l) };
   // Voice lines ("Orders received!", "Moving out!", "Under attack!") via speechSynthesis; toggle 🗣.
   let voiceOn = LS.get('bof.voice') !== '0', lastVoice = 0, lastLine = '';
   const voiceLog: string[] = [];
@@ -620,6 +624,10 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     boxSelect, command, sfxCount: () => ({ ...sfxCount }), fpSfx: () => ({ ...fpCount, engine: engineOn, played: sfx.fpPlayed, level: +sfx.engineLevel.toFixed(3) }),
     ambSfx: () => ({ kind: sfx.ambKind, level: sfx.ambLevel, wind: sfx.ambWind, gulls: sfx.gulls, crashes: sfx.crashes, calls: ambCalls, h: +ambH.toFixed(2), surf: sfx.ambSurf, near: sfx.ambNear }),
     sfx2d: () => get2dSfxDiagnostics(),
+    sfx3d: () => sfx.spInfo(),
+    sfx3dAt: (n: Sfx3dName, x: number, y: number, lift = 1.5) => sfx.at3d(n, x, y, lift),
+    sfx3dMeter: (ms = 500) => sfx.spMeter(ms),
+    sfx3dTime: (n = 400) => { const t0 = performance.now(); for (let i = 0; i < n; i++) sfx.at3d('rifle', (i * 37) % g.map.width, (i * 53) % g.map.height, 2); return +((performance.now() - t0) / n).toFixed(4); },
     sfx2dReset: () => reset2dSfxDiagnostics(),
     sfx2dFire: (type: string, tier = 0) => playTowerFire(type, tier),
     sfx2dDeath: (kind: EnemyDeathSound) => playEnemyDeath(kind),

@@ -316,7 +316,10 @@ export class Enemy {
     g.stats.layers = (g.stats.layers ?? 0) + 1;
     this.lastSrc?.addXp?.(d.boss ? 10 : d.heavy ? 3 : 1);
     if (d.scrap) g.spawnPickup(this.x + rand(-8, 8), this.y + rand(-8, 8), d.scrap, 'scrap');
-    g.sfx2dDeath(d.bossKit || d.boss ? 'boss' : this.deathCause());
+    // 2026-11-24: in first person the pop / splat plays from where the enemy died
+    const dc = d.bossKit || d.boss ? 'boss' : this.deathCause();
+    const n3 = dc === 'boss' ? 'explosion' : dc === 'shock' ? 'zap' : d.family === 'bloon' ? 'pop' : 'splat';
+    if (!g.sfx3d(n3, this.x, this.y, d.boss ? 3 : d.air ? 6 : 0.9)) g.sfx2dDeath(dc);
     g.fx({ kind: d.family === 'bloon' ? 'pop' : 'splat', x: this.x, y: this.y, r: d.size * 0.5, color: d.color, dur: d.boss ? 0.7 : 0.3 });
     if (d.dropChance && Math.random() < d.dropChance) g.spawnPickup(this.x, this.y, d.boss ? 60 : 10 + Math.round(d.bounty));
   }

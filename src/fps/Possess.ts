@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { walkBox, walkMaterial, WALK_GLB, strideM } from './walk3d';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import './possess.css';
-import type { FpSfxName, Game } from '../game/Game';
+import type { FpSfxName, Game, Listener3d } from '../game/Game';
 import { MANUAL_BONUS } from '../game/Game';
 import { unitById } from '../data/units';
 import { Tower } from '../entities/Tower';
@@ -163,6 +163,7 @@ export class Possess {
   ctl: ManualCtl = { aim: 0, fire: false, target: null, mx: 0, my: 0 };
   fps = 60; private fpsAcc = 0; private fpsN = 0; private slow = 0; private pr = 1;
   /** t101 first-person audio: per-weapon report, hit tick, kill confirm, footsteps, vehicle engine. */
+  private ear: Listener3d | null = null;
   kills = 0; steps = 0; lastSfx = ''; private killE: Enemy | null = null; private killT = 0; private stepN = 0; private engOn = false;
   /** Which report your own weapon makes (re-read per shot, so boarding a vehicle / tier-ups switch sound). */
   weaponSfx(): FpSfxName {
@@ -1059,6 +1060,10 @@ export class Possess {
     else if (this.engOn) { this.engOn = false; g.fpAudio?.engine(false, 0, false); }
     // ambience (2026-11-18): sea / wind / gull ambience bed for the coastal maps (stronger wind up on the walls)
     g.fpAudio?.ambient?.(g.paused ? null : g.map.id === 'morro' ? 'morro' : this.isCabras ? 'cabras' : null, this.camera.position.y, this.seaNear());
+    // 2026-11-24: positional sound: the camera is the ear (HRTF unless on the low tier; fewer voices on touch / low)
+    const ear = this.ear ??= { x: 0, y: 0, z: 0, yaw: 0, S, ground: (px: number, py: number) => standH(g.map, px, py), hrtf: true, cap: 14 };
+    ear.x = eye.x; ear.y = eye.y; ear.z = eye.z; ear.yaw = this.yaw; ear.S = S; ear.hrtf = this.vm.quality !== 'low'; ear.cap = this.vm.quality === 'low' ? 6 : this.touch ? 8 : 14;
+    g.fpAudio?.listener?.(ear);
     this.kick = Math.max(0, this.kick - dt * 9); const big = this.vm.kind === 'tank_cannon' ? 2.5 : 1;
     this.gun.position.set(this.gunBase.x + Math.cos(this.bob) * bobA, this.gunBase.y + Math.abs(Math.sin(this.bob)) * bobA - this.kick * 0.01, this.gunBase.z + this.kick * 0.06 * big);
     this.gun.rotation.set(this.kick * 0.09, 0, this.gunRoll * this.kick);
@@ -1462,7 +1467,7 @@ export class Possess {
   exit(msg?: string) {
     if (!this.alive) return; this.ads = false; this.alive = false; setFineHeights(null);
     if (this.engOn) { this.engOn = false; this.g.fpAudio?.engine(false, 0, false); }
-    this.g.fpAudio?.ambient?.(null, 0);
+    this.g.fpAudio?.ambient?.(null, 0); this.g.fpAudio?.listener?.(null);
     cancelAnimationFrame(this.raf);
     removeEventListener('resize', this.resize); removeEventListener('keydown', this.onKey, true); removeEventListener('keyup', this.onKeyUp, true);
     removeEventListener('mousemove', this.onMouse); removeEventListener('mouseup', this.onUp); document.removeEventListener('pointerlockchange', this.onLock);

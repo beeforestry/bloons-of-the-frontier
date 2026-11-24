@@ -3,7 +3,15 @@
 // envelope. Throttled per name so a 40-tower wave doesn't turn into static.
 // Audio unlocks on the first pointer/key (browser autoplay policy).
 // =============================================================================
-import type { AmbientKind, FpSfxName, SfxName } from '../game/Game';
+import type { AmbientKind, FpSfxName, SfxName, Listener3d, Sfx3dName } from '../game/Game';
+
+/** 2026-11-24: 2D recipe names that can also play positionally in first person (pops, hits, blasts). */
+const SP_2D = new Set<string>(['pop', 'splat', 'explosion', 'smash', 'zap', 'boss', 'mac', 'laser', 'hypno', 'emp', 'fuse']);
+/** Base loudness per positional voice (before distance): heavy guns carry, darts and pops don't. */
+const SP_LOUD: Record<string, number> = { cannon: 1, explosion: 1, mac: 1, smash: 0.9, boss: 0.9, marksman: 0.85, rail: 0.8, chaingun: 0.7, rifle: 0.65, smg: 0.55, beam: 0.5, laser: 0.5,
+  zap: 0.5, emp: 0.6, dart: 0.4, arrow: 0.4, melee: 0.45, bite: 0.45, pop: 0.42, splat: 0.42, hypno: 0.4, fuse: 0.35, hit: 0.3 };
+/** Inverse-distance model reference (m): full level within REF, then REF / d. */
+const SP_REF = 5;
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -25,23 +33,28 @@ export class Sfx {
       this.noise = b;
     } catch { this.ctx = null; }
   }
+  /** 2026-11-24: while a positional voice is being built, recipes route into its chain (dst) at scale vs; spEnd = last stop time. */
+  private dst: AudioNode | null = null; private vs = 1; private spEnd = 0;
   private tone(type: OscillatorType, f0: number, f1: number, dur: number, vol: number, delay = 0) {
-    const c = this.ctx!, t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
+    const c = this.ctx!, t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain(); vol *= this.vs; this.spEnd = Math.max(this.spEnd, t + dur + 0.02);
     o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(this.master!); o.start(t); o.stop(t + dur + 0.02);
+    o.connect(g); g.connect(this.dst ?? this.master!); o.start(t); o.stop(t + dur + 0.02);
   }
   private burst(dur: number, vol: number, freq: number, q = 0.8, delay = 0) {
-    const c = this.ctx!, t = c.currentTime + delay, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    const c = this.ctx!, t = c.currentTime + delay, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(); vol *= this.vs; this.spEnd = Math.max(this.spEnd, t + dur);
     s.buffer = this.noise; f.type = 'lowpass'; f.frequency.setValueAtTime(freq, t); f.frequency.exponentialRampToValueAtTime(Math.max(60, freq * 0.15), t + dur); f.Q.value = q;
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(f); f.connect(g); g.connect(this.master!); s.start(t); s.stop(t + dur);
+    s.connect(f); f.connect(g); g.connect(this.dst ?? this.master!); s.start(t); s.stop(t + dur);
   }
   play(n: SfxName) {
     if (!this.ctx || this.muted || this.ctx.state !== 'running') return;
     const now = performance.now(), gap = n === 'wave' || n === 'victory' || n === 'defeat' ? 500 : n === 'fire' || n === 'pop' || n === 'laser' ? 45 : n === 'explosion' ? 90 : 60;
     if (now - (this.last.get(n) ?? 0) < gap) return;
     this.last.set(n, now);
+    this.recipe2d(n);
+  }
+  private recipe2d(n: SfxName) {
     switch (n) {
       case 'select': this.tone('sine', 880, 1320, 0.07, 0.18); break;
       case 'command': this.tone('triangle', 520, 780, 0.06, 0.16); this.tone('triangle', 780, 1040, 0.05, 0.12, 0.06); break;
@@ -84,6 +97,9 @@ export class Sfx {
     const now = performance.now(), gap = n === 'step' ? 120 : n === 'chaingun' ? 38 : n === 'hit' || n === 'kill' ? 50 : 28;
     if (now - (this.fpLast.get(n) ?? 0) < gap) return;
     this.fpLast.set(n, now); this.fpPlayed++;
+    this.fpRecipe(n, k);
+  }
+  private fpRecipe(n: FpSfxName, k = 1) {
     const j = 0.94 + Math.random() * 0.12; // small per-shot pitch jitter so auto fire doesn't sound like a loop
     switch (n) {
       case 'rifle': this.burst(0.035, 0.5, 6500 * j, 1.2); this.tone('sine', 170 * j, 48, 0.13, 0.36); this.burst(0.28, 0.12, 1400, 0.7, 0.03); this.burst(0.35, 0.04, 700, 0.6, 0.16); break;
@@ -105,6 +121,91 @@ export class Sfx {
       case 'step': this.burst(0.07, 0.11 * k, 650 + Math.random() * 350, 0.8); this.tone('sine', 85 + Math.random() * 20, 50, 0.06, 0.06 * k); break;
       case 'scope': this.tone('square', 1500, 1300, 0.025, 0.05); this.burst(0.04, 0.09, 4500, 2); this.tone('sine', 400, 380, 0.05, 0.03, 0.04); break;
     }
+  }
+  // ---------------------------------------------------------------------------
+  // 2026-11-24: positional 3D sound in first person. While you're possessing something, every
+  // other tower's / troop's / teammate's shot and every nearby pop, splat and blast plays from where
+  // it happens: an HRTF PannerNode per voice (equal-power on the low quality tier), inverse-distance
+  // falloff (full within 5 m, then 5/d), a distance lowpass for air absorption (far guns go dull),
+  // and a hard cap on simultaneous voices (14 desktop / 8 touch / 6 low). When the cap is full a new
+  // sound steals the quietest voice only if it is clearly louder; inaudible sounds (< 2.5% after
+  // falloff) are culled before any node is created. Your own gun stays the close, unpanned report.
+  // ---------------------------------------------------------------------------
+  private sp: Listener3d | null = null;
+  private spBus: GainNode | null = null;
+  private spVoices: { n: string; out: GainNode; pan: PannerNode; lp: BiquadFilterNode; end: number; pri: number; d: number; az: number }[] = [];
+  private spLast = new Map<string, number>();
+  private spMeterN: { l: AnalyserNode; r: AnalyserNode } | null = null;
+  spStats = { played: 0, culled: 0, stolen: 0, dropped: 0, throttled: 0, own: 0, peak: 0, byName: {} as Record<string, number>, last: null as null | { n: string; d: number; gain: number; az: number; lp: number } };
+  /** Possess hands over its (mutated-in-place) listener each frame; null = left first person. */
+  listen(l: Listener3d | null) {
+    const c = this.ctx;
+    if (!l) { if (this.sp) { this.sp = null; for (const v of this.spVoices) this.spKill(v, 0.03); this.spVoices = []; } return; }
+    this.sp = l;
+    if (!c) return;
+    if (!this.spBus) {
+      this.spBus = c.createGain(); this.spBus.gain.value = 0.9; this.spBus.connect(this.master!);
+      // the browser loads its HRTF database lazily (first HRTF panner); warm it up on entry so the first shots are already panned
+      try { const w = c.createPanner(), z = c.createGain(); w.panningModel = 'HRTF'; z.gain.value = 0; w.connect(z); z.connect(c.destination); setTimeout(() => { try { w.disconnect(); z.disconnect(); } catch { /* */ } }, 3000); } catch { /* */ }
+    }
+    const L = c.listener, fx = -Math.sin(l.yaw), fz = -Math.cos(l.yaw);
+    if (L.positionX) { L.positionX.value = l.x; L.positionY.value = l.y; L.positionZ.value = l.z; L.forwardX.value = fx; L.forwardY.value = 0; L.forwardZ.value = fz; L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0; }
+    else { L.setPosition(l.x, l.y, l.z); L.setOrientation(fx, 0, fz, 0, 1, 0); }
+  }
+  get spOn() { return !!this.sp; }
+  private spKill(v: { out: GainNode; pan: PannerNode }, fade: number) {
+    const c = this.ctx!; try { v.out.gain.cancelScheduledValues(c.currentTime); v.out.gain.setTargetAtTime(0, c.currentTime, fade / 3); } catch { /* */ }
+    setTimeout(() => { try { v.pan.disconnect(); v.out.disconnect(); } catch { /* */ } }, fade * 1000 + 80);
+  }
+  /** Play n at map pixel (px, py), lift metres above the ground there. Returns true when first person owns the sound
+   *  (played, culled or dropped), false when not in first person (the caller falls back to the 2D sound). */
+  at3d(n: Sfx3dName, px: number, py: number, lift = 1.5, own = false): boolean {
+    const l = this.sp; if (!l) return false;
+    if (own) { this.spStats.own++; return true; } // your own gun already has its close-up report
+    const c = this.ctx;
+    if (!c || this.muted || c.state !== 'running' || !this.spBus) return true;
+    const x = px * l.S, z = py * l.S, y = l.ground(px, py) + lift;
+    const dx = x - l.x, dy = y - l.y, dz = z - l.z, d = Math.hypot(dx, dy, dz);
+    const loud = SP_LOUD[n] ?? 0.5, gain = loud * (d <= SP_REF ? 1 : SP_REF / d);
+    if (gain < 0.025) { this.spStats.culled++; return true; }
+    // same sound from the same ~8 m cell within 70 ms = one voice (a 40-tower volley isn't 40 voices)
+    const key = n + ((x / 8) | 0) + ':' + ((z / 8) | 0), now = performance.now();
+    if (now - (this.spLast.get(key) ?? -1e9) < 70) { this.spStats.throttled++; return true; }
+    this.spLast.set(key, now); if (this.spLast.size > 400) this.spLast.clear();
+    const t = c.currentTime;
+    this.spVoices = this.spVoices.filter((v) => { if (v.end > t) return true; try { v.pan.disconnect(); v.out.disconnect(); } catch { /* */ } return false; });
+    if (this.spVoices.length >= l.cap) {
+      let qi = 0; for (let i = 1; i < this.spVoices.length; i++) if (this.spVoices[i].pri < this.spVoices[qi].pri) qi = i;
+      if (gain <= this.spVoices[qi].pri * 1.25) { this.spStats.dropped++; return true; }
+      this.spKill(this.spVoices[qi], 0.03); this.spVoices.splice(qi, 1); this.spStats.stolen++;
+    }
+    const fx = -Math.sin(l.yaw), fz = -Math.cos(l.yaw), rx = Math.cos(l.yaw), rz = -Math.sin(l.yaw);
+    const az = Math.round(Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz) * 180 / Math.PI); // + = to your right
+    const out = c.createGain(), lp = c.createBiquadFilter(), pan = c.createPanner();
+    const lpf = Math.round(Math.max(1600, Math.min(20000, 22000 * Math.exp(-d / 70))));
+    lp.type = 'lowpass'; lp.frequency.value = lpf; lp.Q.value = 0.5;
+    pan.panningModel = l.hrtf ? 'HRTF' : 'equalpower'; pan.distanceModel = 'inverse'; pan.refDistance = SP_REF; pan.rolloffFactor = 1; pan.maxDistance = 10000;
+    if (pan.positionX) { pan.positionX.value = x; pan.positionY.value = y; pan.positionZ.value = z; } else pan.setPosition(x, y, z);
+    out.connect(lp); lp.connect(pan); pan.connect(this.spBus);
+    this.dst = out; this.vs = SP_2D.has(n) ? Math.min(1.4, loud * 1.6) : loud * 0.85; this.spEnd = t;
+    try { if (SP_2D.has(n)) this.recipe2d(n as SfxName); else this.fpRecipe(n as FpSfxName); }
+    finally { this.dst = null; this.vs = 1; }
+    this.spVoices.push({ n, out, pan, lp, end: this.spEnd + 0.05, pri: gain, d, az });
+    this.spStats.played++; this.spStats.byName[n] = (this.spStats.byName[n] ?? 0) + 1; this.spStats.peak = Math.max(this.spStats.peak, this.spVoices.length);
+    this.spStats.last = { n, d: +d.toFixed(1), gain: +gain.toFixed(3), az, lp: lpf };
+    return true;
+  }
+  spInfo() {
+    const t = this.ctx?.currentTime ?? 0, live = this.spVoices.filter((v) => v.end > t);
+    return { on: !!this.sp, hrtf: !!this.sp?.hrtf, cap: this.sp?.cap ?? 0, active: live.length, voices: live.map((v) => ({ n: v.n, d: +v.d.toFixed(1), az: v.az })), ...this.spStats, byName: { ...this.spStats.byName } };
+  }
+  /** Tests: left / right RMS of the positional bus over ms (proves HRTF panning + falloff on the real audio graph). */
+  async spMeter(ms = 500): Promise<{ l: number; r: number }> {
+    const c = this.ctx; if (!c || !this.spBus) return { l: 0, r: 0 };
+    if (!this.spMeterN) { const sp = c.createChannelSplitter(2), l = c.createAnalyser(), r = c.createAnalyser(); l.fftSize = r.fftSize = 2048; this.spBus.connect(sp); sp.connect(l, 0); sp.connect(r, 1); this.spMeterN = { l, r }; }
+    const { l, r } = this.spMeterN, bl = new Float32Array(2048), br = new Float32Array(2048); let sl = 0, sr = 0; const end = performance.now() + ms;
+    while (performance.now() < end) { l.getFloatTimeDomainData(bl); r.getFloatTimeDomainData(br); for (let i = 0; i < 2048; i++) { sl += bl[i] * bl[i]; sr += br[i] * br[i]; } await new Promise((res) => setTimeout(res, 20)); }
+    return { l: +Math.sqrt(sl).toFixed(4), r: +Math.sqrt(sr).toFixed(4) };
   }
   private eng: { o1: OscillatorNode; o2: OscillatorNode; f: BiquadFilterNode; g: GainNode } | null = null;
   engineLevel = 0;
