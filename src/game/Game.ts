@@ -1286,9 +1286,13 @@ export class Game {
     if (this.nearOsm(id, x, y)) return false;
     return true;
   }
-  /** t123: a tower's solid (plus a trooper's width either side) may not touch an OSM building first person draws. */
+  /** t123: a tower's solid (plus a trooper's width either side) may not touch an OSM building or a parked vehicle that first
+   *  person draws, so no tower ends up wedged against one (the moved lanes freed grid cells next to some parked vehicles). */
   private nearOsm(id: string, x: number, y: number) {
-    return !!this.map.blocks?.length && footprintNear(this.map, x, y, (TOWER_SOLID_M[id] ?? SOLID_M.tower) + 1.0);
+    const r = (TOWER_SOLID_M[id] ?? SOLID_M.tower) + 1.0;
+    if (this.map.blocks?.length && footprintNear(this.map, x, y, r)) return true;
+    if (this.parked.length) { const k = (r - BODY_M) / (this.map.mpp ?? 0.05); for (let a = 0; a < 12; a++) if (this.parkedDepth(x + Math.cos(a * 0.5236) * k, y + Math.sin(a * 0.5236) * k) > 0) return true; if (this.parkedDepth(x, y) > 0) return true; }
+    return false;
   }
   /** Spot for the placement ghost / click: farms snap to the grid; others are free (nudged up to ~12px if just off). */
   placementSpot(id: string, p: Vec): Spot | null {
