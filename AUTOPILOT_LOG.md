@@ -255,3 +255,52 @@ No commits, branches, stashes or local changes from those days. The box was repl
 - Finer foam breakup at El Morro's south flats.
 - Buoys / boats bobbing on `heightAt()`.
 - A wet-sand band at Cabras.
+
+## 2026-11-24 — Positional 3D sound in first person (shipped, ~05:00)
+
+**What shipped.** In first person you can now hear where the fight is. Other towers, troops and teammates firing, and bloons or bugs popping nearby, play from where they really are: left or right, in front or behind, near or far. Before, they were the same flat 2D map ticks no matter where you stood.
+- **Panning.** Each sound gets its own WebAudio `PannerNode`, HRTF on high/medium and equal-power on the low tier. The camera is the listener: Possess hands over its eye position and yaw every frame (`FpAudio.listener`). Chrome's HRTF database is warmed up on entry so the first shots are already panned.
+- **Distance.** Inverse-distance falloff: full level within 5 m, then 5/d. A distance lowpass (22 kHz·e^(−d/70), floor 1.6 kHz) adds air absorption, so far guns sound dull and close ones crack.
+- **Voice cap.** 14 voices on desktop, 8 on touch, 6 on low. When the cap is full, a new sound steals the quietest voice only if it's clearly louder (×1.25); otherwise it's dropped. Sounds below 2.5% after falloff are culled before any node is made. The same sound from the same ~8 m cell within 70 ms counts as one voice, so a volley doesn't eat the cap.
+- **What's positional.**
+  - Tower shots use the same per-weapon reports as your own possessed gun (rifle / marksman / chaingun / cannon / rail / beam / dart), mapped by `Game.towerVoice`.
+  - Troop shots: AI squadmates, plus a teammate's possessed troop, including their free shots down the crosshair. Troops had no shot sound before, and still have none in 2D.
+  - Enemy deaths: pop for bloons, splat for bugs, zap for shock kills, blast for bosses.
+  - Any positioned world `g.sfx` (explosion, smash, zap, MAC, laser, hypno, EMP, fuse).
+  - Heights: towers 2.7 m (gunship 7.6 m, beacon 9.5 m), troops 1.4 m, ground enemies 0.9 m, flyers 6 m.
+- **Unchanged.** Your own shots keep the close, unpanned first-person report (`own` = the local player's possessed shooter, so no copy). In first person the flat 2D tower / death ticks are skipped, so nothing plays twice. The 2D map view, UI cues, ambience and engine are untouched.
+- **Code.**
+  - `Sfx.ts`: `listen`, `at3d`, `spInfo`, `spMeter`. The recipes route into a voice chain through `dst` / `vs`, and the `play` / `fp` switches were split into `recipe2d` / `fpRecipe`.
+  - `Game.ts`: `sfx3d` hook, `towerVoice`, `towerShotSfx`, `unitShotSfx`, `Listener3d`, `Sfx3dName`.
+  - `Enemy.reward`, `Possess.tick` / `exit`, and `main.ts` wiring.
+- **Test hooks.** `__game.sfx3d()` → `{on, hrtf, cap, active, voices[{n,d,az}], played, culled, stolen, dropped, throttled, own, peak, byName, last{n,d,gain,az,lp}}`. Also `__game.sfx3dAt(n, px, py, lift)`, `__game.sfx3dMeter(ms)` (L/R RMS of the real panner bus) and `__game.sfx3dTime(n)`.
+
+**Mobile, measured.** Touch emulation (915×412, dpr 2), both pinned medium and the automatic tier, which drops to low on swiftshader:
+- Cost per positional sound: 0.0002–0.001 ms of JS.
+- Peak voices in a 16-bloon fight next to 3 towers + the squad: 3–4 (cap 8 / 6).
+- No 2D double-plays (sfx2d played 0 during the fight).
+
+**Commits.** main `d99e480`. gh-pages `9a2bab8` (BASE=/bloons-of-the-frontier/, .nojekyll kept, fresh worktree `/workspace/ap_ghp_1124`; old `/workspace/ap_ghp_1123` removed + `git worktree prune`). Live bundle `assets/index-BnlJGOgh.js` (+ `Possess-BfFsau-W.js`).
+
+**Tests.**
+- `npm run build` (typecheck + validator + vite): OK.
+- New `tests/e2e_sfx3d.py`: PASS locally (3 runs, after one fix) and live. It covers 4 passes: desktop medium, desktop `?fpq=low`, mobile medium, mobile auto. It checks:
+  - off in 2D; on in first person with the right cap and HRTF per tier
+  - right-side source → az +90 and the right ear louder on the real bus (HRTF ~2:1; equal-power fully one-sided); left mirrored
+  - 8 m vs 90 m rifle louder ×4–11, and the far one has the lower lowpass
+  - a 420 m dart is culled
+  - 60-sound spam holds the cap; a near cannon steals the quietest voice
+  - in a real fight, tower / troop shots and pops are positional with no 2D doubles, and peak stays under the cap
+  - own shots go to `own`, not a positional copy
+  - exit → back to 2D; no console errors
+  - The first run failed only on the own-shot check (the trooper didn't fire within 1.5 s). The test now fires in slices.
+- Core e2e_t53, e2e_t80, e2e_t97, e2e_ambience, e2e_sfx2d, e2e_t101: PASS.
+
+**Live.** https://beeforestry.github.io/bloons-of-the-frontier/ → 200, serves `index-BnlJGOgh.js`. Screenshots: `autopilot_shots/2026-11-24_live_fp_sound_fight_desktop.png`, `autopilot_shots/2026-11-24_live_fp_sound_fight_mobile.png` (first person during the test fight; sound itself doesn't show in a picture).
+
+**Known / ideas for next time.**
+- Co-op clients: tower fire runs in the host sim, so a client doesn't get `towerFire` calls and hears no remote tower shots. To fix, forward shot events (type + px) in Sync snapshots and play them through `sfx3d`.
+- Occlusion: lowpass sounds behind the fort walls / cliffs (raycast against the fort grid, a few per second).
+- A short convolution / feedback-delay reverb send for inside the fort courtyard vs open field (El Morro's echo).
+- Doppler / whoosh for projectiles passing close to the ear, and positional enemy footsteps / buzz for big bugs.
+- Wet-rock darkening at spray sites; finer foam breakup at El Morro's south flats; buoys bobbing on `heightAt()`.
