@@ -1,0 +1,11 @@
+{
+ "osm_buildings": 1254,
+ "with_osm_height": 831,
+ "skipped_fortifications_ruins": 11,
+ "cells_before": 22169,
+ "cells_after": 36627,
+ "cells_in_both": 14771,
+ "aerial_only_cells_dropped": 7398,
+ "osm_only_cells_added": 21856,
+ "kb": 60
+}

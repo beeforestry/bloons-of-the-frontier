@@ -26,6 +26,7 @@ import { Spray, type SprayInfo } from './spray';
 import { loadFort, fortH, fortMesh, morroSet, garitaSpots, FORT, type FortGrid, type MorroSet } from './morro3d';
 import { carveMorro, morroT93, type T93Set } from './morro93';
 import { oldSanJuan } from './oldsj';
+import { osmBuildings, type OsmSet } from './osmBuildings';
 import { loadCabras, cabrasH, cabrasSet, distantMorro, CABRAS, type CabrasGrid, type CabrasSet } from './cabras3d';
 import { BOARD_M } from '../game/Game';
 import { tank, heli, destroyer, beacon, prop, gun, hand, gunFor } from './military';
@@ -208,7 +209,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 } };
+  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 }, osm: null as null | OsmSet['stats'] };
   /** 2026-11-19 living ocean (src/fps/ocean.ts): Gerstner swell + fresnel + shore foam; vm.ocean = test hook. */
   ocean: Ocean | null = null;
   /** 2026-11-23 cliff spray (src/fps/spray.ts): swell-timed white water on cliffs / sea walls / riprap; vm.spray = test hook. */
@@ -333,6 +334,12 @@ export class Possess {
       (f.userData.updateLod as (c: THREE.Camera, force?: boolean) => void)(this.camera, true);
       this.vm.tex.flora = f.userData.texKinds as number; this.vm.tex.lod = f.children.filter((m) => m.userData.lod === 1).length;
     }).catch((e) => console.warn('flora', e));
+    // t123: real buildings from OpenStreetMap footprints, seated on the (fine) first-person ground once it is in
+    if (g.map.blocks?.length) void fortP.then(() => {
+      if (!this.alive) return;
+      const ob = osmBuildings(g.map.blocks!, S, g.map.width, g.map.height, (x, y) => rawH(g.map, x, y), this.groundPhoto);
+      scene.add(ob.group); this.vm.osm = ob.stats;
+    }).catch((e) => console.warn('osm buildings', e));
     // t51: garrisonable bunkers/watchtowers/ruins/garitas as real shapes (was a stray placeholder box)
     // t80: on El Morro the garitas are real domed sentry boxes on the bastion salients (morro3d), seated once the fort loads
     for (const e of g.envs) {

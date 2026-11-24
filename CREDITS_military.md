@@ -220,3 +220,11 @@ Shipped textures (all downscaled to 512 px WebP, `public/assets/tex/`), all **Po
 | Project | Author | License | What we took |
 |---|---|---|---|
 | Lightkeepers — https://github.com/vega-star/lightkeepers | vega-star | Apache-2.0 | The *idea* of towers applying elements that combine into stronger effects. Our element combos (`src/systems/Elements.ts`) are written from scratch: no code, art or data copied. |
+
+## t123 — OpenStreetMap layouts for El Morro and Isla de Cabras
+| Data | Source | License |
+|---|---|---|
+| Building footprints, heights / levels, footways, roads, widths, coastline, breakwaters, parks (enemy lanes, placement grid, first-person building volumes, Old San Juan backdrop mask) | **© OpenStreetMap contributors**, via the Overpass API — https://www.openstreetmap.org/copyright | Open Database License (ODbL) 1.0 |
+| Aerial photo used to heal / repaint the lane strip | NOAA NGS Emergency Response Imagery, Hurricane Maria, layer 20170924b-rgb (z20) | US public domain / CC0 |
+| Elevation along the lanes and under buildings | USGS 3DEP 1 m lidar DEM, PR_PRVI_E_2018 (already in the maps) | US public domain |
+The derived files (src/data/osm.generated.json, the lanes / grid in src/data/maps.generated.json, public/assets/maps/morro/oldsj.dat) are a Produced Work from OSM data. Regeneration: tools/osm/README.md. The game shows "© OpenStreetMap contributors" on the minimap of both maps.

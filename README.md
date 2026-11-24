@@ -152,3 +152,9 @@ The pipeline is in `art_src/tools` (cutout → split → WebP + `src/render/art.
 
 ![art sheet](docs/media/art_sheet.jpg)
 ![before/after](docs/media/before_after.jpg)
+
+## Map data credits (t123)
+El Morro and Isla de Cabras use real open data: lane routes, the placement grid, first-person building volumes and the
+Old San Juan backdrop come from **© OpenStreetMap contributors** (ODbL 1.0, https://www.openstreetmap.org/copyright).
+The aerial imagery is NOAA NGS Emergency Response Imagery (public domain) and the terrain is the USGS 3DEP 1 m lidar
+DEM (public domain). Full asset credits: CREDITS_military.md. To regenerate the OSM-derived data, see tools/osm/README.md.

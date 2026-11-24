@@ -8,6 +8,7 @@ import { setMapScale } from '../core/scale';
 import { EventBus } from '../core/events';
 import { dist, dist2, rand } from '../core/math';
 import { toVec, type MapDef, resolveMap, DEFAULT_MAP } from '../data/maps';
+import { blockDepth, footprintNear } from '../data/osmBlocks';
 import { FUSION, canFuseType, fusionFee } from '../data/fusion';
 import { TOWERS, towerById } from '../data/towers';
 import { PROX, updateProximity } from '../systems/Proximity';
@@ -896,6 +897,8 @@ export class Game {
     for (const b of this.buildings) if (b.alive) { const h = ((b.isHQ ? SOLID_M.hqHalf : SOLID_M.padHalf) + BODY_M) * k; if (Math.abs(b.x - x) < h && Math.abs(b.y - y) < h) return false; }
     // t101b: parked Raider Buggies / Bulwark Scorpions are solid. A body already overlapping one (spawned / just stepped out) may only move outward.
     if (this.parked.length) { const d = this.parkedDepth(x, y); if (d > 0 && (fx == null || fy == null || d >= this.parkedDepth(fx, fy) - 1e-6)) return false; }
+    // t123: OSM buildings first person draws (ruin walls, magazine, battery, park hall, pavilion posts) — same "only outward" rule
+    if (this.map.blocks?.length) { const d = blockDepth(this.map, x, y); if (d > 0 && (fx == null || fy == null || d >= blockDepth(this.map, fx, fy) - 1e-6)) return false; }
     return true;
   }
   /** t101b: how deep (metres) a point sits inside the nearest parked vehicle's footprint (oriented box grown by a body radius); <= 0 = outside. */
@@ -1280,7 +1283,12 @@ export class Game {
     for (const t of this.towers) if (t.alive && t !== ignore && Math.hypot(t.x - x, t.y - y) < (R + this.towerRadius(t.data.id)) * 0.92) return false;
     for (const b of this.buildings) if (b.alive && Math.hypot(b.x - x, b.y - y) < R + (b.isHQ ? 110 : 50)) return false;
     for (const e of this.envs) if (Math.hypot(e.x - x, e.y - y) < R + 34) return false;
+    if (this.nearOsm(id, x, y)) return false;
     return true;
+  }
+  /** t123: a tower's solid (plus a trooper's width either side) may not touch an OSM building first person draws. */
+  private nearOsm(id: string, x: number, y: number) {
+    return !!this.map.blocks?.length && footprintNear(this.map, x, y, (TOWER_SOLID_M[id] ?? SOLID_M.tower) + 1.0);
   }
   /** Spot for the placement ghost / click: farms snap to the grid; others are free (nudged up to ~12px if just off). */
   placementSpot(id: string, p: Vec): Spot | null {
@@ -1288,6 +1296,7 @@ export class Game {
     if (this.gridKind(id)) {
       const c = this.grid.snap(p, fp); if (!c) return null;
       const q = this.grid.cellCenter(c.c, c.r), R = this.towerRadius(id);
+      if (this.nearOsm(id, q.x, q.y)) return null;
       return this.towers.some((t) => t.alive && !this.gridKind(t.data.id) && Math.hypot(t.x - q.x, t.y - q.y) < (R + this.towerRadius(t.data.id)) * 0.92) ? null : c;
     }
     const tryAt = (x: number, y: number): Spot | null => this.spotOk(id, x, y) ? { ...this.grid.worldToCell({ x, y }), x: Math.round(x), y: Math.round(y) } : null;
@@ -1305,9 +1314,9 @@ export class Game {
   /** Validity of a spot (spot.x set = free placement; bare cell = legacy cell-centre). */
   private spotValid(id: string, s: Spot) {
     const fp = towerById(id).footprint ?? 1;
-    if (this.gridKind(id)) return this.grid.fits(s.c, s.r, fp);
+    if (this.gridKind(id)) { const c = this.grid.cellCenter(s.c, s.r); return this.grid.fits(s.c, s.r, fp) && !this.nearOsm(id, c.x, c.y); }
     const q = s.x !== undefined ? { x: s.x, y: s.y! } : this.grid.cellCenter(s.c, s.r);
-    return this.spotOk(id, q.x, q.y) || (s.x === undefined && this.grid.fits(s.c, s.r, fp));
+    return this.spotOk(id, q.x, q.y) || (s.x === undefined && this.grid.fits(s.c, s.r, fp) && !this.nearOsm(id, q.x, q.y));
   }
   canPlace(id: string, cell: Spot | null) {
     if (this.overrun?.placeOk && cell) return !(cell as { bad?: boolean }).bad && this.spotValid(id, cell) && this.overrun.placeOk(id, cell.x !== undefined ? { x: cell.x, y: cell.y! } : this.grid.cellCenter(cell.c, cell.r));

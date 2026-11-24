@@ -2,6 +2,7 @@
 // along exact lane polylines) by art_src/tools/compose_maps.py, so lane data, the
 // buildable grid, the HQ and its build pads are exact. Re-run it after editing.
 import raw from './maps.generated.json';
+import osmRaw from './osm.generated.json';
 import type { Vec } from '../core/types';
 export interface MapDef {
   id: string; name: string; image: string; width: number; height: number; pathWidth: number;
@@ -31,7 +32,19 @@ export interface MapDef {
   water?: { shore?: boolean; shoals?: [number, number][][]; shoalW?: number };
   /** 3D heightfield + prop billboards for Possess (Tropical Island, El Morro). */
   terrain?: TerrainDef;
+  /** t123: real buildings from OpenStreetMap footprints (tools/osm) — drawn in first person, solid for possessed troops, unbuildable. */
+  blocks?: OsmBlock[];
+  /** t123: set when lanes / buildings come from OpenStreetMap (attribution shown on the minimap); `lanes[i]` = lane i follows OSM ways. */
+  osm?: { attribution: string; lanes: boolean[] };
   grid: { cell: number; originX: number; originY: number; cols: number; rows: number; buildable: string[]; land?: string; landRes?: number };
+}
+/** t123: an OSM building footprint in map px (© OpenStreetMap contributors, ODbL). `rect` = its minimum rotated rectangle
+ *  (roof frame), `core` = where the walls stand (hall: under the roof overhang; magazine: the vaulted block inside its enclosure). */
+export interface OsmBlock {
+  id: number; name?: string | null; kind: 'magazine' | 'ruin' | 'battery' | 'pavilion' | 'hall';
+  poly: [number, number][]; rect: [number, number][]; core?: [number, number][];
+  /** ground metres from the lidar heightfield (min under the outline); first person re-seats on the fine surface */
+  base: number; h: number; roof?: number; wall?: number;
 }
 export interface TerrainDef {
   cols: number; rows: number; off: number; scale: number; water: number;
@@ -44,7 +57,13 @@ export interface TerrainDef {
 }
 /** Player-facing labels (internal ids stay as authored in maps.generated.json). */
 const LABELS: Record<string, string> = { tropical: 'Isla de Cabras' };
-export const MAPS: MapDef[] = (raw as unknown as MapDef[]).map((m) => LABELS[m.id] ? { ...m, name: LABELS[m.id] } : m);
+const OSM = (osmRaw as unknown as { maps: Record<string, { buildings: OsmBlock[] }> }).maps;
+export const MAPS: MapDef[] = (raw as unknown as MapDef[]).map((m) => {
+  const blocks = OSM[m.id]?.buildings;
+  return { ...m, ...(LABELS[m.id] ? { name: LABELS[m.id] } : {}), ...(blocks?.length ? { blocks } : {}) };
+});
+/** t123: OpenStreetMap attribution for maps built with OSM layout data (shown in credits). */
+export const OSM_ATTRIBUTION = (osmRaw as unknown as { attribution: string }).attribution;
 export const toVec = ([x, y]: [number, number]): Vec => ({ x, y });
 /** t97 / t56: only these maps are selectable or loadable (others stay in MAPS for tests/balance tools). */
 export const AVAILABLE_MAPS = ['morro', 'tropical'] as const;

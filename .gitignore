@@ -21,3 +21,6 @@ art_src/refs_el_morro/*
 art_src/refs_canuelo/*
 !art_src/refs_canuelo/CREDITS.json
 autopilot_shots/
+
+# t123 OSM tools: re-downloadable aerial tiles / intermediates (see tools/osm/README.md)
+data/osm/cache/

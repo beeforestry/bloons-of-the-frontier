@@ -474,6 +474,11 @@ function start(mapId: string, diffId: DifficultyId = 'medium', forceTutorial = f
     for (const e of g.enemies) { mctx.fillStyle = e.data.boss ? '#ff2a2a' : e.data.family === 'bug' ? '#ff8a3a' : '#ff5a8a'; const s = e.data.boss ? 3 : 1.5; mctx.fillRect(e.x * k - s, e.y * k - s, s * 2, s * 2); }
     const tl = r.screenToWorld(0, 0), br = r.screenToWorld(r.vw, r.vh);
     mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5; mctx.strokeRect(tl.x * k, tl.y * k, (br.x - tl.x) * k, (br.y - tl.y) * k);
+    if (g.map.osm) { // t123: ODbL attribution for the OSM-derived lanes / buildings (aerial NOAA, elevation USGS: public domain)
+      mctx.font = '9px sans-serif'; mctx.textBaseline = 'bottom'; const txt = '© OpenStreetMap contributors';
+      mctx.fillStyle = 'rgba(0,0,0,0.55)'; mctx.fillRect(0, mm.height - 12, mctx.measureText(txt).width + 6, 12);
+      mctx.fillStyle = '#e8eef2'; mctx.fillText(txt, 3, mm.height - 1.5);
+    }
   }
 
   // FPS meter + auto-quality governor (drops particle caps / shockwave refraction /
