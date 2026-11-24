@@ -1303,7 +1303,8 @@ export class Game {
       if (this.nearOsm(id, q.x, q.y)) return null;
       return this.towers.some((t) => t.alive && !this.gridKind(t.data.id) && Math.hypot(t.x - q.x, t.y - q.y) < (R + this.towerRadius(t.data.id)) * 0.92) ? null : c;
     }
-    const tryAt = (x: number, y: number): Spot | null => this.spotOk(id, x, y) ? { ...this.grid.worldToCell({ x, y }), x: Math.round(x), y: Math.round(y) } : null;
+    // test the rounded point that is handed back, so placeTower's re-check of the same spot can't disagree (t123)
+    const tryAt = (x: number, y: number): Spot | null => { x = Math.round(x); y = Math.round(y); return this.spotOk(id, x, y) ? { ...this.grid.worldToCell({ x, y }), x, y } : null; };
     const s = tryAt(p.x, p.y); if (s) return s;
     for (const d of [6, 12]) for (let a = 0; a < 8; a++) { const r = tryAt(p.x + Math.cos(a * Math.PI / 4) * d, p.y + Math.sin(a * Math.PI / 4) * d); if (r) return r; }
     return null;
