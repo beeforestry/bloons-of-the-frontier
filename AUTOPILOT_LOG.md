@@ -256,7 +256,7 @@ No commits, branches, stashes or local changes from those days. The box was repl
 - Buoys / boats bobbing on `heightAt()`.
 - A wet-sand band at Cabras.
 
-## 2026-11-24 — Positional 3D sound in first person (shipped, ~05:00)
+## 2026-11-24 — Positional 3D sound in first person (shipped, ~04:30)
 
 **What shipped.** In first person you can now hear where the fight is. Other towers, troops and teammates firing, and bloons or bugs popping nearby, play from where they really are: left or right, in front or behind, near or far. Before, they were the same flat 2D map ticks no matter where you stood.
 - **Panning.** Each sound gets its own WebAudio `PannerNode`, HRTF on high/medium and equal-power on the low tier. The camera is the listener: Possess hands over its eye position and yaw every frame (`FpAudio.listener`). Chrome's HRTF database is warmed up on entry so the first shots are already panned.
