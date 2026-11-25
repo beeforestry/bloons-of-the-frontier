@@ -304,3 +304,41 @@ No commits, branches, stashes or local changes from those days. The box was repl
 - A short convolution / feedback-delay reverb send for inside the fort courtyard vs open field (El Morro's echo).
 - Doppler / whoosh for projectiles passing close to the ear, and positional enemy footsteps / buzz for big bugs.
 - Wet-rock darkening at spray sites; finer foam breakup at El Morro's south flats; buoys bobbing on `heightAt()`.
+
+## 2026-11-25 — Wet shore in first person (shipped, ~04:45)
+
+**What shipped.** In first person, the ground by the sea now looks wet. Before, the sand and rocks next to the water looked as dry as the lawn.
+- **Wet band.** A strip just above the waterline is darker, more saturated and glossy. It has a sun glint and a sky sheen at grazing angles. The lowest strip, where the last wave just ran up, glistens most, and its top edge moves with the swash rhythm.
+- **El Morro.** The band reaches ~1.2 m up the rocks. The wave-washed foot of the cliffs and sea walls gets a dark algae film. Cliff faces near spray sites stay soaked up to ~5.5 m, with uneven, streaky top edges.
+- **Isla de Cabras.** A wet-sand / wet-rubble band ~0.75 m high along the beach and riprap. Spray soaks the riprap only ~1.5 m up.
+- **How.**
+  - `Ocean.setShore` now also splats each spray site's strength onto the cells around it (6 m at El Morro, 3 m at Cabras).
+  - `Ocean.wetAt(x, z)` returns (metres to open water, spray exposure).
+  - `Possess.bakeWet` bakes that into a per-vertex `aWet` attribute on the 3 m lidar floor and the 0.5 m fine fort / El Canuelo meshes. It re-bakes after the fine heights load (~20–45 ms in total).
+  - `detailGround(.., { wet: true })` (GWET) shades from `aWet` + height above the sea. Shared `WET` uniforms set per map.
+  - No new textures or samplers: Cabras stays at 15 units, El Morro 13. The breakup noise reuses `t_wn`. Underwater the gloss is off, since the sea surface does the reflecting.
+  - Works on all quality tiers, including `?fpq=low`. Inland ground is untouched.
+- **Test hooks.** `__possess.cur.vm.wet` → `{on, meshes, verts, band, soaked, tall, bakes, ms}`; `__possess.cur.setWet(bool)`; `__possess.cur.ocean.wetAt(x, z)`.
+- **OSM layouts (t123/t124).** First person on both maps renders fine with the new layouts: core tests pass, and shore views were checked by eye.
+
+**Commits.** main `d0af030`. gh-pages `6131ef2` (BASE=/bloons-of-the-frontier/, .nojekyll kept, fresh worktree `/workspace/ap_ghp_1125`; old `/workspace/ap_ghp_1124` removed + `git worktree prune`). Live bundle `assets/index-BZcmL3jp.js` (+ `Possess-CaydQJo7.js`).
+
+**Tests.**
+- `npm run build` (typecheck + validator + vite): OK.
+- New `tests/e2e_wet.py`: PASS locally and live. Comparisons are taken with the game paused, sea and spray frozen, and the gun hidden. Per map it checks:
+  - wetness baked on floor + fine mesh
+  - band / soaked vertex counts and bake time
+  - no shader errors and no extra texture units (`samplerAudit`)
+  - the shore view goes darker with wet on vs off: El Morro ~3.7k px, Cabras ~4.5k of 57.6k
+  - an inland view is unchanged (0 px)
+
+  It also checks that only El Morro is soaked more than 2 m up, the `?fpq=low` path (~4.6k px), and no console errors.
+- Core e2e_t53, e2e_t80, e2e_t97, e2e_ocean, e2e_spray: PASS.
+
+**Live.** https://beeforestry.github.io/bloons-of-the-frontier/ → 200, serves `index-BZcmL3jp.js`. Screenshots: `autopilot_shots/2026-11-25_live_fp_wet_morro_shore.png`, `autopilot_shots/2026-11-25_live_fp_wet_cabras_sand.png`.
+
+**Ideas for next time.**
+- Dynamic wetting: spray bursts / breaker crashes darken the rock they hit for a few seconds, which then dries (a small ring-buffer of wet splats as uniforms).
+- Isla de Cabras first person still reads as a tidy tropical park: bright cartoon bushes and clean palms. Sebastian wants it gritty, so next could be burnt / broken palms, craters, debris and darker grading on the Cabras realism set, without touching the layout.
+- Finer foam breakup at El Morro's south flats; buoys / small boats bobbing on `heightAt()`.
+- Co-op clients still don't hear remote tower shots positionally (forward shot events in Sync).
