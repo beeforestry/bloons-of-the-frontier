@@ -214,8 +214,26 @@ export class Ocean {
       if (oi >= 0 && oj >= 0 && oi < gw && oj < gh && depth[oj * gw + oi] <= 0) continue; // sheltered pocket, not open water
       xs.push(i * cell); zs.push(j * cell); nxs.push(nx); nzs.push(nz); st.push(Math.min(1, 0.3 + (rise - minRise) / span));
     }
+    // 2026-11-25 wet shore: splat each site's strength onto the cells around it -> how soaked the rock there gets
+    const sw = (this.sprayW = new Float32Array(gw * gh)), RW = morro ? 6 : 3, rc = Math.ceil(RW / cell);
+    for (let q = 0; q < xs.length; q++) {
+      const ci = Math.round(xs[q] / cell), cj = Math.round(zs[q] / cell);
+      for (let b = -rc; b <= rc; b++) for (let a = -rc; a <= rc; a++) {
+        const i = ci + a, j = cj + b; if (i < 0 || j < 0 || i >= gw || j >= gh) continue;
+        const d = Math.hypot(a, b) * cell; if (d > RW) continue;
+        const k = j * gw + i, v = st[q] * (1 - d / RW) ** 0.6; if (v > sw[k]) sw[k] = v;
+      }
+    }
     const F = (a: number[]) => Float32Array.from(a);
     this.spraySites = { n: xs.length, x: F(xs), z: F(zs), nx: F(nxs), nz: F(nzs), str: F(st) }; this.sitesVer++;
+  }
+  private sprayW: Float32Array | null = null;
+  /** 2026-11-25 wet shore: bilinear (metres to water, spray exposure 0..1) at world (x, z); off the map = (0, 0). */
+  wetAt(x: number, z: number): [number, number] {
+    if (x < 0 || z < 0 || x > this.mapW || z > this.mapD) return [0, 0];
+    const { gw, gh, cell } = this, fx = Math.min(gw - 1.001, x / cell), fz = Math.min(gh - 1.001, z / cell), i = fx | 0, j = fz | 0, u = fx - i, v = fz - j, k = j * gw + i;
+    const bl = (g: Float32Array) => (g[k] * (1 - u) + g[k + 1] * u) * (1 - v) + (g[k + gw] * (1 - u) + g[k + gw + 1] * u) * v;
+    return [Math.min(40, bl(this.distW)), this.sprayW ? bl(this.sprayW) : 0];
   }
   /** Metres from (x, z) to the nearest open water (0 over water / off the map). */
   waterDist(x: number, z: number): number {

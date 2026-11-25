@@ -37,7 +37,7 @@ import { ENEMIES } from '../data/enemies';
 import { loadGlbClone, loadGlbParts, TOWER_GLB, GUN_GLB, unitGlb, unitVmGlb, UNIT_VM } from './glbModels';
 import { setMatQuality, matOf } from './mats';
 import { towerMesh } from './towers3d';
-import { detailGround, groundTime, waterNormal, groundTex } from './groundTex';
+import { detailGround, groundTime, waterNormal, groundTex, WET } from './groundTex';
 import { floraField, decoTo3D, type FloraItem, type FloraKind } from './flora';
 import { buildWarzone, envStructure, type WarFx } from './warzone';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
@@ -209,7 +209,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { oldsj: null as null | { tris: number; built: number; walls?: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 }, osm: null as null | OsmSet['stats'] };
+  vm = { oldsj: null as null | { tris: number; built: number; walls?: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, wet: null as null | { on: number; meshes: number; verts: number; band: number; soaked: number; tall: number; bakes: number; ms: number }, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 }, osm: null as null | OsmSet['stats'] };
   /** 2026-11-19 living ocean (src/fps/ocean.ts): Gerstner swell + fresnel + shore foam; vm.ocean = test hook. */
   ocean: Ocean | null = null;
   /** 2026-11-23 cliff spray (src/fps/spray.ts): swell-timed white water on cliffs / sea walls / riprap; vm.spray = test hook. */
@@ -412,12 +412,17 @@ export class Possess {
     geo.computeVertexNormals();
     const tex = new THREE.TextureLoader().load(assetUrl(T.ground)); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
     // t53 El Morro: the real NOAA aerial photo drapes the real USGS lidar mesh; CC0 detail textures blend in up close
-    const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: this.real ? 0.25 : 0.4, war: this.isWar })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
+    const floor = new THREE.Mesh(geo, detailGround(new THREE.MeshLambertMaterial({ map: tex }), { slope: true, stone: this.real ? 0.25 : 0.4, war: this.isWar, wet: true })); floor.name = 'floor'; floor.userData.detail = true; scene.add(floor);
     this.floorGeo = geo; this.groundPhoto = tex;
     const SEA = this.real ? 3200 : 900; // sea plane at sea level (El Morro: out to the horizon)
     // 2026-11-19 living ocean: animated Gerstner swell, fresnel sky reflection + sun glint, shore foam / surf from the terrain heights
     const ocean = new Ocean(g.map.id === 'morro' ? 'morro' : 'cabras', ({ high: 'full', medium: 'medium', low: 'low' } as const)[this.vm.quality], SEA, W, D, T.water, waterNormal(), this.sunDir, this.isWar);
     ocean.setShore((xm, zm) => groundH(g.map, xm / S, zm / S)); scene.add(ocean.mesh); this.ocean = ocean; this.vm.ocean = ocean.info;
+    // 2026-11-25 wet shore: per-map wet band / spray-soak heights (El Morro: tall Atlantic spray + algae film; Cabras: wet sand)
+    const mo = ocean.kind === 'morro';
+    WET.on.value = 1; WET.sea.value = T.water; WET.time.value = 0; WET.reach.value = mo ? 7 : 9; WET.bandH.value = mo ? 1.2 : 0.75; WET.sprayH.value = mo ? 5.5 : 1.5; WET.algae.value = mo ? 1 : 0.25;
+    WET.sun.value.copy(this.sunDir).normalize(); WET.sunCol.value.set(this.isWar ? 0xffb878 : 0xffe6c4); WET.sky.value.set(this.isWar ? 0x9b9387 : 0xdde4df); WET.gloss.value = this.isWar ? 0.7 : 1;
+    this.vm.wet = { on: 1, meshes: 0, verts: 0, band: 0, soaked: 0, tall: 0, bakes: 0, ms: 0 }; this.bakeWet(floor);
     const spray = new Spray(ocean, ocean.kind, this.isWar); scene.add(spray.points); this.spray = spray; this.vm.spray = spray.info;
     const sea2 = new THREE.Mesh(new THREE.PlaneGeometry(SEA, SEA).rotateX(-Math.PI / 2), lam(0x1c2c2e)); sea2.position.set(W / 2, this.real ? T.off - 0.3 : -1.7, D / 2); scene.add(sea2);
     // t50 warzone: plants/rocks -> 3D flora (burnt palms, dead trees), wrecks/bunkers/wire/sandbags -> models; flag stays a billboard
@@ -441,7 +446,7 @@ export class Possess {
     const g = this.g, W = g.map.width, H = g.map.height;
     setFineHeights(g.map.id, (x, y) => cabrasH(f, x, y)); this.fort = f;
     const step = this.vm.quality === 'high' ? 1 : 2;
-    const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
+    const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25, wet: true });
     const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, f.fl, { win: CABRAS, ext: true, skipBelow: -3.2, quadBelow: -1.5 }); mesh.name = 'cabras3d'; this.scene.add(mesh); this.fineMesh = mesh;
     const geo = this.floorGeo, T = g.map.terrain!;
     if (geo) { // sink the 3 m lidar floor under the fine window (its border ring keeps the seam closed)
@@ -451,6 +456,7 @@ export class Possess {
       pos.needsUpdate = true; geo.computeVertexNormals();
     }
     this.ocean?.setShore((xm, zm) => rawH(g.map, xm / S, zm / S), true); // foam follows the 0.5 m riprap / beach
+    this.bakeWet(mesh, true);
     const set = cabrasSet(f, S); this.scene.add(set.group); this.cabras = set;
     this.vm.cabras = { ...set.stats, chunks: mesh.userData.chunks as number, tris: mesh.userData.tris as number, window: CABRAS.cols * CABRAS.rows };
     this.vm.fortChunks = mesh.userData.chunks as number;
@@ -466,7 +472,7 @@ export class Possess {
     const fc = f as FortGrid & { t93?: ReturnType<typeof carveMorro> }, lay = fc.t93 ?? carveMorro(f, garitaSpots(f, envG));
     this.fort = f; setFineHeights(g.map.id, (x, y) => fortH(f, x, y));
     const step = this.vm.quality === 'high' ? 1 : 2;
-    const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25 });
+    const mat = detailGround(new THREE.MeshLambertMaterial({ map: this.groundPhoto }), { slope: true, stone: 0.25, wet: true });
     const mesh = fortMesh(f, this.groundPhoto!, S, W, H, step, mat, lay.fl); this.scene.add(mesh); this.fineMesh = mesh; mesh.userData.chunks && (this.vm.fortChunks = mesh.userData.chunks as number);
     // sink the coarse lidar floor under the fort window (keep its border ring so the seam stays closed)
     const geo = this.floorGeo, T = g.map.terrain!;
@@ -477,6 +483,7 @@ export class Possess {
       pos.needsUpdate = true; geo.computeVertexNormals();
     }
     this.ocean?.setShore((xm, zm) => rawH(g.map, xm / S, zm / S), true); // surf follows the 0.5 m cliffs / sea walls
+    this.bakeWet(mesh, true);
     const set = morroSet(f, S, envG, true), t93: T93Set = morroT93(f, S, lay);
     set.group.add(t93.group); set.garitas = t93.stats.garitas; set.arcades = t93.stats.bays; this.vm.t93 = t93.stats;
     set.group.traverse((o) => { if ((o as THREE.Mesh).isMesh && !o.userData.arcade) o.castShadow = true; });
@@ -489,6 +496,26 @@ export class Possess {
       if (!this.alive) return; this.scene.add(m); this.vm.oldsj = { tris: m.userData.tris as number, built: m.userData.built as number, walls: m.userData.walls as number };
       this.camera.far = 1700; this.camera.updateProjectionMatrix(); const fog = this.scene.fog as THREE.Fog | null; if (fog) fog.far = Math.max(fog.far, 1450);
     }).catch((e) => console.warn('old san juan', e));
+  }
+
+  /** 2026-11-25 wet shore: bake aWet = (metres to open water, spray exposure) per vertex of the wet-ground meshes
+   *  under `root` from the Ocean's shore grids (re-run after the fine heights rebuild them). `fine` = also re-bake the 3 m floor. */
+  /** Test hook: wet shore on / off (pixel comparisons). */
+  setWet(on: boolean) { WET.on.value = on ? 1 : 0; if (this.vm.wet) this.vm.wet.on = on ? 1 : 0; }
+  private bakeWet(root: THREE.Object3D, fine = false) {
+    const o = this.ocean, vw = this.vm.wet; if (!o || !vw) return;
+    const t0 = performance.now(), v = new THREE.Vector3(), roots = fine && this.floorGeo ? [root, this.scene.getObjectByName('floor')] : [root];
+    if (fine) { vw.meshes = 0; vw.verts = 0; vw.band = 0; vw.soaked = 0; vw.tall = 0; }
+    for (const r of roots) r?.traverse((ob) => {
+      const m = ob as THREE.Mesh; if (!m.isMesh || !(m.material as THREE.Material).userData?.wet) return;
+      m.updateMatrixWorld(true); const pos = m.geometry.attributes.position as THREE.BufferAttribute, a = new Float32Array(pos.count * 2);
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld); const [d, s] = o.wetAt(v.x, v.z); a[i * 2] = d; a[i * 2 + 1] = s;
+        const h = v.y - o.level; if (h > -0.5 && h < 1.2 && d < 6) vw.band++; if (s > 0.2 && h > -0.5 && h < WET.sprayH.value) { vw.soaked++; if (h > 2) vw.tall++; }
+      }
+      m.geometry.setAttribute('aWet', new THREE.BufferAttribute(a, 2)); vw.meshes++; vw.verts += pos.count;
+    });
+    vw.bakes++; vw.ms = +(performance.now() - t0).toFixed(1);
   }
 
   private buildGun() {
@@ -940,7 +967,7 @@ export class Possess {
   private loop = (now: number) => {
     if (!this.alive) return;
     const dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
-    groundTime.value += dt; this.war?.update(dt, this.camera); this.ocean?.update(dt);
+    groundTime.value += dt; this.war?.update(dt, this.camera); this.ocean?.update(dt); if (this.ocean) WET.time.value = this.ocean.mat.uniforms.uTime.value as number;
     if (this.spray) { const cr = this.g.fpAudio?.crashes?.(); this.spray.update(this.g.paused ? 0 : dt, this.camera, this.renderer.domElement.height, this.g.paused ? -1 : (cr ?? -1)); }
     this.fpsAcc += Math.min(1, (now - this.last0) / 1000); this.last0 = now; this.fpsN++; if (this.fpsAcc >= 0.5) { this.fps = this.fpsN / this.fpsAcc; this.fpsAcc = 0; this.fpsN = 0; this.governor(); }
     if (!this.tick(dt)) return;
