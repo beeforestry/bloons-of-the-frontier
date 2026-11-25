@@ -1,0 +1,56 @@
+{
+ "morro": {
+  "changed": [
+   0,
+   1,
+   2
+  ],
+  "lengths_before": [
+   2516,
+   2152,
+   3059
+  ],
+  "lengths_after": [
+   2530,
+   2294,
+   3938
+  ],
+  "grid": {
+   "cleared": 171,
+   "freed": 96,
+   "building": 24
+  },
+  "flora_removed": 193,
+  "parked_near_new_lanes": [
+   [
+    2060,
+    1660
+   ]
+  ],
+  "buildable_cells": 1853
+ },
+ "tropical": {
+  "changed": [
+   1
+  ],
+  "lengths_before": [
+   2610,
+   2691,
+   2021
+  ],
+  "lengths_after": [
+   2728,
+   2735,
+   2021
+  ],
+  "grid": {
+   "cleared": 0,
+   "freed": 0,
+   "building": 0,
+   "land_bits": 0
+  },
+  "flora_removed": 1,
+  "parked_near_new_lanes": [],
+  "buildable_cells": 383
+ }
+}

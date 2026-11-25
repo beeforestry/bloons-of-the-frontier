@@ -1,0 +1,4 @@
+| map | difficulty | waves | bot reached | result | HQ left | towers |
+|---|---|---|---|---|---|---|
+| tropical | medium | 60 | 53 | lost | 0/200 | 51 |
+| tropical | hard | 100 | 53 | lost | 0/200 | 51 |
