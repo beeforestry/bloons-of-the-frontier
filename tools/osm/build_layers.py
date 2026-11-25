@@ -10,7 +10,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 from frames import FRAMES
 from osm_lib import ROOT, load, proj, polygons, height_m, width_m, length
-from config import BUILDINGS
+from config import BUILDINGS, BACKDROP_WALL
 
 OUT_RT = os.path.join(ROOT, 'src', 'data', 'osm.generated.json')
 DERIVED = os.path.join(ROOT, 'data', 'osm', 'derived')
@@ -98,10 +98,31 @@ def build(mid, m):
     return rt
 
 
+def backdrop_walls(mid, m):
+    """t124: city-wall polylines for the Old San Juan backdrop, clipped to outside the playable map (see config.BACKDROP_WALL)."""
+    if mid != 'morro': return []
+    from shapely.geometry import LineString, box
+    cfg = BACKDROP_WALL; W, H = m['width'], m['height']; g = cfg['margin']
+    inner, win = box(-g, -g, W + g, H + g), box(*cfg['window'])
+    out = []
+    for el in load(mid):
+        t = el.get('tags', {})
+        if el['type'] != 'way' or not (t.get('barrier') == 'city_wall' or t.get('historic') == 'citywalls'): continue
+        P = proj(mid, el.get('geometry') or [])
+        if len(P) < 2: continue
+        geom = LineString(P).intersection(win).difference(inner)
+        for ln in getattr(geom, 'geoms', [geom]):
+            if ln.is_empty or ln.geom_type != 'LineString' or ln.length * m['mpp'] < 4: continue
+            out.append(dict(id=el['id'], pts=r1(list(ln.simplify(4).coords))))
+    return out
+
+
 def main():
     maps = {m['id']: m for m in json.load(open(MAPS_JSON))}
     out = dict(attribution=ATTR, source='OpenStreetMap via Overpass API (see data/osm/raw/*.meta.json); built by tools/osm/build_layers.py',
                maps={mid: dict(buildings=build(mid, maps[mid])) for mid in FRAMES})
+    out['maps']['morro']['walls'] = backdrop_walls('morro', maps['morro']); out['wall'] = dict(h=BACKDROP_WALL['h'], thick=BACKDROP_WALL['thick'])
+    print('backdrop wall pieces', len(out['maps']['morro']['walls']), round(sum(length(w['pts']) for w in out['maps']['morro']['walls']) * maps['morro']['mpp']), 'm')
     json.dump(out, open(OUT_RT, 'w'), separators=(',', ':'))
     print('wrote', OUT_RT, os.path.getsize(OUT_RT) // 1024, 'KB')
 

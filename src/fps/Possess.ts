@@ -209,7 +209,7 @@ export class Possess {
   private sun!: THREE.DirectionalLight; private sky!: THREE.Group; private sunDir = new THREE.Vector3(-0.5, 0.36, -0.79).normalize();
   private gunBase = new THREE.Vector3(0.22, -0.22, -0.45); private gunRoll = 0; private bob = 0;
   /** t42 test hooks: what the first-person view actually loaded. */
-  vm = { oldsj: null as null | { tris: number; built: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 }, osm: null as null | OsmSet['stats'] };
+  vm = { oldsj: null as null | { tris: number; built: number; walls?: number }, fortChunks: 0, fort: null as null | { verts: number; tris: number; garitas: number; arcades: number; lighthouse: number; masonry: number }, t93: null as null | T93Set['stats'], cabras: null as null | (CabrasSet['stats'] & { chunks: number; tris: number; window: number }), parked: 0, parkedGlb: 0, boards: 0, kind: 'box', hands: 0, props: 0, vehicles: 0, flora: 0, quality: 'high' as 'high' | 'medium' | 'low', tex: { flora: 0, lod: 0, gun: 0, glove: 0 }, size: {} as Record<string, number[]>, towers3d: {} as Record<string, number>, enemyGlb: {} as Record<string, string>, unitGlb: {} as Record<string, string[]>, unitGlbLoaded: [] as string[], ocean: null as null | OceanInfo, spray: null as null | SprayInfo, shaderErrors: 0, fineOk: null as null | boolean, walk: { sets: 0, bosses: 0 }, osm: null as null | OsmSet['stats'] };
   /** 2026-11-19 living ocean (src/fps/ocean.ts): Gerstner swell + fresnel + shore foam; vm.ocean = test hook. */
   ocean: Ocean | null = null;
   /** 2026-11-23 cliff spray (src/fps/spray.ts): swell-timed white water on cliffs / sea walls / riprap; vm.spray = test hook. */
@@ -486,7 +486,7 @@ export class Possess {
     logEvent(`possess: El Morro fort ${this.vm.fort.tris} tris, ${set.garitas} garitas`);
     // t101b: Old San Juan beyond the esplanade (real lidar terrain + NOAA aerial + extruded roofs), hazy in the distance
     if (this.vm.quality !== 'low') void oldSanJuan(S, W, H).then((m) => {
-      if (!this.alive) return; this.scene.add(m); this.vm.oldsj = { tris: m.userData.tris as number, built: m.userData.built as number };
+      if (!this.alive) return; this.scene.add(m); this.vm.oldsj = { tris: m.userData.tris as number, built: m.userData.built as number, walls: m.userData.walls as number };
       this.camera.far = 1700; this.camera.updateProjectionMatrix(); const fog = this.scene.fog as THREE.Fog | null; if (fog) fog.far = Math.max(fog.far, 1450);
     }).catch((e) => console.warn('old san juan', e));
   }

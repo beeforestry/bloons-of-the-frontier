@@ -49,3 +49,8 @@ BUILDINGS = {
 }
 # OSM features that never count as Old San Juan backdrop buildings (fortifications are terrain in the lidar)
 BACKDROP_SKIP_TAGS = {'historic': {'castle', 'fort', 'citywalls'}, 'building': {'roof', 'ruins'}}
+
+# t124: low city-wall volumes in El Morro's first-person Old San Juan backdrop (OSM barrier=city_wall / historic=citywalls,
+# Muralla de San Juan + bastions). Only the parts OUTSIDE the playable map (+ BACKDROP_WALL_MARGIN px) are drawn, so they
+# never meet a possessed troop (the map edge stops troops 12 px in) and the fort model keeps the walls inside the map.
+BACKDROP_WALL = dict(h=2.6, thick=2.0, margin=80, window=(-9500, -2500, -9500 + 438 * 24, -2500 + 438 * 24))

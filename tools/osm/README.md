@@ -34,6 +34,9 @@ The El Morro fetch window also covers the first-person Old San Juan backdrop (ga
 - `apply_lanes.py`: routes the lanes and updates `src/data/maps.generated.json` (lanes, waypoints, buildable grid, Cabras land bits, flora on the lanes) and repaints `public/assets/maps/<map>.jpg` + `<map>/ground.jpg` (old strip healed back to the aerial, new strip painted like compose_maps.py). Report: `data/osm/derived/apply_report.json`; pre-OSM lanes: `baseline_lanes.json`.
 - `oldsj_osm.py`: rebuilds the building mask/heights of `public/assets/maps/morro/oldsj.dat` (Old San Juan backdrop) from OSM footprints; lidar ground bytes untouched. Report: `data/osm/derived/oldsj_report.json`.
 
+- `cabras_land.py` (t124): marks the open park lawn beside Isla de Cabras' amphibious lane (lane 2) landfall as buildable in the fine land mask (`grid.land`): cells within 240 px of the lane's last 900 px, ground ≥ 0.9 m above sea level, ≥ 1.5 m from OSM buildings, clear of palm/tree trunks (3 m) and bushes/rocks (1.5 m). This is a balance fix: the t123 lanes no longer run beside lane 2's landfall, so the towers that used to cover both were gone. Report: `data/osm/derived/cabras_land.json`.
+- City walls in the Old San Juan backdrop (t124): `build_layers.py` also writes `maps.morro.walls` to `src/data/osm.generated.json`. These are the OSM `barrier=city_wall` / `historic=citywalls` lines (Muralla de San Juan and its bastions), clipped to the backdrop window and to **outside** the playable map plus an 80 px (10 m) margin (`config.BACKDROP_WALL`). `src/fps/oldsj.ts` draws each one as a low masonry band (2.0 m thick, 2.6 m above the backdrop's lidar ground, foot 1.2 m below it, top following the ground; pieces over open sea are skipped) using the repo's CC0 Poly Haven *Damaged Plaster* texture. These bands have no collision. They stand outside the map, where troops can never go (the map edge stops them 12 px in), so they can't create invisible walls. Inside the map, the walls are part of the fort model and the lidar terrain.
+
 Runtime side: `src/data/osmBlocks.ts` (collision for the volumes, used by `Game.walkable`), `src/fps/osmBuildings.ts` (meshes), `src/data/maps.ts` (merges the data, `OSM_ATTRIBUTION`).
 
 ## Regenerate (from the repo root; needs python3 with numpy, Pillow, pyproj, shapely ≥ 2, scipy)
@@ -44,7 +47,8 @@ python3 tools/osm/fetch_aerial.py tropical
 python3 tools/osm/build_layers.py             # 3. runtime buildings + layers
 python3 tools/osm/apply_lanes.py              # 4. lanes, grid, flora, map art (add --no-paint to skip the jpgs)
 python3 tools/osm/build_layers.py             # 5. again, to refresh the lane terrain guidance
-python3 tools/osm/oldsj_osm.py                # 6. Old San Juan backdrop
+python3 tools/osm/oldsj_osm.py                # 6. Old San Juan backdrop (buildings; the city walls come from step 3/5)
+python3 tools/osm/cabras_land.py              # 7. Cabras: buildable lawn beside the amphibious lane (after apply_lanes)
 npm run build                                 # typecheck + validate-data + vite
 python3 tests/balance_sim.py --maps morro,tropical --diffs easy,medium,hard
 ```

@@ -5,8 +5,8 @@ Output: screenshots/t123/<tag>_<map>_2d_1920.png, <tag>_<map>_2d_390.png, <tag>_
 import argparse, functools, http.server, json, os, socketserver, threading
 from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ap = argparse.ArgumentParser(); ap.add_argument('--dist', default=os.path.join(ROOT, 'dist')); ap.add_argument('--tag', default='after'); ap.add_argument('--no-fp', action='store_true'); ap.add_argument('--no-2d', action='store_true'); ap.add_argument('--views', default=''); args = ap.parse_args()
-OUT = os.path.join(ROOT, 'screenshots', 't123'); os.makedirs(OUT, exist_ok=True)
+ap = argparse.ArgumentParser(); ap.add_argument('--dist', default=os.path.join(ROOT, 'dist')); ap.add_argument('--tag', default='after'); ap.add_argument('--no-fp', action='store_true'); ap.add_argument('--no-2d', action='store_true'); ap.add_argument('--views', default=''); ap.add_argument('--outdir', default='t123'); args = ap.parse_args()
+OUT = os.path.join(ROOT, 'screenshots', args.outdir); os.makedirs(OUT, exist_ok=True)
 class Q(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 httpd = socketserver.TCPServer(('127.0.0.1', 0), functools.partial(Q, directory=args.dist)); threading.Thread(target=httpd.serve_forever, daemon=True).start()

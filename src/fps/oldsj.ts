@@ -6,6 +6,13 @@
 // Built by art_src/tools/oldsj_backdrop.py -> public/assets/maps/morro/oldsj.{dat,jpg}. Map frame = morro_real.py FRAME (game px, 0.125 m/px).
 import * as THREE from 'three';
 import { assetUrl } from '../assetUrl';
+import osmRaw from '../data/osm.generated.json';
+import { tex as repoTex, weathered } from './morro93';
+
+// t124: low city-wall volumes (Muralla de San Juan, © OpenStreetMap contributors, ODbL 1.0; tools/osm/build_layers.py) —
+// only the parts outside the playable map, standing on the backdrop's lidar ground. Walls: the repo's CC0 Poly Haven plaster.
+const OSMW = osmRaw as unknown as { wall?: { h: number; thick: number }; maps: Record<string, { walls?: { id: number; pts: [number, number][] }[] }> };
+export const OLDSJ_WALLS = OSMW.maps.morro?.walls ?? [];
 
 /** Grid window in El Morro map px: origin, px per sample, size. Mirrors oldsj_backdrop.py. */
 export const OLDSJ = { x0: -9500, y0: -2500, step: 24, cols: 438, rows: 438 };
@@ -91,6 +98,41 @@ export async function oldSanJuan(S: number, mapW: number, mapH: number, opts: { 
   const grp = new THREE.Group(); grp.name = 'old_san_juan';
   const ground = new THREE.Mesh(geo, mat), blk = new THREE.Mesh(bg, mat); ground.name = 'oldsj_ground'; blk.name = 'oldsj_blocks';
   grp.add(ground, blk);
-  grp.userData.tris = idx.length / 3 + bp.length / 9; grp.userData.built = blocks;
+  // ---- t124: city walls — a 2 m thick, ~2.6 m high masonry band along each OSM wall line, top following the ground
+  const wl = OSMW.wall ?? { h: 2.6, thick: 2.0 }, gAt = (px: number, py: number) => {
+    const fx = Math.min(W.cols - 1.001, Math.max(0, (px - W.x0) / W.step)), fy = Math.min(W.rows - 1.001, Math.max(0, (py - W.y0) / W.step));
+    const i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, k = j * W.cols + i;
+    return (gh(k) * (1 - u) + gh(k + 1) * u) * (1 - v) + (gh(k + W.cols) * (1 - u) + gh(k + W.cols + 1) * u) * v;
+  };
+  const wp: number[] = [], wuv: number[] = []; let wallM = 0;
+  const wq = (a: number[], b: number[], c: number[], d: number[], ua: number[], ub: number[], uc: number[], ud: number[]) => { for (const [p, q] of [[a, ua], [b, ub], [c, uc], [a, ua], [c, uc], [d, ud]]) { wp.push(...p); wuv.push(...q); } };
+  for (const w of OLDSJ_WALLS) {
+    const pts: number[][] = []; // resample every <= 3 m so the top follows the ground
+    for (let k = 0; k < w.pts.length - 1; k++) { const [ax, ay] = w.pts[k], [bx, by] = w.pts[k + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * S / 3)); for (let m = 0; m < n; m++) pts.push([ax + (bx - ax) * m / n, ay + (by - ay) * m / n]); }
+    pts.push(w.pts[w.pts.length - 1]);
+    if (pts.some(([x, y]) => inMap(x, y))) continue;
+    const half = wl.thick / 2 / S; let run = 0;
+    const off = pts.map((p, k) => { const a = pts[Math.max(0, k - 1)], b = pts[Math.min(pts.length - 1, k + 1)], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return [-dy / L * half, dx / L * half]; });
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [ax, ay] = pts[k], [bx, by] = pts[k + 1], seg = Math.hypot(bx - ax, by - ay) * S, ga = gAt(ax, ay), gb = gAt(bx, by);
+      if (Math.max(ga, gb) < 0.4) { run += seg; continue; } // skip where the line runs over open sea
+      const A = [ax + off[k][0], ay + off[k][1]], B = [bx + off[k + 1][0], by + off[k + 1][1]], C = [bx - off[k + 1][0], by - off[k + 1][1]], D = [ax - off[k][0], ay - off[k][1]];
+      const ta = ga + wl.h, tb = gb + wl.h, ba = ga - 1.2, bb = gb - 1.2, u0 = run / 2.2, u1 = (run + seg) / 2.2, v0 = 0, v1 = (wl.h + 1.2) / 2.2;
+      const P3 = (p: number[], y: number) => [p[0] * S, y, p[1] * S];
+      wq(P3(A, ba), P3(B, bb), P3(B, tb), P3(A, ta), [u0, v0], [u1, v0], [u1, v1], [u0, v1]);   // one face
+      wq(P3(C, bb), P3(D, ba), P3(D, ta), P3(C, tb), [u1, v0], [u0, v0], [u0, v1], [u1, v1]);   // other face
+      wq(P3(A, ta), P3(B, tb), P3(C, tb), P3(D, ta), [u0, 0], [u1, 0], [u1, wl.thick / 2.2], [u0, wl.thick / 2.2]); // walk top
+      if (k === 0) wq(P3(D, ba), P3(A, ba), P3(A, ta), P3(D, ta), [0, v0], [1, v0], [1, v1], [0, v1]);
+      if (k === pts.length - 2) wq(P3(B, bb), P3(C, bb), P3(C, tb), P3(B, tb), [0, v0], [1, v0], [1, v1], [0, v1]);
+      run += seg; wallM += seg;
+    }
+  }
+  if (wp.length) {
+    const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); wg.setAttribute('uv', new THREE.Float32BufferAttribute(wuv, 2));
+    wg.computeVertexNormals(); wg.computeBoundingSphere();
+    const wm = weathered(0xb3a690, repoTex('mr_plaster'), 0.85, 0.55, THREE.DoubleSide); const walls = new THREE.Mesh(wg, wm); walls.name = 'oldsj_walls'; grp.add(walls);
+  }
+  grp.userData.walls = Math.round(wallM);
+  grp.userData.tris = idx.length / 3 + bp.length / 9 + wp.length / 9; grp.userData.built = blocks;
   return grp;
 }
